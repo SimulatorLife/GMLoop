@@ -1,7 +1,7 @@
 import { Core } from "@gmloop/core";
 
-import { defaultGmlProgramParser } from "../../parser-adapter.js";
-import type { RepairTexturePrefetchGuardResult } from "../../types.js";
+import { defaultGmlProgramParser } from "../parser-adapter.js";
+import type { RepairTexturePrefetchGuardResult } from "../types.js";
 import {
     type CodemodAstRecord,
     containsBuiltinNameDeclaration,
@@ -12,7 +12,7 @@ import {
     isAstRecord,
     isNamedCall,
     unwrapParenthesizedExpression
-} from "../codemod-helpers.js";
+} from "./codemod-helpers.js";
 
 const TEXTURE_BUILTIN_NAMES: ReadonlySet<string> = new Set(["texture_is_ready", "texture_prefetch"]);
 
