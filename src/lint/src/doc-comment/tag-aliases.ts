@@ -30,7 +30,7 @@ const DOC_COMMENT_TAG_ALIAS_REPLACEMENTS = Object.freeze(
  * @returns The line with a canonical tag name when a focused alias is present.
  */
 export function normalizeDocCommentTagAliasLine(line: string): string {
-    return line.replace(/^(\s*\/\/\/\s*)@([A-Za-z]+)\b/u, (match, prefix: string, tagName: string) => {
+    return line.replace(/^(?<prefix>\s*\/\/\/\s*)@(?<tagName>[A-Za-z]+)\b/u, (match, prefix: string, tagName: string) => {
         const replacement = DOC_COMMENT_TAG_ALIAS_REPLACEMENTS.get(tagName.toLowerCase());
         return replacement === undefined ? match : `${prefix}@${replacement}`;
     });
