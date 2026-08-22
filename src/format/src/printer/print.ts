@@ -1389,8 +1389,7 @@ function applyTrailingSpacing({
         nodeEndIndex,
         suppressFollowingEmptyLine,
         isStaticDeclaration,
-        hasFunctionInitializer,
-        containerNode
+        hasFunctionInitializer
     });
 }
 
