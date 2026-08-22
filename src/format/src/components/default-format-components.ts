@@ -45,17 +45,37 @@ export const gmlFormatComponents: GmlFormatComponentBundle = Object.freeze(
 );
 
 /**
+ * Construct the abstract provider consumed by the high-level Prettier plugin
+ * entry point.
+ *
+ * Mirrors {@link createDefaultGmlFormatComponents} so every orchestration
+ * consumer of the resolver can depend on the same dependency-inversion seam.
+ * Concrete parser, printer, comment, and normalization implementations stay
+ * behind this boundary; only the resolved adapters and helper functions are
+ * surfaced on the returned provider.
+ *
+ * (target-state.md §2.3, §3.2 — orchestration depends on abstractions, not
+ * concrete adapters.)
+ */
+export function createDefaultGmlFormatProvider(
+    resolver: GmlFormatAdapterResolver = defaultGmlFormatAdapterResolver,
+    components: GmlFormatComponentBundle = createDefaultGmlFormatComponents(resolver)
+): GmlFormatProvider {
+    return Object.freeze({
+        components,
+        prettierDefaults: resolver.resolvePrettierDefaults(),
+        formatSource: resolver.resolveSourceFormatter(),
+        normalizeFormattedOutput: resolver.resolveNormalizeFormattedOutput()
+    });
+}
+
+/**
  * Default abstract provider consumed by the high-level Prettier plugin entry
  * point. Concrete parser, printer, comment, and normalization implementations
  * stay behind this component boundary so orchestration code depends only on the
  * provider contract.
  */
-export const defaultGmlFormatProvider: GmlFormatProvider = Object.freeze({
-    components: gmlFormatComponents,
-    prettierDefaults: defaultGmlFormatAdapterResolver.resolvePrettierDefaults(),
-    formatSource: defaultGmlFormatAdapterResolver.resolveSourceFormatter(),
-    normalizeFormattedOutput: defaultGmlFormatAdapterResolver.resolveNormalizeFormattedOutput()
-});
+export const defaultGmlFormatProvider: GmlFormatProvider = Object.freeze(createDefaultGmlFormatProvider());
 
 export function createDefaultGmlFormatComponents(
     resolver: GmlFormatAdapterResolver = defaultGmlFormatAdapterResolver

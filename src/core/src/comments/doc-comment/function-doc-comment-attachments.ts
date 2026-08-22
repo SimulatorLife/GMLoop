@@ -122,47 +122,88 @@ function isWhitespaceCharacter(character: string): boolean {
     return character.trim() === "";
 }
 
+/**
+ * Consume a `//` line comment body starting just past the `//` prefix.
+ *
+ * Returns the cursor on the newline (or carriage return) that terminates the
+ * comment, or `endIndexExclusive` when the comment runs to the end of the
+ * slice without a newline.
+ */
+function advancePastLineComment(sourceText: string, start: number, endIndexExclusive: number): number {
+    let cursor = start;
+
+    while (cursor < endIndexExclusive && sourceText[cursor] !== "\n" && sourceText[cursor] !== "\r") {
+        cursor += 1;
+    }
+
+    return cursor;
+}
+
+/**
+ * Consume a `/* ... *\/` block comment body starting just past the `/*` prefix.
+ *
+ * Returns the cursor immediately after the closing `*\/` when the comment is
+ * terminated inside the slice, or `endIndexExclusive` when the comment is
+ * unterminated.
+ */
+function advancePastBlockComment(sourceText: string, start: number, endIndexExclusive: number): number {
+    let cursor = start;
+
+    while (cursor + 1 < endIndexExclusive && (sourceText[cursor] !== "*" || sourceText[cursor + 1] !== "/")) {
+        cursor += 1;
+    }
+
+    return cursor + 1 < endIndexExclusive ? cursor + 2 : endIndexExclusive;
+}
+
+/**
+ * Consume a single whitespace character or comment starting at `cursor`,
+ * returning the cursor position immediately after it.
+ *
+ * Returns the same cursor unchanged when nothing could be advanced — the
+ * caller treats that as "non-skippable content found" and stops the scan.
+ * The cursor is assumed to point at the opening character (whitespace, `/`,
+ * or any other byte).
+ */
+function advancePastWhitespaceOrComment(sourceText: string, cursor: number, endIndexExclusive: number): number {
+    if (isWhitespaceCharacter(sourceText[cursor])) {
+        return cursor + 1;
+    }
+
+    if (sourceText[cursor] !== "/" || cursor + 1 >= endIndexExclusive) {
+        return cursor;
+    }
+
+    switch (sourceText[cursor + 1]) {
+        case "/": {
+            return advancePastLineComment(sourceText, cursor + 2, endIndexExclusive);
+        }
+        case "*": {
+            return advancePastBlockComment(sourceText, cursor + 2, endIndexExclusive);
+        }
+        default: {
+            return cursor;
+        }
+    }
+}
+
+/**
+ * Returns `true` when the source slice from `startIndex` to
+ * `endIndexExclusive` contains nothing but whitespace and line/block
+ * comments — used to decide whether a doc-tag comment is reachable from a
+ * candidate function node without crossing live code.
+ */
 function containsOnlyWhitespaceAndComments(sourceText: string, startIndex: number, endIndexExclusive: number): boolean {
     let cursor = startIndex;
 
     while (cursor < endIndexExclusive) {
-        const currentCharacter = sourceText[cursor];
+        const advanced = advancePastWhitespaceOrComment(sourceText, cursor, endIndexExclusive);
 
-        if (isWhitespaceCharacter(currentCharacter)) {
-            cursor += 1;
-            continue;
+        if (advanced === cursor) {
+            return false;
         }
 
-        if (currentCharacter === "/" && cursor + 1 < endIndexExclusive) {
-            const nextCharacter = sourceText[cursor + 1];
-
-            if (nextCharacter === "/") {
-                cursor += 2;
-                while (cursor < endIndexExclusive && sourceText[cursor] !== "\n" && sourceText[cursor] !== "\r") {
-                    cursor += 1;
-                }
-                continue;
-            }
-
-            if (nextCharacter === "*") {
-                cursor += 2;
-                while (
-                    cursor + 1 < endIndexExclusive &&
-                    (sourceText[cursor] !== "*" || sourceText[cursor + 1] !== "/")
-                ) {
-                    cursor += 1;
-                }
-
-                if (cursor + 1 < endIndexExclusive) {
-                    cursor += 2;
-                } else {
-                    cursor = endIndexExclusive;
-                }
-                continue;
-            }
-        }
-
-        return false;
+        cursor = advanced;
     }
 
     return true;
