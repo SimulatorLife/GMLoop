@@ -14,6 +14,7 @@ import { Refactor } from "@gmloop/refactor";
 import { Semantic } from "@gmloop/semantic";
 import { Command, Option } from "commander";
 
+import { createMinimumValueValidator } from "../cli-core/command-parsing.js";
 import { applyStandardCommandOptions } from "../cli-core/command-standard-options.js";
 import type { CommanderCommandLike } from "../cli-core/commander-types.js";
 import { CliUsageError, isCliUsageError } from "../cli-core/errors.js";
@@ -41,6 +42,7 @@ import {
 
 const { buildProjectIndex } = Semantic;
 const {
+    APPLY_WORKSPACE_EDIT_IO_CONCURRENCY_LIMIT,
     createRefactorEngine,
     buildRenameImpactReport,
     formatRenamePlanReport,
@@ -68,6 +70,7 @@ type RefactorCommandOptions = {
     list?: boolean;
     verbose?: boolean;
     checkHotReload?: boolean;
+    ioConcurrency?: number;
 };
 
 type RefactorContext = {
@@ -130,6 +133,7 @@ type ValidatedRenameOptions = RefactorContext & {
     dryRun: boolean;
     checkHotReload: boolean;
     list: boolean;
+    ioConcurrency: number;
 };
 
 function printRenameSettings(options: ValidatedRenameOptions): void {
@@ -140,6 +144,7 @@ function printRenameSettings(options: ValidatedRenameOptions): void {
     console.log(`Verbose mode: ${options.verbose ? "enabled" : "disabled"}`);
     console.log(`Execution mode: ${options.dryRun ? "dry-run (default)" : "apply changes (--write)"}`);
     console.log(`Hot reload validation: ${options.checkHotReload ? "enabled" : "disabled"}`);
+    console.log(`I/O concurrency: ${options.ioConcurrency}`);
 }
 
 type ValidatedCodemodOptions = RefactorContext & {
@@ -330,7 +335,8 @@ async function validateRenameOptions(options: RefactorCommandOptions): Promise<V
         newName: options.newName,
         dryRun: !options.write,
         checkHotReload: Boolean(options.checkHotReload),
-        list: Boolean(options.list)
+        list: Boolean(options.list),
+        ioConcurrency: options.ioConcurrency ?? APPLY_WORKSPACE_EDIT_IO_CONCURRENCY_LIMIT
     };
 }
 
@@ -480,7 +486,7 @@ function createRefactorEngineForProject(
 }
 
 async function performRename(options: ValidatedRenameOptions): Promise<void> {
-    const { projectRoot, verbose, symbolId, oldName, newName, dryRun, checkHotReload } = options;
+    const { projectRoot, verbose, symbolId, oldName, newName, dryRun, checkHotReload, ioConcurrency } = options;
 
     if (verbose) {
         console.log(`\nInitializing refactor context for project: ${projectRoot}`);
@@ -574,7 +580,8 @@ async function performRename(options: ValidatedRenameOptions): Promise<void> {
         await engine.applyWorkspaceEdit(plan.workspace, {
             readFile: (filePath) => readFile(resolvePath(filePath), "utf8"),
             writeFile: (filePath, content) => writeFile(resolvePath(filePath), content, "utf8"),
-            renameFile: (oldPath, newPath) => rename(resolvePath(oldPath), resolvePath(newPath))
+            renameFile: (oldPath, newPath) => rename(resolvePath(oldPath), resolvePath(newPath)),
+            ioConcurrency
         });
         console.log("Success! All files updated.");
     } catch (error) {
@@ -888,6 +895,14 @@ export function createRefactorCommand(): Command {
             new Option("--check-hot-reload", "Validate that the refactored code is compatible with hot reload").default(
                 false
             )
+        )
+        .addOption(
+            new Option(
+                "--io-concurrency <count>",
+                "Maximum number of files read/written concurrently while applying a rename (must be a positive integer)"
+            )
+                .argParser(createMinimumValueValidator(1, "I/O concurrency must be a positive integer"))
+                .default(APPLY_WORKSPACE_EDIT_IO_CONCURRENCY_LIMIT)
         )
         .addHelpText(
             "after",

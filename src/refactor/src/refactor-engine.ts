@@ -1095,7 +1095,14 @@ export class RefactorEngine {
         options?: ApplyWorkspaceEditOptions
     ): Promise<Map<string, string>> {
         const opts: ApplyWorkspaceEditOptions = options ?? ({} as ApplyWorkspaceEditOptions);
-        const { dryRun = false, includeResultContent = true, readFile, sourceTextByPath, writeFile } = opts;
+        const {
+            dryRun = false,
+            includeResultContent = true,
+            ioConcurrency = APPLY_WORKSPACE_EDIT_IO_CONCURRENCY_LIMIT,
+            readFile,
+            sourceTextByPath,
+            writeFile
+        } = opts;
 
         if (!workspace || !isWorkspaceEditLike(workspace)) {
             throw new TypeError("applyWorkspaceEdit requires a WorkspaceEdit");
@@ -1142,7 +1149,7 @@ export class RefactorEngine {
                     resultContent: includeResultContent ? newContent : ""
                 };
             },
-            APPLY_WORKSPACE_EDIT_IO_CONCURRENCY_LIMIT
+            ioConcurrency
         );
 
         // Write only after every changed source file has been read and range-checked.
@@ -1155,7 +1162,7 @@ export class RefactorEngine {
                 async ({ filePath, newContent }) => {
                     await writeFile(filePath, newContent);
                 },
-                APPLY_WORKSPACE_EDIT_IO_CONCURRENCY_LIMIT
+                ioConcurrency
             );
         }
 
@@ -1173,7 +1180,7 @@ export class RefactorEngine {
 
                 return [metadataEdit.path, includeResultContent ? metadataEdit.content : ""] as const;
             },
-            APPLY_WORKSPACE_EDIT_IO_CONCURRENCY_LIMIT
+            ioConcurrency
         );
 
         for (const [filePath, content] of metadataResults) {
