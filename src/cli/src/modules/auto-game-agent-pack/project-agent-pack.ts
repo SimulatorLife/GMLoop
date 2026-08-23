@@ -254,7 +254,7 @@ function parseAgentPackReceipt(source: string, sourcePath: string): AgentPackRec
     try {
         parsed = JSON.parse(source);
     } catch (error) {
-        const reason = error instanceof Error ? error.message : String(error);
+        const reason = Core.isErrorLike(error) ? error.message : String(error);
         throw new TypeError(`${AGENT_PACK_NAME} receipt JSON is malformed (${reason}): ${sourcePath}`, {
             cause: error
         });

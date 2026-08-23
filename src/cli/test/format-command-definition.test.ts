@@ -19,7 +19,7 @@ void test("createFormatCommand help no longer documents extension overrides", ()
 
 void test("createFormatCommand does not expose the retired --ignored-directory-samples alias", () => {
     // The `--ignored-directory-samples` flag was a backwards-compatibility
-    // alias for `--ignored-directory-sample-limit`. The alias has been
+    // alias for `--skipped-directory-sample-limit`. The alias has been
     // removed in favour of the canonical long-term flag; reintroducing the
     // hidden alias registration would silently re-introduce a shadowed
     // option name that diverges from the public CLI surface documented in
@@ -32,6 +32,37 @@ void test("createFormatCommand does not expose the retired --ignored-directory-s
 
     const helpText = command.helpInformation();
     assert.doesNotMatch(helpText, /--ignored-directory-samples/u);
+});
+
+void test("createFormatCommand does not expose the retired --ignored-directory-sample-limit flag", () => {
+    // The `--ignored-directory-sample-limit` flag was a pre-rename spelling
+    // of the canonical `--skipped-directory-sample-limit` flag. The legacy
+    // spelling has been retired in favour of the canonical long-term flag;
+    // reintroducing it would silently re-introduce a parallel path that
+    // diverges from the public CLI surface documented in the help output
+    // above. (target-state.md §3.2 — no backwards-compat shims; the
+    // canonical flag is the single source of truth.)
+    const command = createFormatCommand();
+
+    const hasLegacyOption = command.options.some((option) => option.long === "--ignored-directory-sample-limit");
+    assert.equal(hasLegacyOption, false);
+
+    const helpText = command.helpInformation();
+    assert.doesNotMatch(helpText, /--ignored-directory-sample-limit/u);
+});
+
+void test("createFormatCommand exposes the canonical --skipped-directory-sample-limit flag", () => {
+    // The canonical option key reads `skippedDirectorySampleLimit` from the
+    // Commander option bag, matching every internal helper and the
+    // `skippedDirectorySummary` summary type. The CLI flag should use the
+    // same `skipped-` prefix instead of the legacy `ignored-` spelling.
+    const command = createFormatCommand();
+
+    const hasCanonicalOption = command.options.some((option) => option.long === "--skipped-directory-sample-limit");
+    assert.equal(hasCanonicalOption, true);
+
+    const helpText = command.helpInformation();
+    assert.match(helpText, /--skipped-directory-sample-limit/u);
 });
 
 void test("createFormatCommand exposes shared --list and --verbose options", () => {

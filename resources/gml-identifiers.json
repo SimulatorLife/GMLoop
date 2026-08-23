@@ -3,7 +3,7 @@
     "manualRoot": "vendor/GameMaker-Manual",
     "packageName": null,
     "packageVersion": null,
-    "manualCommitHash": "64d6150700ac0caeaaa5fe9b4056b597c8de48e8"
+    "manualCommitHash": "120be6779f91ae5b974c961edb7cb7ee9e1fe600"
   },
   "identifiers": {
     "abs": {
@@ -11066,7 +11066,7 @@
             "type": "Real"
           },
           {
-            "description": "The size of the buffer area to compress (in bytes).",
+            "description": "The size of the buffer area to compress (in bytes). Use -1 to compress the entire buffer.",
             "name": "size",
             "type": "Real"
           }
@@ -19409,7 +19409,7 @@
           }
         ],
         "returnType": "Debug Control",
-        "signature": "dbg_button(label, ref[, width, height])"
+        "signature": "dbg_button(label, ref, [width], [height])"
       }
     },
     "dbg_checkbox": {
@@ -19554,7 +19554,7 @@
           }
         ],
         "returnType": "Debug Control",
-        "signature": "dbg_drop_down(ref_or_array, specifier[, label])"
+        "signature": "dbg_drop_down(ref_or_array, specifier, [label])"
       }
     },
     "dbg_get_gamepad_input": {
@@ -19622,7 +19622,7 @@
           }
         ],
         "returnType": "Debug Section Pointer",
-        "signature": "dbg_section(name [, open])"
+        "signature": "dbg_section(name, [open])"
       }
     },
     "dbg_section_delete": {
@@ -19767,7 +19767,7 @@
           }
         ],
         "returnType": "Debug Control",
-        "signature": "dbg_slider(ref_or_array, [minimum, maximum, label, step])"
+        "signature": "dbg_slider(ref_or_array, [minimum], [maximum], [label], [step])"
       }
     },
     "dbg_slider_int": {
@@ -19812,7 +19812,7 @@
           }
         ],
         "returnType": "Debug Control",
-        "signature": "dbg_slider_int(ref_or_array, [minimum, maximum, label, step])"
+        "signature": "dbg_slider_int(ref_or_array, [minimum], [maximum], [label], [step])"
       }
     },
     "dbg_sprite": {
@@ -19857,7 +19857,7 @@
           }
         ],
         "returnType": "Debug Control",
-        "signature": "dbg_sprite(sprite_ref_or_array, image_index_ref_or_array, [label, width, height])"
+        "signature": "dbg_sprite(sprite_ref_or_array, image_index_ref_or_array, [label], [width], [height])"
       }
     },
     "dbg_sprite_button": {
@@ -19922,7 +19922,7 @@
           }
         ],
         "returnType": "Debug Control",
-        "signature": "dbg_sprite_button(ref, ref_sprite, ref_sprite_index[, width, height, xoffset, yoffset, width_sprite, height_sprite])"
+        "signature": "dbg_sprite_button(ref, ref_sprite, ref_sprite_index, [width], [height], [xoffset], [yoffset], [width_sprite], [height_sprite])"
       }
     },
     "dbg_text": {
@@ -19982,7 +19982,7 @@
           }
         ],
         "returnType": "Debug Control",
-        "signature": "dbg_text_input(ref_or_array, [label, type])"
+        "signature": "dbg_text_input(ref_or_array, [label], [type])"
       }
     },
     "dbg_text_separator": {
@@ -20062,7 +20062,7 @@
           }
         ],
         "returnType": "Debug View Pointer",
-        "signature": "dbg_view(name, visible[, x, y, width, height])"
+        "signature": "dbg_view(name, visible, [x], [y], [width], [height])"
       }
     },
     "dbg_view_delete": {
@@ -27988,7 +27988,7 @@
           }
         ],
         "returnType": "N/A",
-        "signature": "ds_grid_read(index, string [, legacy])"
+        "signature": "ds_grid_read(index, string, [legacy])"
       }
     },
     "ds_grid_resize": {
@@ -28320,7 +28320,7 @@
           }
         ],
         "returnType": "MP Grid ID",
-        "signature": "ds_grid_to_mp_grid(ds_grid, mp_grid[, func])"
+        "signature": "ds_grid_to_mp_grid(ds_grid, mp_grid, [func])"
       }
     },
     "ds_grid_value_disk_exists": {
@@ -29128,7 +29128,7 @@
           }
         ],
         "returnType": "N/A",
-        "signature": "ds_list_read(id, str [, legacy])"
+        "signature": "ds_list_read(id, str, [legacy])"
       }
     },
     "ds_list_replace": {
@@ -30965,7 +30965,7 @@
           }
         ],
         "returnType": "N/A",
-        "signature": "ds_queue_read(id, str [, legacy])"
+        "signature": "ds_queue_read(id, str, [legacy])"
       }
     },
     "ds_queue_size": {
@@ -31309,7 +31309,7 @@
           }
         ],
         "returnType": "N/A",
-        "signature": "ds_stack_read(id, str [, legacy])"
+        "signature": "ds_stack_read(id, str, [legacy])"
       }
     },
     "ds_stack_size": {
@@ -56564,7 +56564,7 @@
           }
         ],
         "returnType": "N/A",
-        "signature": "instance_destroy([id, execute_event_flag])"
+        "signature": "instance_destroy([id], [execute_event_flag])"
       }
     },
     "instance_exists": {
@@ -56776,7 +56776,7 @@
       "deprecated": false,
       "legacyUsage": "call",
       "hover": {
-        "description": "With this function you can check a position for a collision with another instance or all instances of an object using the collision mask of the instance that runs the code for the check. When you use this you are effectively asking GameMaker to move the instance to the new position, check for a collision, move back and tell you if a collision was found or not.",
+        "description": "With this function you can check a position for a collision with another instance or all instances of an object using the collision mask of the instance that runs the code for the check.",
         "parameters": [
           {
             "description": "The x position to check for instances.",
@@ -80758,7 +80758,7 @@
           }
         ],
         "returnType": "Reference",
-        "signature": "ref_create(dbgrefOrStruct, dbgrefOrIndex[, index])"
+        "signature": "ref_create(dbgrefOrStruct, dbgrefOrIndex, [index])"
       }
     },
     "repeat": {
@@ -80921,7 +80921,7 @@
           }
         ],
         "returnType": "N/A",
-        "signature": "rollback_create_game(num_players, [enable_sync_test, region])"
+        "signature": "rollback_create_game(num_players, [enable_sync_test], [region])"
       }
     },
     "rollback_current_frame": {
@@ -83211,7 +83211,7 @@
           }
         ],
         "returnType": "N/A",
-        "signature": "shader_set_uniform_f(handle, value1 [, value2, value3, value4])"
+        "signature": "shader_set_uniform_f(handle, value1, [value2, value3, value4])"
       }
     },
     "shader_set_uniform_f_array": {
@@ -83313,7 +83313,7 @@
           }
         ],
         "returnType": "N/A",
-        "signature": "shader_set_uniform_i(handle, value1 [, value2, value3, value4])"
+        "signature": "shader_set_uniform_i(handle, value1, [value2, value3, value4])"
       }
     },
     "shader_set_uniform_i_array": {
@@ -91549,7 +91549,7 @@
           }
         ],
         "returnType": "N/A",
-        "signature": "texturegroup_set_mode(explicit, [debug=false, default_sprite=-1])"
+        "signature": "texturegroup_set_mode(explicit, [debug=false], [default_sprite=-1])"
       }
     },
     "texturegroup_unload": {
@@ -93513,7 +93513,7 @@
           }
         ],
         "returnType": "Time Source",
-        "signature": "time_source_create(parent, period, units, callback, [args, repetitions, expiry_type])"
+        "signature": "time_source_create(parent, period, units, callback, [args], [repetitions], [expiry_type])"
       }
     },
     "time_source_destroy": {
@@ -96258,218 +96258,6 @@
       "legacyCategory": "3rd Party Support",
       "legacyUsage": "call"
     },
-    "uwp_check_privilege": {
-      "type": "function",
-      "sources": [
-        "manual:pages"
-      ],
-      "tags": [
-        "uwp_check_privilege"
-      ],
-      "manualPath": "GameMaker_Language/GML_Reference/UWP_And_XBox_Live/uwp_check_privilege.htm",
-      "manualUrl": "https://manual.gamemaker.io/monthly/en/#t=GameMaker_Language%2FGML_Reference%2FUWP_And_XBox_Live%2Fuwp_check_privilege.htm&rhsearch=uwp_check_privilege&rhhlterm=uwp_check_privilege",
-      "deprecated": false,
-      "legacyUsage": "call",
-      "hover": {
-        "description": "With this function you can check that a given user has a chosen privilege. The function will return true or false in the System Asynchronous Event depending on whether the privilege is enabled or not, and if you set the attempt_resolution argument to true and the privilege isn't enabled, it will also open a system dialog (suspending the game) to prompt the user to upgrade the account or whatever is required to get the privilege. If the user then enables the required option, the function will return true.",
-        "parameters": [
-          {
-            "description": "The User ID pointer to check.",
-            "name": "user_id",
-            "type": "Xbox User ID"
-          },
-          {
-            "description": "The privilege constant to check (see description, above).",
-            "name": "privilege",
-            "type": "UWP Privilege Constant"
-          },
-          {
-            "description": "Enable attempting a resolution if set to true, or ignore if set to false.",
-            "name": "attempt_resolution",
-            "type": "Boolean"
-          }
-        ],
-        "returnType": "Real",
-        "signature": "uwp_check_privilege(user_id, privilege, attempt_resolution);"
-      }
-    },
-    "uwp_is_constrained": {
-      "type": "function",
-      "sources": [
-        "manual:pages"
-      ],
-      "tags": [
-        "uwp_is_constrained"
-      ],
-      "manualPath": "GameMaker_Language/GML_Reference/UWP_And_XBox_Live/uwp_is_constrained.htm",
-      "manualUrl": "https://manual.gamemaker.io/monthly/en/#t=GameMaker_Language%2FGML_Reference%2FUWP_And_XBox_Live%2Fuwp_is_constrained.htm&rhsearch=uwp_is_constrained&rhhlterm=uwp_is_constrained",
-      "deprecated": false,
-      "legacyUsage": "call",
-      "hover": {
-        "description": "This function will return true if the game is running in a resource constrained mode or false if running normally. Resource constrained mode can be activated when the game doesn't have focus, and in this mode the game has reduced GPU resources. The response to this should normally be to pause the game (as the user no longer has control). Also, disabling any particularly taxing effects may be a good idea if slowdown is observed in this mode. Note that unlike the uwp_is_suspending() function, this function will return true continuously as long as the game is in constrained mode (and not just once when it first happens).",
-        "parameters": [],
-        "returnType": "Boolean",
-        "signature": "uwp_is_constrained();"
-      }
-    },
-    "uwp_is_suspending": {
-      "type": "function",
-      "sources": [
-        "manual:pages"
-      ],
-      "tags": [
-        "uwp_is_suspending"
-      ],
-      "manualPath": "GameMaker_Language/GML_Reference/UWP_And_XBox_Live/uwp_is_suspending.htm",
-      "manualUrl": "https://manual.gamemaker.io/monthly/en/#t=GameMaker_Language%2FGML_Reference%2FUWP_And_XBox_Live%2Fuwp_is_suspending.htm&rhsearch=uwp_is_suspending&rhhlterm=uwp_is_suspending",
-      "deprecated": false,
-      "legacyUsage": "call",
-      "hover": {
-        "description": "This function will return true for a single frame (and false otherwise) in a similar manner to os_is_paused(). The game then has one second to save the game state before it is potentially terminated by the system. Once the game has finished saving data it should call uwp_suspend() to suspend cleanly. The game should probably also enter a pause state so that if it is resumed by the system (if it hasn't been fully terminated) the player is not thrown straight back into a gameplay situation.",
-        "parameters": [],
-        "returnType": "Boolean",
-        "signature": "uwp_is_suspending();"
-      }
-    },
-    "uwp_license_trial_time_remaining": {
-      "type": "function",
-      "sources": [
-        "manual:pages"
-      ],
-      "tags": [
-        "uwp_license_trial_time_remaining"
-      ],
-      "manualPath": "GameMaker_Language/GML_Reference/UWP_And_XBox_Live/uwp_license_trial_time_remaining.htm",
-      "manualUrl": "https://manual.gamemaker.io/monthly/en/#t=GameMaker_Language%2FGML_Reference%2FUWP_And_XBox_Live%2Fuwp_license_trial_time_remaining.htm&rhsearch=uwp_license_trial_time_remaining&rhhlterm=uwp_license_trial_time_remaining",
-      "deprecated": false,
-      "legacyUsage": "call",
-      "hover": {
-        "description": "This function will return the approximate number of seconds until a time-based trial expires. The value returned by this function is meaningless if the trial is not time-based or if the game is not running in trial mode.",
-        "parameters": [],
-        "returnType": "Real",
-        "signature": "uwp_license_trial_time_remaining();"
-      }
-    },
-    "uwp_license_trial_user": {
-      "type": "function",
-      "sources": [
-        "manual:pages"
-      ],
-      "tags": [
-        "uwp_license_trial_user"
-      ],
-      "manualPath": "GameMaker_Language/GML_Reference/UWP_And_XBox_Live/uwp_license_trial_user.htm",
-      "manualUrl": "https://manual.gamemaker.io/monthly/en/#t=GameMaker_Language%2FGML_Reference%2FUWP_And_XBox_Live%2Fuwp_license_trial_user.htm&rhsearch=uwp_license_trial_user&rhhlterm=uwp_license_trial_user",
-      "deprecated": false,
-      "legacyUsage": "call",
-      "hover": {
-        "description": "This function will return the User ID pointer whose trial license is currently being used, or it will return pointer_null if the user is not currently active or if the game is not currently in trial mode.",
-        "parameters": [],
-        "returnType": "Xbox User ID",
-        "signature": "uwp_license_trial_user();"
-      }
-    },
-    "uwp_license_trial_version": {
-      "type": "function",
-      "sources": [
-        "manual:pages"
-      ],
-      "tags": [
-        "uwp_license_trial_version"
-      ],
-      "manualPath": "GameMaker_Language/GML_Reference/UWP_And_XBox_Live/uwp_license_trial_version.htm",
-      "manualUrl": "https://manual.gamemaker.io/monthly/en/#t=GameMaker_Language%2FGML_Reference%2FUWP_And_XBox_Live%2Fuwp_license_trial_version.htm&rhsearch=uwp_license_trial_version&rhhlterm=uwp_license_trial_version",
-      "deprecated": false,
-      "legacyUsage": "call",
-      "hover": {
-        "description": "This function can be used to check whether the game is under a trial licence or not. If it is the function will return true, or false otherwise.",
-        "parameters": [],
-        "returnType": "Boolean",
-        "signature": "uwp_license_trial_version();"
-      }
-    },
-    "uwp_show_help": {
-      "type": "function",
-      "sources": [
-        "manual:pages"
-      ],
-      "tags": [
-        "uwp_show_help"
-      ],
-      "manualPath": "GameMaker_Language/GML_Reference/UWP_And_XBox_Live/uwp_show_help.htm",
-      "manualUrl": "https://manual.gamemaker.io/monthly/en/#t=GameMaker_Language%2FGML_Reference%2FUWP_And_XBox_Live%2Fuwp_show_help.htm&rhsearch=uwp_show_help&rhhlterm=uwp_show_help",
-      "deprecated": false,
-      "legacyUsage": "call",
-      "hover": {
-        "description": "This function launches the Xbox One help app which will in-turn display your game's help file (which is an HTML format file that you have previously uploaded to the XBox Developer Portal). Note that a user ID is specified when calling this function so that the user's locale information can be used when displaying it. You can retrieve the user ID with the functions xboxlive_get_user(), xboxlive_get_activating_user(), or uwp_license_trial_user().",
-        "parameters": [
-          {
-            "description": "The User ID pointer to open the helpfile for.",
-            "name": "user_id",
-            "type": "Xbox User ID"
-          }
-        ],
-        "returnType": "Boolean",
-        "signature": "uwp_show_help(user_id);"
-      }
-    },
-    "uwp_suspend": {
-      "type": "function",
-      "sources": [
-        "manual:pages"
-      ],
-      "tags": [
-        "uwp_suspend"
-      ],
-      "manualPath": "GameMaker_Language/GML_Reference/UWP_And_XBox_Live/uwp_suspend.htm",
-      "manualUrl": "https://manual.gamemaker.io/monthly/en/#t=GameMaker_Language%2FGML_Reference%2FUWP_And_XBox_Live%2Fuwp_suspend.htm&rhsearch=uwp_suspend&rhhlterm=uwp_suspend",
-      "deprecated": false,
-      "legacyUsage": "call",
-      "hover": {
-        "description": "This function indicates to the system that the app has finished saving data following detection of a suspension request. Calling this function is a requirement for Xbox One submission, and it should always be used in conjunction with the function uwp_is_suspending(), as shown in the example below.",
-        "parameters": [],
-        "returnType": "N/A",
-        "signature": "uwp_suspend();"
-      }
-    },
-    "uwp_was_closed_by_user": {
-      "type": "function",
-      "sources": [
-        "manual:pages"
-      ],
-      "tags": [
-        "uwp_was_closed_by_user"
-      ],
-      "manualPath": "GameMaker_Language/GML_Reference/UWP_And_XBox_Live/uwp_was_closed_by_user.htm",
-      "manualUrl": "https://manual.gamemaker.io/monthly/en/#t=GameMaker_Language%2FGML_Reference%2FUWP_And_XBox_Live%2Fuwp_was_closed_by_user.htm&rhsearch=uwp_was_closed_by_user&rhhlterm=uwp_was_closed_by_user",
-      "deprecated": false,
-      "legacyUsage": "call",
-      "hover": {
-        "description": "With this function you can find out if the game was previously shut down by the user while playing (i.e. it, was terminated correctly and not by the system). If it has been then the function will return true, otherwise it will return false.",
-        "parameters": [],
-        "returnType": "Boolean",
-        "signature": "uwp_was_closed_by_user();"
-      }
-    },
-    "uwp_was_terminated": {
-      "type": "function",
-      "sources": [
-        "manual:pages"
-      ],
-      "tags": [
-        "uwp_was_terminated"
-      ],
-      "manualPath": "GameMaker_Language/GML_Reference/UWP_And_XBox_Live/uwp_was_terminated.htm",
-      "manualUrl": "https://manual.gamemaker.io/monthly/en/#t=GameMaker_Language%2FGML_Reference%2FUWP_And_XBox_Live%2Fuwp_was_terminated.htm&rhsearch=uwp_was_terminated&rhhlterm=uwp_was_terminated",
-      "deprecated": false,
-      "legacyUsage": "call",
-      "hover": {
-        "description": "With this function you can find out if the game was previously shut down by the system (i.e. it's not the first run of the game). If it has been then the function will return true, otherwise it will return false. An example of use would be to check it and see if the game was previously terminated by the system, and then (if it returns true) to load the previous stage that the player was at in the game. If targeting the XBox One then the required behavior of games if this is detected will be different between the different versions of the certification docs, so it's worth checking the latest version to see what the game should do.",
-        "parameters": [],
-        "returnType": "Boolean",
-        "signature": "uwp_was_terminated();"
-      }
-    },
     "var": {
       "type": "keyword",
       "sources": [
@@ -98326,7 +98114,7 @@
           }
         ],
         "returnType": "N/A",
-        "signature": "vertex_update_buffer_from_buffer(dest_vbuff, dest_offset, src_buffer[, src_offset, src_size])"
+        "signature": "vertex_update_buffer_from_buffer(dest_vbuff, dest_offset, src_buffer, [src_offset], [src_size])"
       }
     },
     "vertex_update_buffer_from_vertex": {
@@ -98371,7 +98159,7 @@
           }
         ],
         "returnType": "N/A",
-        "signature": "vertex_update_buffer_from_vertex(dest_vbuff, dest_vert, src_vbuff[, src_vert, src_vert_num])"
+        "signature": "vertex_update_buffer_from_vertex(dest_vbuff, dest_vert, src_vbuff, [src_vert], [src_vert_num])"
       }
     },
     "vertex_usage_binormal": {
@@ -105178,65 +104966,6 @@
       "tags": [],
       "deprecated": false
     },
-    "xboxlive_achievement_load_friends": {
-      "type": "function",
-      "sources": [
-        "manual:pages"
-      ],
-      "tags": [
-        "xboxlive_achievement_load_friends"
-      ],
-      "manualPath": "GameMaker_Language/GML_Reference/UWP_And_XBox_Live/Stats_And_Leaderboards/xboxlive_achievement_load_friends.htm",
-      "manualUrl": "https://manual.gamemaker.io/monthly/en/#t=GameMaker_Language%2FGML_Reference%2FUWP_And_XBox_Live%2FStats_And_Leaderboards%2Fxboxlive_achievement_load_friends.htm&rhsearch=xboxlive_achievement_load_friends&rhhlterm=xboxlive_achievement_load_friends",
-      "deprecated": false,
-      "legacyUsage": "call",
-      "hover": {
-        "description": "This function will send a request to the server for information on all the logged in users friends and will trigger a callback Social Asynchronous Event which contains the async_load map populated with the relevant key/value pairs. The id key of this DS Map is used to identify the correct callback (there can be more than one trigger function for any given asynchronous event), and will be paired with the constant xboxlive_achievement_friends_info as well as a number of other key/value pairs for each friend. The exact contents of the map are shown below:",
-        "parameters": [],
-        "returnType": "N/A",
-        "signature": "xboxlive_achievement_load_friends();"
-      }
-    },
-    "xboxlive_achievement_load_leaderboard": {
-      "type": "function",
-      "sources": [
-        "manual:pages"
-      ],
-      "tags": [
-        "xboxlive_achievement_load_leaderboard"
-      ],
-      "manualPath": "GameMaker_Language/GML_Reference/UWP_And_XBox_Live/Stats_And_Leaderboards/xboxlive_achievement_load_leaderboard.htm",
-      "manualUrl": "https://manual.gamemaker.io/monthly/en/#t=GameMaker_Language%2FGML_Reference%2FUWP_And_XBox_Live%2FStats_And_Leaderboards%2Fxboxlive_achievement_load_leaderboard.htm&rhsearch=xboxlive_achievement_load_leaderboard&rhhlterm=xboxlive_achievement_load_leaderboard",
-      "deprecated": false,
-      "legacyUsage": "call",
-      "hover": {
-        "description": "This function will send a request to the server for information on the given leaderboard. The leaderboard must have been created previously on the developer dashboard for your game and the ID given is that which you must supply as the first argument of the function. It will trigger a callback Social Asynchronous Event which contains the async_load map populated with the relevant key/value pairs. The id key of this DS Map is used to identify the correct callback (there can be more than one trigger function for any given asynchronous event), and will be paired with the constant xboxlive_achievement_leaderboard_info as well as a number of other key/value pairs for each player. The exact contents of the map are shown below:",
-        "parameters": [
-          {
-            "description": "The unique ID of the leaderboard as shown on the developer dashboard.",
-            "name": "ident",
-            "type": "String"
-          },
-          {
-            "description": "The starting index value to get the leaderboard data from.",
-            "name": "minindex",
-            "type": "Real"
-          },
-          {
-            "description": "The maximum index value to get the leaderboard data from.",
-            "name": "maxindex",
-            "type": "Real"
-          },
-          {
-            "description": "Whether to filter the results to those that are on your friends list or to all players (see the Description above)",
-            "name": "filter",
-            "type": "Xbox Live Achievement Filter Constant"
-          }
-        ],
-        "returnType": "N/A",
-        "signature": "xboxlive_achievement_load_leaderboard(ident, minindex, maxindex, filter)"
-      }
-    },
     "xboxlive_achievement_show_achievement": {
       "type": "literal",
       "sources": [
@@ -105245,320 +104974,57 @@
       "tags": [],
       "deprecated": false
     },
-    "xboxlive_achievement_show_achievements": {
-      "type": "function",
-      "sources": [
-        "manual:pages"
-      ],
-      "tags": [
-        "xboxlive_achievement_show_achievements"
-      ],
-      "manualPath": "GameMaker_Language/GML_Reference/UWP_And_XBox_Live/Stats_And_Leaderboards/xboxlive_achievement_show_achievements.htm",
-      "manualUrl": "https://manual.gamemaker.io/monthly/en/#t=GameMaker_Language%2FGML_Reference%2FUWP_And_XBox_Live%2FStats_And_Leaderboards%2Fxboxlive_achievement_show_achievements.htm&rhsearch=xboxlive_achievement_show_achievements&rhhlterm=xboxlive_achievement_show_achievements",
-      "deprecated": false,
-      "legacyUsage": "call",
-      "hover": {
-        "description": "This function will open the achievements page for the chosen platform. Please note that this is an asynchronous function, ie: your game will continue to run in the background while the achievements page is being shown. As such, you should be careful where you use this and make sure to pause the game or only permit it to be shown in areas of your game where it will not interfere with the game-play.",
-        "parameters": [],
-        "returnType": "N/A",
-        "signature": "xboxlive_achievement_show_achievements()"
-      }
-    },
     "xboxlive_gamertag_for_user": {
-      "type": "function",
+      "type": "unknown",
       "sources": [
         "manual:ZeusDocs_keywords.json"
       ],
       "tags": [
         "xboxlive_gamertag_for_user"
       ],
-      "manualPath": "GameMaker_Language/GML_Reference/UWP_And_XBox_Live/Users_And_Accounts/xboxlive_gamertag_for_user.htm",
-      "manualUrl": "https://manual.gamemaker.io/monthly/en/#t=GameMaker_Language%2FGML_Reference%2FUWP_And_XBox_Live%2FUsers_And_Accounts%2Fxboxlive_gamertag_for_user.htm&rhsearch=xboxlive_gamertag_for_user&rhhlterm=xboxlive_gamertag_for_user",
+      "manualPath": "3_Scripting/4_GML_Reference/XBox_Live/xboxlive_gamertag_for_user",
+      "manualUrl": "https://manual.gamemaker.io/monthly/en/#t=Content.htm&rhsearch=xboxlive_gamertag_for_user&rhhlterm=xboxlive_gamertag_for_user",
       "deprecated": false,
-      "legacyUsage": "call",
-      "hover": {
-        "description": "This function will get the Gamer Tag for the currently signed-in user. Note that this function is only valid if a user is signed in and as such you should do a check for this using the function xboxlive_user_is_signed_in() before requesting the Gamer Tag. If you call this function when no user is signed in you will get an empty string\"\" returned.",
-        "parameters": [],
-        "returnType": "",
-        "signature": "xboxlive_gamertag_for_user();"
-      }
-    },
-    "xboxlive_read_player_leaderboard": {
-      "type": "function",
-      "sources": [
-        "manual:pages"
-      ],
-      "tags": [
-        "xboxlive_read_player_leaderboard"
-      ],
-      "manualPath": "GameMaker_Language/GML_Reference/UWP_And_XBox_Live/Stats_And_Leaderboards/xboxlive_read_player_leaderboard.htm",
-      "manualUrl": "https://manual.gamemaker.io/monthly/en/#t=GameMaker_Language%2FGML_Reference%2FUWP_And_XBox_Live%2FStats_And_Leaderboards%2Fxboxlive_read_player_leaderboard.htm&rhsearch=xboxlive_read_player_leaderboard&rhhlterm=xboxlive_read_player_leaderboard",
-      "deprecated": false,
-      "legacyUsage": "call",
-      "hover": {
-        "description": "The function will return leaderboard information for the given user name. The leaderboard must have been created previously on the XDP dashboard for your game, and callin the function will trigger a callback Social Asynchronous Event which contains the async_load map populated with the relevant key/value pairs. The \"id\" key of this DS map is used to identify the correct callback (there can be more than one trigger function for any given asynchronous event), and it will be paired with the constant xboxlive_achievement_leaderboard_info as well as a number of other key/value pairs. The exact contents of the map are shown below:",
-        "parameters": [
-          {
-            "description": "The name of the leaderboard to read, as set up on XDP.",
-            "name": "leaderboard_name",
-            "type": "String"
-          },
-          {
-            "description": "The ID of the user to read from.",
-            "name": "user_name",
-            "type": "Xbox User ID"
-          },
-          {
-            "description": "The number of items to retrieve.",
-            "name": "num_items",
-            "type": "Real"
-          },
-          {
-            "description": "One of the filter constants (see the description, above).",
-            "name": "friend_filter",
-            "type": "Xbox Live Achievement Filter Constant"
-          }
-        ],
-        "returnType": "Real",
-        "signature": "xboxlive_read_player_leaderboard(leaderboard_name, user_name, num_items, friend_filter);"
-      }
+      "legacyUsage": "identifier"
     },
     "xboxlive_show_account_picker": {
-      "type": "function",
+      "type": "unknown",
       "sources": [
         "manual:ZeusDocs_keywords.json"
       ],
       "tags": [
         "xboxlive_show_account_picker"
       ],
-      "manualPath": "GameMaker_Language/GML_Reference/UWP_And_XBox_Live/Users_And_Accounts/xboxlive_show_account_picker.htm",
-      "manualUrl": "https://manual.gamemaker.io/monthly/en/#t=GameMaker_Language%2FGML_Reference%2FUWP_And_XBox_Live%2FUsers_And_Accounts%2Fxboxlive_show_account_picker.htm&rhsearch=xboxlive_show_account_picker&rhhlterm=xboxlive_show_account_picker",
+      "manualPath": "3_Scripting/4_GML_Reference/XBox_Live/xboxlive_show_account_picker",
+      "manualUrl": "https://manual.gamemaker.io/monthly/en/#t=Content.htm&rhsearch=xboxlive_show_account_picker&rhhlterm=xboxlive_show_account_picker",
       "deprecated": false,
-      "legacyUsage": "call",
-      "hover": {
-        "description": "The function will open the XBox Account Picker screen so that the user can sign-in if they are not already signed in (if they are then the function will do nothing). Note that this function is only applicable when using the UWP build on PC and not Xbox, as to launch a game on Xbox the user has to have signed in already.",
-        "parameters": [],
-        "returnType": "",
-        "signature": "xboxlive_show_account_picker();"
-      }
-    },
-    "xboxlive_stats_add_user": {
-      "type": "function",
-      "sources": [
-        "manual:pages"
-      ],
-      "tags": [
-        "xboxlive_stats_add_user"
-      ],
-      "manualPath": "GameMaker_Language/GML_Reference/UWP_And_XBox_Live/Stats_And_Leaderboards/xboxlive_stats_add_user.htm",
-      "manualUrl": "https://manual.gamemaker.io/monthly/en/#t=GameMaker_Language%2FGML_Reference%2FUWP_And_XBox_Live%2FStats_And_Leaderboards%2Fxboxlive_stats_add_user.htm&rhsearch=xboxlive_stats_add_user&rhhlterm=xboxlive_stats_add_user",
-      "deprecated": false,
-      "legacyUsage": "call",
-      "hover": {
-        "description": "This function can be used to add a given user ID pointer to the statistics manager. This must be done before using any of the other stats functions to automatically sync the game with the XBox Live server and retrieve the latest values. You supply the user ID as returned by (for example) the function xboxlive_get_user(), and the function will will return -1 if there was an error or if the user ID is invalid, or any other value if the function was successfully called.",
-        "parameters": [
-          {
-            "description": "The user ID (a pointer) to add",
-            "name": "user_id",
-            "type": "Xbox User ID"
-          }
-        ],
-        "returnType": "Real",
-        "signature": "xboxlive_stats_add_user(user_id);"
-      }
-    },
-    "xboxlive_stats_flush_user": {
-      "type": "function",
-      "sources": [
-        "manual:pages"
-      ],
-      "tags": [
-        "xboxlive_stats_flush_user"
-      ],
-      "manualPath": "GameMaker_Language/GML_Reference/UWP_And_XBox_Live/Stats_And_Leaderboards/xboxlive_stats_flush_user.htm",
-      "manualUrl": "https://manual.gamemaker.io/monthly/en/#t=GameMaker_Language%2FGML_Reference%2FUWP_And_XBox_Live%2FStats_And_Leaderboards%2Fxboxlive_stats_flush_user.htm&rhsearch=xboxlive_stats_flush_user&rhhlterm=xboxlive_stats_flush_user",
-      "deprecated": false,
-      "legacyUsage": "call",
-      "hover": {
-        "description": "This function can be used to flush the stats data for a given user from the statistics manager, to the live server, ensuring that the server is up to date with the current values. According to XBox documentation, developers should be careful not to call this too often as the XBox will rate-limit the requests, and the XBox OS will also automatically flush stats approximately every 5 minutes automatically anyway.",
-        "parameters": [
-          {
-            "description": "The user ID (a pointer) to use",
-            "name": "user_id",
-            "type": "Xbox User ID"
-          },
-          {
-            "description": "The prority value (0 or 1)",
-            "name": "priority",
-            "type": "Real"
-          }
-        ],
-        "returnType": "Real",
-        "signature": "xboxlive_stats_flush_user(user_id, priority);"
-      }
-    },
-    "xboxlive_stats_get_leaderboard": {
-      "type": "function",
-      "sources": [
-        "manual:pages"
-      ],
-      "tags": [
-        "xboxlive_stats_get_leaderboard"
-      ],
-      "manualPath": "GameMaker_Language/GML_Reference/UWP_And_XBox_Live/Stats_And_Leaderboards/xboxlive_stats_get_leaderboard.htm",
-      "manualUrl": "https://manual.gamemaker.io/monthly/en/#t=GameMaker_Language%2FGML_Reference%2FUWP_And_XBox_Live%2FStats_And_Leaderboards%2Fxboxlive_stats_get_leaderboard.htm&rhsearch=xboxlive_stats_get_leaderboard&rhhlterm=xboxlive_stats_get_leaderboard",
-      "deprecated": false,
-      "legacyUsage": "call",
-      "hover": {
-        "description": "This function can be used to retrieve a global leaderboard of ranks for a given statistic. You supply the user ID (as returned, for example, by the function xboxlive_get_user()), the stat string (as defined when you registered it as a \"Featured Stat\"), and then you specify a number of details about what leaderboard information you want to retrieve. Note that you can only retrieve a global leaderboard for int or real stats, but not for string stats.",
-        "parameters": [
-          {
-            "description": "The user ID of the user to get the leaderboard for",
-            "name": "user_id",
-            "type": "Xbox User ID"
-          },
-          {
-            "description": "The stat (as a string) to create the global leaderboard from",
-            "name": "stat",
-            "type": "String"
-          },
-          {
-            "description": "The number of entries from the global leaderboard to retrieve",
-            "name": "num_entries",
-            "type": "Real"
-          },
-          {
-            "description": "The rank in the leaderboard to start from (use 0 if the \"start_at_user\" argument is set to true)",
-            "name": "start_rank",
-            "type": "Real"
-          },
-          {
-            "description": "Set to true to start at the user ID rank, false otherwise (set to false if the \"start_rank\" argument is anything other than 0)",
-            "name": "start_at_user",
-            "type": "Boolean"
-          },
-          {
-            "description": "Set to true for ascending order and false for descending order",
-            "name": "ascending",
-            "type": "Boolean"
-          }
-        ],
-        "returnType": "N/A",
-        "signature": "xboxlive_stats_get_leaderboard(user_id, stat, num_entries, start_rank, start_at_user, ascending);"
-      }
-    },
-    "xboxlive_stats_get_social_leaderboard": {
-      "type": "function",
-      "sources": [
-        "manual:pages"
-      ],
-      "tags": [
-        "xboxlive_stats_get_social_leaderboard"
-      ],
-      "manualPath": "GameMaker_Language/GML_Reference/UWP_And_XBox_Live/Stats_And_Leaderboards/xboxlive_stats_get_social_leaderboard.htm",
-      "manualUrl": "https://manual.gamemaker.io/monthly/en/#t=GameMaker_Language%2FGML_Reference%2FUWP_And_XBox_Live%2FStats_And_Leaderboards%2Fxboxlive_stats_get_social_leaderboard.htm&rhsearch=xboxlive_stats_get_social_leaderboard&rhhlterm=xboxlive_stats_get_social_leaderboard",
-      "deprecated": false,
-      "legacyUsage": "call",
-      "hover": {
-        "description": "This function can be used to retrieve a social leaderboard of ranks for a given statistic. You supply the user ID (as returned, for example, by the function xboxlive_get_user()), the stat string (as defined when you created it using the xboxlive_stats_set_stat_* functions), and then you specify a number of details about what leaderboard information you want to retrieve. Note that you can only retrieve a social leaderboard for int or real stats, but not for string stats, and that if you flag the \"favourites_only\" argument as true, then the results will only contain data for those friends that are marked by the user as \"favourites\".",
-        "parameters": [
-          {
-            "description": "The user ID of the user to get the leaderboard for",
-            "name": "user_id",
-            "type": "Xbox User ID"
-          },
-          {
-            "description": "The stat (as string) to create the global leaderboard from",
-            "name": "stat",
-            "type": "String"
-          },
-          {
-            "description": "The number of entries from the global leaderboard to retrieve",
-            "name": "num_entries",
-            "type": "Real"
-          },
-          {
-            "description": "The rank in the leaderboard to start from (use 0 if the \"start_at_user\" argument is set to true)",
-            "name": "start_rank",
-            "type": "Real"
-          },
-          {
-            "description": "Set to true to start at the user ID rank, false otherwise (set to false if the \"start_rank\" argument is anything other than 0)",
-            "name": "start_at_user",
-            "type": "Boolean"
-          },
-          {
-            "description": "Set to true to show only friends that are marked as \"favourites\" or false otherwise",
-            "name": "favourites_only",
-            "type": "Boolean"
-          }
-        ],
-        "returnType": "N/A",
-        "signature": "xboxlive_stats_get_social_leaderboard(user_id, stat, num_entries, start_rank, start_at_user, favourites_only);"
-      }
-    },
-    "xboxlive_stats_remove_user": {
-      "type": "function",
-      "sources": [
-        "manual:pages"
-      ],
-      "tags": [
-        "xboxlive_stats_remove_user"
-      ],
-      "manualPath": "GameMaker_Language/GML_Reference/UWP_And_XBox_Live/Stats_And_Leaderboards/xboxlive_stats_remove_user.htm",
-      "manualUrl": "https://manual.gamemaker.io/monthly/en/#t=GameMaker_Language%2FGML_Reference%2FUWP_And_XBox_Live%2FStats_And_Leaderboards%2Fxboxlive_stats_remove_user.htm&rhsearch=xboxlive_stats_remove_user&rhhlterm=xboxlive_stats_remove_user",
-      "deprecated": false,
-      "legacyUsage": "call",
-      "hover": {
-        "description": "This function can be used to remove (unregister) a given user from the statistics manager, performing a flush of the stat data to the live server. According to the XBox documentation the game does not have to remove the user from the stats manager, as the XBox OS will periodically flush the stats anyway. You supply the user ID as returned by (for example) the function xboxlive_get_user(), and the function will will return -1 if there was an error or if the user ID is invalid, or any other value if the function was successfully called.",
-        "parameters": [
-          {
-            "description": "The user ID (a pointer) to remove",
-            "name": "user_id",
-            "type": "Xbox User ID"
-          }
-        ],
-        "returnType": "Real",
-        "signature": "xboxlive_stats_remove_user(user_id);"
-      }
+      "legacyUsage": "identifier"
     },
     "xboxlive_user_is_signed_in": {
-      "type": "function",
+      "type": "unknown",
       "sources": [
         "manual:ZeusDocs_keywords.json"
       ],
       "tags": [
         "xboxlive_user_is_signed_in"
       ],
-      "manualPath": "GameMaker_Language/GML_Reference/UWP_And_XBox_Live/Users_And_Accounts/xboxlive_user_is_signed_in.htm",
-      "manualUrl": "https://manual.gamemaker.io/monthly/en/#t=GameMaker_Language%2FGML_Reference%2FUWP_And_XBox_Live%2FUsers_And_Accounts%2Fxboxlive_user_is_signed_in.htm&rhsearch=xboxlive_user_is_signed_in&rhhlterm=xboxlive_user_is_signed_in",
+      "manualPath": "3_Scripting/4_GML_Reference/XBox_Live/xboxlive_user_is_signed_in",
+      "manualUrl": "https://manual.gamemaker.io/monthly/en/#t=Content.htm&rhsearch=xboxlive_user_is_signed_in&rhhlterm=xboxlive_user_is_signed_in",
       "deprecated": false,
-      "legacyUsage": "call",
-      "hover": {
-        "description": "The function will check to see if a user is signed-in and return true if there is and false otherwise. If no user is signed in then you can call the function xboxlive_show_account_picker() to open the account picker and prompt them to sign-in.",
-        "parameters": [],
-        "returnType": "",
-        "signature": "xboxlive_user_is_signed_in();"
-      }
+      "legacyUsage": "identifier"
     },
     "xboxlive_user_is_signing_in": {
-      "type": "function",
+      "type": "unknown",
       "sources": [
         "manual:ZeusDocs_keywords.json"
       ],
       "tags": [
         "xboxlive_user_is_signing_in"
       ],
-      "manualPath": "GameMaker_Language/GML_Reference/UWP_And_XBox_Live/Users_And_Accounts/xboxlive_user_is_signing_in.htm",
-      "manualUrl": "https://manual.gamemaker.io/monthly/en/#t=GameMaker_Language%2FGML_Reference%2FUWP_And_XBox_Live%2FUsers_And_Accounts%2Fxboxlive_user_is_signing_in.htm&rhsearch=xboxlive_user_is_signing_in&rhhlterm=xboxlive_user_is_signing_in",
+      "manualPath": "3_Scripting/4_GML_Reference/XBox_Live/xboxlive_user_is_signing_in",
+      "manualUrl": "https://manual.gamemaker.io/monthly/en/#t=Content.htm&rhsearch=xboxlive_user_is_signing_in&rhhlterm=xboxlive_user_is_signing_in",
       "deprecated": false,
-      "legacyUsage": "call",
-      "hover": {
-        "description": "The function will check to see if a user is in the process of signing-in and return true if that is the case and false otherwise.",
-        "parameters": [],
-        "returnType": "",
-        "signature": "xboxlive_user_is_signing_in();"
-      }
+      "legacyUsage": "identifier"
     },
     "XInput": {
       "type": "unknown",
