@@ -51,6 +51,7 @@ import {
     getLspConnectionLogger,
     type GmlLanguageServerConnectionContract,
     hasLspConnectionShutdownHandler,
+    type LspConnectionOutbound,
     trySendSemanticTokenRefreshRequest
 } from "./lsp-connection-contract.js";
 
@@ -277,7 +278,7 @@ async function withRequestAbortSignal<Result>(
     }
 }
 
-function requestSemanticTokenRefresh(connection: GmlLanguageServerConnection): void {
+function requestSemanticTokenRefresh(connection: LspConnectionOutbound): void {
     // Capability probe (`trySendSemanticTokenRefreshRequest`) decides whether
     // the connection supports `sendRequest` at all. Clients that do not
     // advertise the semantic-tokens-refresh capability simply have the

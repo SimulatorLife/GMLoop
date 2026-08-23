@@ -2,10 +2,17 @@ export type {
     GmlLanguageServerConnectionContract,
     LspConnectionClient,
     LspConnectionDisposable,
+    LspConnectionInitialization,
     LspConnectionLanguages,
+    LspConnectionLifecycle,
     LspConnectionLogger,
     LspConnectionOptionalCapability,
+    LspConnectionOutbound,
     LspConnectionWorkspace,
+    LspDisplayConnection,
+    LspDocumentSyncConnection,
+    LspEditingConnection,
+    LspNavigationConnection,
     LspPublishDiagnostics,
     LspSendRequest
 } from "./src/index.js";
