@@ -60,6 +60,11 @@ export type GmlParserAdapter = (source: string) => unknown;
  * {@link Parser.GMLParser} defaults that the rest of the CLI's hot-reload
  * pipeline already uses, so swapping to this factory does not change
  * behaviour for any existing call site.
+ *
+ * Prediction-cache release thresholds inherit the parser workspace's
+ * canonical defaults; callers that need to tighten the release cadence for
+ * memory-constrained watch mode can override the relevant fields when
+ * constructing the adapter.
  */
 export const DEFAULT_PARSER_ADAPTER_OPTIONS: Readonly<ParserOptions> = Object.freeze({
     getComments: false,
@@ -71,6 +76,11 @@ export const DEFAULT_PARSER_ADAPTER_OPTIONS: Readonly<ParserOptions> = Object.fr
     // state retained across a project scan; the parser still falls back to LL when
     // SLL cannot decide a valid parse.
     sllPredictionMaxSourceLength: 1_000_000,
+    // CLI scans can iterate through hundreds of files; pair the relaxed SLL
+    // threshold above with a tighter prediction-cache release cadence so
+    // each long-running parse path keeps its memory bounded.
+    predictionCacheReleaseMaxSourceLength: 1_000_000,
+    predictionCacheReleaseInterval: 16,
     astFormat: "gml",
     asJSON: false
 });

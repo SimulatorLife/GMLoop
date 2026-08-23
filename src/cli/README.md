@@ -101,6 +101,7 @@ Normal format runs now keep output focused on results and diagnostics. Use `--li
 
 - `PRETTIER_PLUGIN_GML_LOG_LEVEL` - Default log level
 - `PRETTIER_PLUGIN_GML_ON_PARSE_ERROR` - Default parse error strategy
+- `PRETTIER_PLUGIN_GML_MAX_IN_MEMORY_SNAPSHOTS` - Upper bound for in-memory revert snapshots retained for `--on-parse-error=revert` (default: 50; set to `0` to disable enforcement and retain every snapshot until disk writes succeed again)
 
 ### `parse` - Parse GML Files to AST JSON
 

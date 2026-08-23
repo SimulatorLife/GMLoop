@@ -4,7 +4,7 @@ import test from "node:test";
 
 import { Core } from "@gmloop/core";
 
-import { Semantic } from "../../../index.js";
+import { createProjectService } from "../../../src/project-index/project-service/index.js";
 import { createProjectServiceWithBuilder } from "../../../src/project-index/project-service/project-service.js";
 import type { SemanticProjectIndexBuilder } from "../../../src/project-index/project-service/project-session.js";
 import type {
@@ -162,7 +162,7 @@ void test("project services deduplicate normalized roots and reopen closed sessi
     const fakeBuilder = createFakeBuilder();
     const service = createProjectServiceWithBuilder({}, fakeBuilder.builder);
     try {
-        assert.equal(typeof Semantic.createProjectService, "function");
+        assert.equal(typeof createProjectService, "function");
         const session = service.openProject(workspace.projectRoot);
         assert.equal(service.openProject(path.join(workspace.projectRoot, ".")), session);
         assert.deepEqual(Object.keys(session).toSorted(), [
