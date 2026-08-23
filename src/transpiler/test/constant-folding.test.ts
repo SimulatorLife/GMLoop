@@ -211,11 +211,20 @@ void test("constant folding: mixed-type boolean comparisons via table", () => {
         ["==", false, 0, true],
         ["!=", true, 0, true],
         ["!=", false, 1, true],
+        // Loose equality: number vs boolean (mirrored operands — confirms the
+        // single boolean-side branch handles both directions equivalently).
+        ["==", 1, true, true],
+        ["==", 0, false, true],
+        ["!=", 1, false, true],
+        ["!=", 0, true, true],
         // Strict equality: boolean vs number (type identity preserved)
         ["===", true, 1, false],
         ["===", false, 0, false],
         ["!==", true, 1, true],
         ["!==", false, 0, true],
+        // Strict equality: number vs boolean (mirrored operands)
+        ["===", 1, true, false],
+        ["!==", 1, true, true],
         // Loose equality: string boolean ("true"/"false") vs boolean literal
         ["==", "true", true, true],
         ["==", "false", false, true],
@@ -224,7 +233,8 @@ void test("constant folding: mixed-type boolean comparisons via table", () => {
         // Loose equality: string boolean vs number (string is not a number → no fold)
         ["==", "true", 1, null],
         // String that is not a boolean does not fold
-        ["==", "maybe", true, null]
+        ["==", "maybe", true, null],
+        ["==", true, "maybe", null]
     ];
 
     for (const [op, left, right, expected] of cases) {

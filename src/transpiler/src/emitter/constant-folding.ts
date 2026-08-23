@@ -118,42 +118,30 @@ function evaluateEqualityOperator(
         return isNegated ? !equal : equal;
     }
 
-    // Boolean-string: "true" == true, "false" == false (loose); types differ (strict).
-    // Return null (cannot fold) when the string is not "true" or "false".
-    if (typeof left === "string" && typeof right === "boolean") {
-        const normalized = normalizeStringToBoolean(left);
-        if (normalized !== null) {
-            const equal = normalized === right;
-            return isNegated ? !equal : equal;
-        }
-        return null;
-    }
-    if (typeof left === "boolean" && typeof right === "string") {
-        const normalized = normalizeStringToBoolean(right);
-        if (normalized !== null) {
-            const equal = left === normalized;
-            return isNegated ? !equal : equal;
-        }
-        return null;
-    }
+    // Identify the boolean operand (when present) so both operand orderings
+    // share a single branch per other-side type.
+    const booleanOperand = typeof left === "boolean" ? left : typeof right === "boolean" ? right : null;
+    const otherOperand = booleanOperand === null ? null : booleanOperand === left ? right : left;
 
-    // Boolean-number: in GML loose equality true == 1 and false == 0.
-    // Strict equality (===/!==) preserves type identity — always false/true respectively
-    // for mixed types since booleans and numbers are never equal. Loose equality
-    // (==/!=) coerces booleans to 1/0 before comparison.
-    if (typeof left === "boolean" && typeof right === "number") {
-        if (operator === "===" || operator === "!==") {
-            // Types differ, so === is false and !== is true.
-            return operator === "===" ? false : true;
+    // String + boolean: "true" == true, "false" == false (loose); strict equality
+    // returns null when the string is not "true" or "false".
+    if (otherOperand !== null && typeof otherOperand === "string") {
+        const normalized = normalizeStringToBoolean(otherOperand);
+        if (normalized === null) {
+            return null;
         }
-        const equal = (left ? 1 : 0) === right;
+        const equal = normalized === booleanOperand;
         return isNegated ? !equal : equal;
     }
-    if (typeof left === "number" && typeof right === "boolean") {
+
+    // Boolean + number: in GML loose equality true == 1 and false == 0. Strict
+    // equality (===/!==) preserves type identity — always false/true for mixed
+    // types since booleans and numbers are never equal.
+    if (otherOperand !== null && typeof otherOperand === "number") {
         if (operator === "===" || operator === "!==") {
             return operator === "===" ? false : true;
         }
-        const equal = left === (right ? 1 : 0);
+        const equal = (booleanOperand ? 1 : 0) === otherOperand;
         return isNegated ? !equal : equal;
     }
 
