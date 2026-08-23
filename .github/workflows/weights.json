@@ -39,7 +39,7 @@
     },
     {
       "name": "mini-max",
-      "weight": 5,
+      "weight": 0,
       "cadenceTicks": 1,
       "category": [
         "code"
@@ -48,7 +48,7 @@
     },
     {
       "name": "claude",
-      "weight": 2,
+      "weight": 0,
       "cadenceTicks": 2,
       "category": [
         "code",
