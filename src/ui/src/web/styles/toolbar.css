@@ -156,14 +156,17 @@
 
 .toolbar-docs-controls {
   display: flex;
-  flex-direction: column;
-  gap: var(--gm-space-sm);
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--gm-space-md);
   min-width: 0;
   flex: 1 1 360px;
-  max-width: 560px;
+  max-width: 720px;
 }
 
 .toolbar-docs-subtabs {
+  flex: 0 1 auto;
   flex-wrap: wrap;
   gap: var(--gm-space-2xs);
 }

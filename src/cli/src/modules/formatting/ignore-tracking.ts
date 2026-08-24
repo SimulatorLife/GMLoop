@@ -5,89 +5,51 @@ const { isNonEmptyString } = Core;
 /**
  * Tracks per-formatting-session ignore state: which ignore file paths have
  * already been registered, and whether any of them contained a negated
- * pattern (starting with `!`). Both flags are reset between formatting runs.
+ * pattern (starting with `!`). Both are reset between formatting runs.
  */
+const state = {
+    paths: new Set<string>(),
+    hasNegatedRules: false
+};
 
-const registeredIgnorePaths = new Set<string>();
-
-/**
- * Determine whether the provided path has already been registered.
- *
- * Guards against invalid input so callers can pass optional CLI values without
- * manually checking types.
- *
- * @param {string | null | undefined} ignorePath Candidate ignore path value.
- * @returns {boolean} `true` when the path has been seen before.
- */
+/** Determine whether the provided path has already been registered. */
 export function hasRegisteredIgnorePath(ignorePath: string | null | undefined): boolean {
-    if (!isNonEmptyString(ignorePath)) {
-        return false;
-    }
-    return registeredIgnorePaths.has(ignorePath);
+    return isNonEmptyString(ignorePath) && state.paths.has(ignorePath);
 }
 
-/**
- * Track a path that should be respected by CLI commands invoking Prettier.
- *
- * Invalid or empty values are ignored to keep registration call sites concise.
- *
- * @param {string | null | undefined} ignorePath Path to record as an active
- *        ignore entry.
- */
+/** Track a path that should be respected by CLI commands invoking Prettier. */
 export function registerIgnorePath(ignorePath: string | null | undefined): void {
-    if (!isNonEmptyString(ignorePath)) {
-        return;
+    if (isNonEmptyString(ignorePath)) {
+        state.paths.add(ignorePath);
     }
-    registeredIgnorePaths.add(ignorePath);
 }
 
-/**
- * Remove all previously registered ignore paths.
- */
+/** Remove all previously registered ignore paths. */
 export function resetRegisteredIgnorePaths(): void {
-    registeredIgnorePaths.clear();
+    state.paths.clear();
 }
 
-/**
- * Count the number of active ignore path registrations.
- *
- * @returns {number} Total registered ignore paths.
- */
+/** Count the number of active ignore path registrations. */
 export function getRegisteredIgnorePathCount(): number {
-    return registeredIgnorePaths.size;
+    return state.paths.size;
 }
 
-/**
- * Take a snapshot of the registered ignore paths.
- *
- * @returns {Array<string>} Ordered list of tracked paths.
- */
+/** Take a snapshot of the registered ignore paths, in registration order. */
 export function getRegisteredIgnorePathsSnapshot(): Array<string> {
-    return [...registeredIgnorePaths];
+    return [...state.paths];
 }
 
-let hasNegatedIgnoreRulesInternal = false;
-
-/**
- * Check if negated ignore rules have been detected.
- * @returns true if any ignore file contains a negated pattern (starting with !)
- */
+/** Check whether any registered ignore file contained a negated (`!`) pattern. */
 export function hasNegatedIgnoreRules(): boolean {
-    return hasNegatedIgnoreRulesInternal;
+    return state.hasNegatedRules;
 }
 
-/**
- * Reset the negated ignore rules flag.
- * Called during formatting session initialization.
- */
+/** Reset the negated-ignore-rules flag; called during session initialization. */
 export function resetNegatedIgnoreRulesFlag(): void {
-    hasNegatedIgnoreRulesInternal = false;
+    state.hasNegatedRules = false;
 }
 
-/**
- * Mark that negated ignore rules have been detected.
- * Called when scanning ignore files finds a pattern starting with !.
- */
+/** Mark that a scanned ignore file contained a negated (`!`) pattern. */
 export function markNegatedIgnoreRulesDetected(): void {
-    hasNegatedIgnoreRulesInternal = true;
+    state.hasNegatedRules = true;
 }
