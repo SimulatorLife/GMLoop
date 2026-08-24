@@ -120,10 +120,12 @@ type CommandOptionsRecord = Record<string, unknown>;
 /**
  * Extract the per-run sample-limit overrides from a raw options bag.
  *
- * Aliased option names are intentionally ignored so retired flags fall
- * back to the documented default rather than opting into an unsupported
- * override path. See the `ignoredDirectorySamples` regression test in
- * `test/format-command-options.test.ts` for the historical context.
+ * The sample-limit flags use the canonical `skippedDirectorySampleLimit` /
+ * `ignoredFileSampleLimit` / `unsupportedExtensionSampleLimit` option keys
+ * (derived from the public CLI flags). The collector intentionally names
+ * each lookup after the canonical long-term flag so retired flag names
+ * fall back to the documented default rather than silently opting into
+ * an unsupported override path.
  *
  * @param options Raw Commander option bag (`command.opts()`).
  * @returns Sample-limit triple with `undefined` for fields the caller did not set.
@@ -131,7 +133,7 @@ type CommandOptionsRecord = Record<string, unknown>;
 function resolveFormatCommandSampleLimits(options: CommandOptionsRecord): FormatCommandSampleLimits {
     const source = options ?? {};
     return {
-        skippedDirectorySampleLimit: (source.ignoredDirectorySampleLimit as number | undefined) ?? undefined,
+        skippedDirectorySampleLimit: (source.skippedDirectorySampleLimit as number | undefined) ?? undefined,
         ignoredFileSampleLimit: (source.ignoredFileSampleLimit as number | undefined) ?? undefined,
         unsupportedExtensionSampleLimit: (source.unsupportedExtensionSampleLimit as number | undefined) ?? undefined
     };
