@@ -202,6 +202,20 @@ void test("test case delete reports missing cases and removes persisted entries"
         ],
         cwd: projectRoot
     });
+    await runCliTestCommand({
+        argv: [
+            "test",
+            "case",
+            "create",
+            "scr_heal_player",
+            "caps_at_max_hp",
+            "--path",
+            projectPath,
+            "--write",
+            "--json"
+        ],
+        cwd: projectRoot
+    });
 
     const dryRunDelete = await runCliTestCommand({
         argv: ["test", "case", "delete", "scr_damage_enemy", "kills_enemy_at_zero_hp", "--path", projectPath, "--json"],
@@ -220,7 +234,7 @@ void test("test case delete reports missing cases and removes persisted entries"
         cwd: projectRoot
     });
     const listAfterDryRunPayload = JSON.parse(listAfterDryRun.stdout) as { payload: { count: number } };
-    assert.equal(listAfterDryRunPayload.payload.count, 1, "dry-run delete must not mutate the persisted manifest");
+    assert.equal(listAfterDryRunPayload.payload.count, 2, "dry-run delete must not mutate the persisted manifest");
 
     const apply = await runCliTestCommand({
         argv: [
@@ -245,6 +259,8 @@ void test("test case delete reports missing cases and removes persisted entries"
     assert.match(applyPayload.payload.manifestPath, /\.gmloop[\\/]test[\\/]cases\.json$/u);
 
     const manifestText = await readFile(applyPayload.payload.manifestPath, "utf8");
-    const manifest = JSON.parse(manifestText) as { cases: Array<unknown> };
-    assert.deepEqual(manifest.cases, []);
+    const manifest = JSON.parse(manifestText) as {
+        cases: Array<{ name: string; target: string }>;
+    };
+    assert.deepEqual(manifest.cases, [{ name: "caps_at_max_hp", target: "scr_heal_player" }]);
 });
