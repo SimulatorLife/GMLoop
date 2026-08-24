@@ -75,9 +75,11 @@ void test("auto-merge workflows keep narrowed golden fixture guard paths", async
         path.resolve(process.cwd(), ".github/workflows/auto-merge-agent.yml")
     ];
 
-    for (const workflowPath of workflowPaths) {
-        const source = await readFile(workflowPath, "utf8");
+    const workflowSources = await Promise.all(
+        workflowPaths.map(async (workflowPath) => readFile(workflowPath, "utf8"))
+    );
 
+    for (const source of workflowSources) {
         assert.match(source, /test\\\/fixtures\\\/plugin-integration\\\/.\*\\\.gml/u);
         assert.match(source, /src\\\/parser\\\/test\\\/input\\\/.\*\\\.gml/u);
         assert.match(source, /src\\\/lint\\\/test\\\/fixtures\\\/.\*\\\.gml/u);
