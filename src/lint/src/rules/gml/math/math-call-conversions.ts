@@ -14,7 +14,7 @@
  * pipeline via the `BINARY_SIMPLIFIERS` and `CALL_SIMPLIFIERS` arrays in
  * `math-traversal-normalization.ts`.
  */
-import { Core } from "@gmloop/core";
+import { Core, type GameMakerAstNode } from "@gmloop/core";
 
 import {
     createBinaryExpressionNode,
@@ -36,13 +36,27 @@ import { areNodesApproximatelyEquivalent, areNodesEquivalent, collectAdditionTer
 
 const { BINARY_EXPRESSION, IDENTIFIER, MEMBER_DOT_EXPRESSION, MEMBER_INDEX_EXPRESSION } = Core;
 
+type RepeatedFactor = {
+    firstIndex: number;
+    secondIndex: number;
+    operand: GameMakerAstNode;
+};
+
+type Difference = {
+    minuend: GameMakerAstNode;
+    subtrahend: GameMakerAstNode;
+};
+
 /**
  * Convert a multiplication where one operand appears more than once into a
  * `sqr(operand)` call, e.g. `a*a` → `sqr(a)`. When the product has extra
  * factors the surviving factors are kept and `sqr(operand)` is multiplied
  * against them, e.g. `a*a*b` → `b*sqr(a)`.
  */
-export function attemptConvertSquare(node: any, context: ConvertManualMathTransformOptions | null): boolean {
+export function attemptConvertSquare(
+    node: GameMakerAstNode,
+    context: ConvertManualMathTransformOptions | null
+): boolean {
     if (!Core.isBinaryOperator(node, "*") || Core.hasComment(node)) {
         return false;
     }
@@ -83,57 +97,67 @@ export function attemptConvertSquare(node: any, context: ConvertManualMathTransf
         return true;
     }
 
-    const factors: any[] = [];
-    if (collectProductOperands(node, factors)) {
-        for (let i = 0; i < factors.length; i++) {
-            for (let j = i + 1; j < factors.length; j++) {
-                const a = Core.unwrapParenthesizedExpression(factors[i]);
-                const b = Core.unwrapParenthesizedExpression(factors[j]);
-                if (a && b && areNodesEquivalent(a, b) && AST.isSafeOperand(a)) {
-                    const remainingFactors = factors.filter((_, idx) => idx !== i && idx !== j);
-                    const sqrNode = createCallExpressionNode("sqr", [Core.cloneAstNode(a)], node);
+    return attemptConvertSquaredProduct(node);
+}
 
-                    if (remainingFactors.length === 0) {
-                        mutateToCallExpression(node, "sqr", [Core.cloneAstNode(a)], node);
-                        return true;
-                    }
+function attemptConvertSquaredProduct(node: GameMakerAstNode): boolean {
+    const factors: unknown[] = [];
+    if (!collectProductOperands(node, factors)) {
+        return false;
+    }
 
-                    let product = Core.cloneAstNode(remainingFactors[0]);
-                    for (let k = 1; k < remainingFactors.length; k++) {
-                        product = createBinaryExpressionNode(
-                            "*",
-                            product,
-                            Core.cloneAstNode(remainingFactors[k]),
-                            node
-                        );
-                    }
-                    const result = createBinaryExpressionNode("*", product, sqrNode, node);
+    const repeatedFactor = findRepeatedProductFactor(factors);
+    if (!repeatedFactor) {
+        return false;
+    }
 
-                    replaceNode(node, result);
-                    return true;
-                }
+    const remainingFactors = factors.filter(
+        (_, index) => index !== repeatedFactor.firstIndex && index !== repeatedFactor.secondIndex
+    );
+    const squareNode = createCallExpressionNode("sqr", [Core.cloneAstNode(repeatedFactor.operand)], node);
+
+    if (remainingFactors.length === 0) {
+        mutateToCallExpression(node, "sqr", [Core.cloneAstNode(repeatedFactor.operand)], node);
+        return true;
+    }
+
+    let product = Core.cloneAstNode(remainingFactors[0]);
+    for (let index = 1; index < remainingFactors.length; index += 1) {
+        product = createBinaryExpressionNode("*", product, Core.cloneAstNode(remainingFactors[index]), node);
+    }
+
+    replaceNode(node, createBinaryExpressionNode("*", product, squareNode, node));
+    return true;
+}
+
+function findRepeatedProductFactor(factors: readonly unknown[]): RepeatedFactor | null {
+    for (let firstIndex = 0; firstIndex < factors.length; firstIndex += 1) {
+        for (let secondIndex = firstIndex + 1; secondIndex < factors.length; secondIndex += 1) {
+            const first = Core.unwrapParenthesizedExpression(factors[firstIndex]);
+            const second = Core.unwrapParenthesizedExpression(factors[secondIndex]);
+            if (first && second && areNodesEquivalent(first, second) && AST.isSafeOperand(first)) {
+                return { firstIndex, secondIndex, operand: first };
             }
         }
     }
 
-    return false;
+    return null;
 }
 
 /**
  * Convert a chain of identical factors into a `power(base, count)` call,
  * e.g. `a*a*a` → `power(a, 3)`.
  */
-export function attemptConvertRepeatedPower(node: any, context: ConvertManualMathTransformOptions | null): boolean {
+export function attemptConvertRepeatedPower(
+    node: GameMakerAstNode,
+    context: ConvertManualMathTransformOptions | null
+): boolean {
     if (!Core.isBinaryOperator(node, "*") || Core.hasComment(node)) {
         return false;
     }
 
-    const factors: any[] = [];
-    if (!collectProductOperands(node, factors)) {
-        return false;
-    }
-
-    if (factors.length <= 2) {
+    const factors: unknown[] = [];
+    if (!collectProductOperands(node, factors) || factors.length <= 2) {
         return false;
     }
 
@@ -142,9 +166,9 @@ export function attemptConvertRepeatedPower(node: any, context: ConvertManualMat
         return false;
     }
 
-    for (let index = 1; index < factors.length; index += 1) {
-        const operand = Core.unwrapParenthesizedExpression(factors[index]);
-        if (!areNodesEquivalent(base, operand)) {
+    for (const factor of factors) {
+        const operand = Core.unwrapParenthesizedExpression(factor);
+        if (!operand || !areNodesEquivalent(base, operand)) {
             return false;
         }
     }
@@ -158,7 +182,7 @@ export function attemptConvertRepeatedPower(node: any, context: ConvertManualMat
 /**
  * Convert `(a + b) / 2` or `(a + b) * 0.5` patterns into `mean(a, b)`.
  */
-export function attemptConvertMean(node: any, context: ConvertManualMathTransformOptions | null): boolean {
+export function attemptConvertMean(node: GameMakerAstNode, context: ConvertManualMathTransformOptions | null): boolean {
     if (Core.hasComment(node)) {
         return false;
     }
@@ -169,8 +193,8 @@ export function attemptConvertMean(node: any, context: ConvertManualMathTransfor
         return false;
     }
 
-    let addition;
-    let divisor;
+    let addition: GameMakerAstNode | null | undefined;
+    let divisor: GameMakerAstNode | null | undefined;
 
     if (expression.operator === "/") {
         addition = Core.unwrapParenthesizedExpression(expression.left);
@@ -198,11 +222,7 @@ export function attemptConvertMean(node: any, context: ConvertManualMathTransfor
         return false;
     }
 
-    if (Core.hasComment(addition)) {
-        return false;
-    }
-
-    if (addition.operator !== "+") {
+    if (Core.hasComment(addition) || addition.operator !== "+") {
         return false;
     }
 
@@ -221,7 +241,7 @@ export function attemptConvertMean(node: any, context: ConvertManualMathTransfor
 /**
  * Convert `ln(x) / ln(2)` patterns into `log2(x)`.
  */
-export function attemptConvertLog2(node: any, context: ConvertManualMathTransformOptions | null): boolean {
+export function attemptConvertLog2(node: GameMakerAstNode, context: ConvertManualMathTransformOptions | null): boolean {
     if (!Core.isBinaryOperator(node, "/") || Core.hasComment(node)) {
         return false;
     }
@@ -229,22 +249,22 @@ export function attemptConvertLog2(node: any, context: ConvertManualMathTransfor
     const numerator = Core.unwrapParenthesizedExpression(node.left);
     const denominator = Core.unwrapParenthesizedExpression(node.right);
 
-    if (!isLnCall(numerator) || !isLnCall(denominator)) {
+    if (!numerator || !denominator || !isLnCall(numerator) || !isLnCall(denominator)) {
         return false;
     }
 
-    const [numeratorArg] = numerator.arguments;
-    const [denominatorArg] = denominator.arguments;
+    const [numeratorArgument] = Core.getCallExpressionArguments(numerator);
+    const [denominatorArgument] = Core.getCallExpressionArguments(denominator);
 
-    if (!numeratorArg || !denominatorArg) {
+    if (!numeratorArgument || !denominatorArgument) {
         return false;
     }
 
-    if (!isLiteralNumber(denominatorArg, 2)) {
+    if (!isLiteralNumber(denominatorArgument, 2)) {
         return false;
     }
 
-    mutateToCallExpression(node, "log2", [Core.cloneAstNode(numeratorArg)], node);
+    mutateToCallExpression(node, "log2", [Core.cloneAstNode(numeratorArgument)], node);
     AST.unwrapEnclosingParentheses(node, context);
     return true;
 }
@@ -253,36 +273,35 @@ export function attemptConvertLog2(node: any, context: ConvertManualMathTransfor
  * Convert a sum of pairwise multiplications of vector operands into
  * `dot_product(…)` or `dot_product_3d(…)`.
  */
-export function attemptConvertDotProducts(node: any, context: ConvertManualMathTransformOptions | null): boolean {
+export function attemptConvertDotProducts(
+    node: GameMakerAstNode,
+    context: ConvertManualMathTransformOptions | null
+): boolean {
     if (!Core.isBinaryOperator(node, "+") || Core.hasComment(node)) {
         return false;
     }
 
-    const terms: any[] = [];
+    const terms: unknown[] = [];
     collectAdditionTerms(node, terms);
 
     if (terms.length !== 2 && terms.length !== 3) {
         return false;
     }
 
-    const leftVector: any[] = [];
-    const rightVector: any[] = [];
+    const leftVector: unknown[] = [];
+    const rightVector: unknown[] = [];
 
     for (const term of terms) {
-        const expr = Core.unwrapParenthesizedExpression(term);
+        const expression = Core.unwrapParenthesizedExpression(term);
 
-        if (!Core.isBinaryOperator(expr, "*") || Core.hasComment(expr)) {
+        if (!expression || !Core.isBinaryOperator(expression, "*") || Core.hasComment(expression)) {
             return false;
         }
 
-        const left = Core.unwrapParenthesizedExpression(expr.left);
-        const right = Core.unwrapParenthesizedExpression(expr.right);
+        const left = Core.unwrapParenthesizedExpression(expression.left);
+        const right = Core.unwrapParenthesizedExpression(expression.right);
 
-        if (!left || !right) {
-            return false;
-        }
-
-        if (!isDotProductOperandCandidate(left) || !isDotProductOperandCandidate(right)) {
+        if (!left || !right || !isDotProductOperandCandidate(left) || !isDotProductOperandCandidate(right)) {
             return false;
         }
 
@@ -301,7 +320,7 @@ export function attemptConvertDotProducts(node: any, context: ConvertManualMathT
  * True when `node` is an operand that can appear inside a `dot_product(…)`
  * call (a plain identifier or a member access on an array/struct).
  */
-export function isDotProductOperandCandidate(node: any): boolean {
+export function isDotProductOperandCandidate(node: GameMakerAstNode | null | undefined): boolean {
     if (!node || Core.hasComment(node)) {
         return false;
     }
@@ -313,15 +332,23 @@ export function isDotProductOperandCandidate(node: any): boolean {
  * Convert `sqrt((ax-bx)^2 + (ay-by)^2)` or `power((ax-bx)^2 + (ay-by)^2, 0.5)`
  * patterns into `point_distance(…)` or `point_distance_3d(…)`.
  */
-export function attemptConvertPointDistanceCall(node: any, context: ConvertManualMathTransformOptions | null): boolean {
+export function attemptConvertPointDistanceCall(
+    node: GameMakerAstNode,
+    context: ConvertManualMathTransformOptions | null
+): boolean {
     if (Core.hasComment(node)) {
         return false;
     }
 
-    const calleeName = Core.getUnwrappedIdentifierName(node.object);
-    const callArguments = Core.getCallExpressionArguments(node);
+    const object = node.object;
+    if (!Core.isNode(object)) {
+        return false;
+    }
 
-    let distanceExpression;
+    const calleeName = Core.getUnwrappedIdentifierName(object);
+    const callArguments = Core.getCallExpressionArguments(node);
+    let distanceExpression: GameMakerAstNode | null | undefined;
+
     if (calleeName === "sqrt") {
         if (callArguments.length !== 1) {
             return false;
@@ -348,17 +375,17 @@ export function attemptConvertPointDistanceCall(node: any, context: ConvertManua
         return false;
     }
 
-    const args: any[] = [];
+    const argumentsList: unknown[] = [];
     for (const difference of match) {
-        args.push(Core.cloneAstNode(difference.subtrahend));
+        argumentsList.push(Core.cloneAstNode(difference.subtrahend));
     }
     for (const difference of match) {
-        args.push(Core.cloneAstNode(difference.minuend));
+        argumentsList.push(Core.cloneAstNode(difference.minuend));
     }
 
     const functionName = match.length === 2 ? "point_distance" : "point_distance_3d";
 
-    mutateToCallExpression(node, functionName, args, node);
+    mutateToCallExpression(node, functionName, argumentsList, node);
     AST.unwrapEnclosingParentheses(node, context);
     return true;
 }
@@ -366,13 +393,16 @@ export function attemptConvertPointDistanceCall(node: any, context: ConvertManua
 /**
  * Convert `power(x, 0.5)` into `sqrt(x)`.
  */
-export function attemptConvertPowerToSqrt(node: any, context: ConvertManualMathTransformOptions | null): boolean {
+export function attemptConvertPowerToSqrt(
+    node: GameMakerAstNode,
+    context: ConvertManualMathTransformOptions | null
+): boolean {
     if (Core.hasComment(node)) {
         return false;
     }
 
-    const calleeName = Core.getUnwrappedIdentifierName(node.object);
-    if (calleeName !== "power") {
+    const object = node.object;
+    if (!Core.isNode(object) || Core.getUnwrappedIdentifierName(object) !== "power") {
         return false;
     }
 
@@ -386,7 +416,12 @@ export function attemptConvertPowerToSqrt(node: any, context: ConvertManualMathT
         return false;
     }
 
-    mutateToCallExpression(node, "sqrt", [Core.cloneAstNode(args[0])], node);
+    const argument = args[0];
+    if (!argument) {
+        return false;
+    }
+
+    mutateToCallExpression(node, "sqrt", [Core.cloneAstNode(argument)], node);
     AST.unwrapEnclosingParentheses(node, context);
     return true;
 }
@@ -394,13 +429,16 @@ export function attemptConvertPowerToSqrt(node: any, context: ConvertManualMathT
 /**
  * Convert `power(e, x)` patterns into `exp(x)`.
  */
-export function attemptConvertPowerToExp(node: any, context: ConvertManualMathTransformOptions | null): boolean {
+export function attemptConvertPowerToExp(
+    node: GameMakerAstNode,
+    context: ConvertManualMathTransformOptions | null
+): boolean {
     if (Core.hasComment(node)) {
         return false;
     }
 
-    const calleeName = Core.getUnwrappedIdentifierName(node.object);
-    if (calleeName !== "power") {
+    const object = node.object;
+    if (!Core.isNode(object) || Core.getUnwrappedIdentifierName(object) !== "power") {
         return false;
     }
 
@@ -411,8 +449,7 @@ export function attemptConvertPowerToExp(node: any, context: ConvertManualMathTr
 
     const base = Core.unwrapParenthesizedExpression(args[0]);
     const exponent = args[1];
-
-    if (!isEulerLiteral(base)) {
+    if (!base || !exponent || !isEulerLiteral(base)) {
         return false;
     }
 
@@ -425,13 +462,16 @@ export function attemptConvertPowerToExp(node: any, context: ConvertManualMathTr
  * Convert `arctan2(dy, dx)` where each argument is a subtraction into
  * `point_direction(x1, y1, x2, y2)`.
  */
-export function attemptConvertPointDirection(node: any, context: ConvertManualMathTransformOptions | null): boolean {
+export function attemptConvertPointDirection(
+    node: GameMakerAstNode,
+    context: ConvertManualMathTransformOptions | null
+): boolean {
     if (Core.hasComment(node)) {
         return false;
     }
 
-    const calleeName = Core.getUnwrappedIdentifierName(node.object);
-    if (calleeName !== "arctan2") {
+    const object = node.object;
+    if (!Core.isNode(object) || Core.getUnwrappedIdentifierName(object) !== "arctan2") {
         return false;
     }
 
@@ -442,11 +482,10 @@ export function attemptConvertPointDirection(node: any, context: ConvertManualMa
 
     const dy = Core.unwrapParenthesizedExpression(args[0]);
     const dx = Core.unwrapParenthesizedExpression(args[1]);
+    const dyDifference = matchDifference(dy);
+    const dxDifference = matchDifference(dx);
 
-    const dyDiff = matchDifference(dy);
-    const dxDiff = matchDifference(dx);
-
-    if (!dyDiff || !dxDiff) {
+    if (!dyDifference || !dxDifference) {
         return false;
     }
 
@@ -454,10 +493,10 @@ export function attemptConvertPointDirection(node: any, context: ConvertManualMa
         node,
         "point_direction",
         [
-            Core.cloneAstNode(dxDiff.subtrahend),
-            Core.cloneAstNode(dyDiff.subtrahend),
-            Core.cloneAstNode(dxDiff.minuend),
-            Core.cloneAstNode(dyDiff.minuend)
+            Core.cloneAstNode(dxDifference.subtrahend),
+            Core.cloneAstNode(dyDifference.subtrahend),
+            Core.cloneAstNode(dxDifference.minuend),
+            Core.cloneAstNode(dyDifference.minuend)
         ],
         node
     );
@@ -470,19 +509,19 @@ export function attemptConvertPointDirection(node: any, context: ConvertManualMa
  * Returns an array of `{ minuend, subtrahend }` records (length 2 or 3) on
  * success, or `null` if the expression is not a Euclidean-distance-style sum.
  */
-export function matchSquaredDifferences(expression: any): Array<{ minuend: any; subtrahend: any }> | null {
-    const terms: any[] = [];
+export function matchSquaredDifferences(expression: GameMakerAstNode | null | undefined): Difference[] | null {
+    const terms: unknown[] = [];
     collectAdditionTerms(expression, terms);
 
     if (terms.length < 2 || terms.length > 3) {
         return null;
     }
 
-    const differences: Array<{ minuend: any; subtrahend: any }> = [];
+    const differences: Difference[] = [];
 
     for (const term of terms) {
         const product = Core.unwrapParenthesizedExpression(term);
-        if (!Core.isBinaryOperator(product, "*") || Core.hasComment(product)) {
+        if (!product || !Core.isBinaryOperator(product, "*") || Core.hasComment(product)) {
             return null;
         }
 
@@ -513,7 +552,7 @@ export function matchSquaredDifferences(expression: any): Array<{ minuend: any; 
  * `{ minuend, subtrahend }` operands, or `null` if the input is not a
  * parenthesised binary `-` node.
  */
-export function matchDifference(node: any): { minuend: any; subtrahend: any } | null {
+export function matchDifference(node: GameMakerAstNode | null | undefined): Difference | null {
     const expression = Core.unwrapParenthesizedExpression(node);
 
     if (!Core.isBinaryOperator(expression, "-")) {
