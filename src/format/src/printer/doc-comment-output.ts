@@ -48,17 +48,22 @@ export function printNodeDocComments(node: any, path: any, options: any): any {
 
     sortDocCommentsBySourceOrder(docCommentDocs);
 
-    const docCommentEntriesForMetadata = [...docCommentDocs];
+    // `buildPrintableDocCommentLines` returns a fresh doc array without
+    // touching `docCommentDocs`, so the original entries (with their AST
+    // node boundaries) stay available for blank-line detection downstream.
+    // The previous implementation mutated the input in place, which forced
+    // callers to take a defensive snapshot; that snapshot is no longer
+    // required once the helper is pure.
     const printableDocComments = buildPrintableDocCommentLines(docCommentDocs, originalText);
     const printableDocCommentBlock = joinDocCommentsPreservingSourceSpacing(
         printableDocComments,
-        docCommentEntriesForMetadata,
+        docCommentDocs,
         originalText
     );
     const mixedLeadingCommentBlock = buildMixedLeadingCommentBlock({
         node,
         printableDocComments,
-        docCommentEntries: docCommentEntriesForMetadata,
+        docCommentEntries: docCommentDocs,
         originalText,
         nodeStartIndex
     });

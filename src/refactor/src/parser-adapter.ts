@@ -22,7 +22,7 @@
  * low-level adapters.)
  */
 
-import { Parser, type ParserOptions } from "@gmloop/parser";
+import { defaultParserOptions, Parser, type ParserOptions } from "@gmloop/parser";
 
 /**
  * Functional contract for parsing GML source text into an AST program node.
@@ -49,15 +49,14 @@ export type GmlProgramParserFactory = (options?: Readonly<ParserOptions>) => Gml
  * comment metadata attached by default. Keeping these options centralized
  * guarantees that every codemod parses identically and that future tuning
  * (for example, switching the AST format) only happens here.
+ *
+ * The prediction-cache release thresholds inherit the parser workspace's
+ * canonical defaults rather than re-declaring magic numbers here; codemods
+ * that need a tighter release cadence can override the relevant fields when
+ * constructing the factory.
  */
 export const DEFAULT_CODEMOD_PARSER_OPTIONS: Readonly<ParserOptions> = Object.freeze({
-    astFormat: "gml",
-    asJSON: false,
-    getComments: true,
-    getLocations: true,
-    simplifyLocations: true,
-    attachFunctionDocComments: true,
-    sllPredictionMaxSourceLength: 8000
+    ...defaultParserOptions
 });
 
 /**

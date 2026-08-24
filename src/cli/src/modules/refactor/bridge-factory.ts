@@ -16,7 +16,7 @@
  * adapters can pass them as options instead.
  */
 
-import type { ParserOptions } from "@gmloop/parser";
+import { defaultParserOptions, type ParserOptions } from "@gmloop/parser";
 import type * as Refactor from "@gmloop/refactor";
 import type { PartialSemanticAnalyzer } from "@gmloop/refactor";
 
@@ -53,15 +53,13 @@ export interface RefactorBridgesOptions {
  * factory pins the same options that this module previously passed inline to
  * `new Parser.GMLParser(...)`. Forwarding these options to the canonical
  * adapter guarantees behaviour parity with the prior implementation.
+ *
+ * Prediction-cache release thresholds fall back to the parser workspace's
+ * canonical defaults rather than re-declaring magic numbers here, keeping the
+ * release cadence tunable in exactly one place.
  */
 const REFACTOR_BRIDGE_PARSER_OPTIONS: Readonly<ParserOptions> = Object.freeze({
-    getComments: true,
-    getLocations: true,
-    simplifyLocations: true,
-    attachFunctionDocComments: true,
-    sllPredictionMaxSourceLength: 8000,
-    astFormat: "gml",
-    asJSON: false
+    ...defaultParserOptions
 });
 
 /**
