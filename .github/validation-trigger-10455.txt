@@ -1,1 +1,0 @@
-Trigger exact-head validation for PR #10455.
