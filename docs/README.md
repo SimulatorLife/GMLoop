@@ -120,12 +120,6 @@ retries, memory, budgets, queues, and durable workflow state.
 
 - [MCP workspace reference](../src/mcp/README.md) — Current
   `@gmloop/mcp` package docs for exposing CLI-adjacent workflows to AI tooling.
-- [Agent routing and cadence design](agent-routing-cadence-plan.md) — Design
-  for this repository's external GitHub Actions maintenance automation in
-  `.github/workflows/weights.json`, covering task categories, weighted pair
-  selection, cadence filtering, and manual override behaviour. This is CI
-  infrastructure for maintaining GMLoop, not a GMLoop product capability or
-  an Auto-Game orchestration layer.
 - [CLI and MCP tool surface simplification](simplify_gmloop_cli_mcp_tool_surface_revised.md) —
   Decision record for collapsing duplicate read, validation, inspection, and
   lifecycle tools into a smaller set of owner-oriented commands, and letting
@@ -152,7 +146,7 @@ retries, memory, budgets, queues, and durable workflow state.
   Configuration contract for the strict GMLoop `build-lint-test` Codex
   subagent: `model = "gpt-5.4-mini"`, `model_reasoning_effort = "medium"`,
   `sandbox_mode = "workspace-write"` with `[sandbox_workspace_write]
-  network_access = false`, zero reachable MCP servers, and developer
+network_access = false`, zero reachable MCP servers, and developer
   instructions that limit it to running one assigned `pnpm run`
   build/lint/test command and reporting exact verbatim failure excerpts.
 
