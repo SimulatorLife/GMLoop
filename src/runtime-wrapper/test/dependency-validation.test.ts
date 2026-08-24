@@ -387,9 +387,27 @@ void describe("Dependency Validation", () => {
             }
         };
 
-        assert.throws(() => {
-            wrapper.applyPatch(patchWithDep);
-        }, /unsatisfied dependencies/);
+        // Contract: applyPatch must throw when dependencies are missing,
+        // and the thrown error must identify the offending patch and the
+        // missing dependency IDs so operators can diagnose the failure.
+        // The exact phrasing of the error is intentionally not pinned
+        // here — the README documents the message template, but the
+        // test focuses on the actionable data the caller needs.
+        assert.throws(
+            () => {
+                wrapper.applyPatch(patchWithDep);
+            },
+            (error: unknown) => {
+                assert.ok(error instanceof Error, "expected an Error to be thrown");
+                const message = error.message;
+                assert.ok(message.includes("script:dependent"), `error should mention the patch id: ${message}`);
+                assert.ok(
+                    message.includes("script:base_fn"),
+                    `error should mention the missing dependency: ${message}`
+                );
+                return true;
+            }
+        );
     });
 
     void test("applyPatch succeeds when dependencies are satisfied", () => {
