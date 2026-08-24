@@ -584,7 +584,7 @@ void describe("Prettier wrapper CLI", () => {
 
             const { stdout } = await execFileAsync("node", [
                 wrapperPath,
-                "--ignored-directory-sample-limit",
+                "--skipped-directory-sample-limit",
                 "0",
                 "--path",
                 tempDirectory,

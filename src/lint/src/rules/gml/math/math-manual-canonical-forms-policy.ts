@@ -136,11 +136,15 @@ function buildDefaultManualMathCanonicalFormsRules(): ReadonlyArray<ManualMathCa
         }),
         // Replace zero-checks with epsilon comparisons so floating point logic is more
         // robust. This corresponds to the transformation exercised by
-        // `testFunctions`.
+        // `testFunctions`. The pattern accepts both the C-style not-equal
+        // operator (`!=`) and GML's alternative spelling (`<>`); both forms
+        // have the same float-equality hazard for the operands the rule is
+        // designed to guard, so a code base that uses one or the other (or
+        // mixes them) should still benefit from the rewrite.
         Object.freeze({
             id: "zero-check-to-epsilon-comparison",
-            description: "Rewrite `if (x != 0)` into `if (abs(x) > math_get_epsilon())`.",
-            pattern: /if\s*\(\s*([A-Za-z0-9_.]+)\s*!=\s*0\s*\)/gu,
+            description: "Rewrite `if (x != 0)` / `if (x <> 0)` into `if (abs(x) > math_get_epsilon())`.",
+            pattern: /if\s*\(\s*([A-Za-z0-9_.]+)\s*(?:!=|<>)\s*0\s*\)/gu,
             replacement: "if (abs($1) > math_get_epsilon())"
         })
     ]);
