@@ -48,6 +48,12 @@ export function createProjectFormatOptionCatalog(
             name: "inlineControlFlowBlockMargin"
         }),
         Object.freeze({
+            defaultValue: layoutDefaults.minVariablesBeforeLoopPadding,
+            description:
+                "Minimum number of contiguous top-level variable declarations that must precede a loop before the formatter inserts an extra blank-line padding between the variable block and the loop. Smaller variable blocks keep the source's natural spacing; larger blocks receive a visual separator to make the loop entry point easier to scan. Set to `0` to disable the heuristic and always preserve source spacing.",
+            name: "minVariablesBeforeLoopPadding"
+        }),
+        Object.freeze({
             defaultValue: false,
             description:
                 "Insert spaces inside struct literal braces and array literal brackets. When `true`, both struct literals and array literals render with inner whitespace (for example, `{ x: 1 }` and `[ x, y ]`); when `false`, both render without inner whitespace (for example, `{x: 1}` and `[x, y]`).",
