@@ -11,6 +11,7 @@ import {
     listGraphNodeKinds,
     resolveEffectiveGraphNodeKinds
 } from "../src/graph/graph-layout.js";
+import { resolveOverlappingSimulationNodes, type SimulationNode } from "../src/graph/graph-layout-simulation.js";
 import type {
     GraphVisualizationEdgeType,
     GraphVisualizationNodeKind,
@@ -38,6 +39,25 @@ function createNode(id: string, kind: GraphVisualizationNodeKind, name: string):
 function allNodesMatch(_node: GraphLayoutNode): boolean {
     return true;
 }
+
+void test("resolveOverlappingSimulationNodes uses a stable axis for near-coincident nodes", () => {
+    const first: SimulationNode = { id: "first", radius: 10, vx: 0, vy: 0, x: 0, y: 0 };
+    const second: SimulationNode = {
+        id: "second",
+        radius: 10,
+        vx: 0,
+        vy: 0,
+        x: Number.EPSILON,
+        y: Number.EPSILON
+    };
+
+    resolveOverlappingSimulationNodes([first, second]);
+
+    assert.equal(first.y, 0);
+    assert.equal(second.y, Number.EPSILON);
+    assert.ok(first.x < -70);
+    assert.ok(second.x > 70);
+});
 
 function collectLegendChildrenByKind(
     items: ReadonlyArray<GraphNodeKindLegendItem>

@@ -1,3 +1,5 @@
+import { Core } from "@gmloop/core";
+
 import { isProjectManifestPath, isProjectResourceMetadataPath } from "./constants.js";
 
 const PROJECT_SOURCE_EXTENSION = ".gml";
@@ -8,9 +10,7 @@ export const ProjectFileCategory = Object.freeze({
     SOURCE: "gml"
 });
 
-type ProjectFileCategoryValue = (typeof ProjectFileCategory)[keyof typeof ProjectFileCategory];
-
-const PROJECT_FILE_CATEGORIES = new Set<ProjectFileCategoryValue>(Object.values(ProjectFileCategory));
+const PROJECT_FILE_CATEGORIES: ReadonlySet<string> = new Set(Object.values(ProjectFileCategory));
 
 const PROJECT_FILE_CATEGORY_CHOICES = Object.freeze(
     [...PROJECT_FILE_CATEGORIES].toSorted((left, right) => left.localeCompare(right)).join(", ")
@@ -37,12 +37,14 @@ export function getProjectIndexSourceExtensions() {
  * @returns {ProjectFileCategory} Normalized category when valid.
  * @throws {RangeError} When `value` does not map to a known category.
  */
-export function normalizeProjectFileCategory(value: unknown): ProjectFileCategoryValue {
-    if (value === ProjectFileCategory.RESOURCE_METADATA || value === ProjectFileCategory.SOURCE) {
+export function normalizeProjectFileCategory(value: unknown) {
+    if (typeof value === "string" && PROJECT_FILE_CATEGORIES.has(value)) {
         return value;
     }
 
-    const received = value === undefined ? "undefined" : `'${String(value)}'`;
+    const receivedValue =
+        typeof value === "string" ? value : Core.describeValueForError(value, { stringifyUnknown: false });
+    const received = `'${receivedValue}'`;
     throw new RangeError(
         `Project file category must be one of: ${PROJECT_FILE_CATEGORY_CHOICES}. Received ${received}.`
     );

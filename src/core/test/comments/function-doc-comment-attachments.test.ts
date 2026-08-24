@@ -187,3 +187,69 @@ void test("Core.normalizeFunctionDocCommentAttachments handles repeated comment 
     assert.ok(attachedCount >= 1, "At least one function should have the comment attached");
     assert.ok(attachedCount <= 1, "Comment should be attached to at most one function");
 });
+
+void test("Core.normalizeFunctionDocCommentAttachments crosses line and block comments between comment and target", () => {
+    // Source text (with exact indices):
+    //   "/// @function demo()\n/* block */ // line\nfunction demo() {}\n"
+    //   0-19:  comment "/// @function demo()"  (start:0, end:20)
+    //   20:    "\n"
+    //   21-30: "/* block */"  (block comment)
+    //   31:    " "
+    //   32-38: "// line"      (line comment)
+    //   39:    "\n"
+    //   40-57: "function demo() {}"  (functionNode: start:40, end:59)
+    const comment: CommentLike = {
+        type: "CommentLine",
+        value: "/// @function demo()",
+        start: { index: 0 },
+        end: { index: 20 }
+    };
+    const functionNode: FunctionNodeLike = {
+        type: "FunctionDeclaration",
+        start: { index: 40 },
+        end: { index: 59 }
+    };
+    const rootNode = {
+        type: "Program",
+        body: [functionNode]
+    };
+    const sourceText = "/// @function demo()\n/* block */ // line\nfunction demo() {}\n";
+
+    Core.normalizeFunctionDocCommentAttachments(rootNode, [comment], sourceText);
+
+    assert.deepStrictEqual(functionNode.docComments, [comment]);
+    assert.equal(comment._gmlAttachedDocComment, true);
+});
+
+void test("Core.normalizeFunctionDocCommentAttachments stops at non-comment code between block comment and target", () => {
+    // Source text (with exact indices):
+    //   "/// @function demo()\n/* ok */ var x;\nfunction demo() {}\n"
+    //   0-19:  comment "/// @function demo()"  (start:0, end:20)
+    //   20:    "\n"
+    //   21-28: "/* ok */"  (block comment)
+    //   29:    " "
+    //   30-35: "var x;"    (live code that breaks reachability)
+    //   36:    "\n"
+    //   37-54: "function demo() {}"  (functionNode: start:37, end:56)
+    const comment: CommentLike = {
+        type: "CommentLine",
+        value: "/// @function demo()",
+        start: { index: 0 },
+        end: { index: 20 }
+    };
+    const functionNode: FunctionNodeLike = {
+        type: "FunctionDeclaration",
+        start: { index: 37 },
+        end: { index: 56 }
+    };
+    const rootNode = {
+        type: "Program",
+        body: [functionNode]
+    };
+    const sourceText = "/// @function demo()\n/* ok */ var x;\nfunction demo() {}\n";
+
+    Core.normalizeFunctionDocCommentAttachments(rootNode, [comment], sourceText);
+
+    assert.equal(functionNode.docComments, undefined);
+    assert.equal(comment._gmlAttachedDocComment, undefined);
+});

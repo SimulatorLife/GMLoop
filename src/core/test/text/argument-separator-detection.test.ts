@@ -226,6 +226,25 @@ void describe("isLikelyCallArgumentGap", () => {
         assert.equal(isLikelyCallArgumentGap(sourceText, gapStart), false);
     });
 
+    void it("accepts whitespace inside a call whose callee only differs in case from a keyword", () => {
+        // GML keywords are exact-case, so `New(...)` and `With(...)` are calls to
+        // user-defined identifiers, not `new`/`with` parenthesised groups.
+        for (const sourceText of ["New(a   b)", "With(a   b)", "Case(a   b)"]) {
+            const gapStart = sourceText.indexOf("a   ") + 1;
+            assert.equal(
+                isLikelyCallArgumentGap(sourceText, gapStart + 2),
+                true,
+                `expected "${sourceText}" to be a call`
+            );
+        }
+    });
+
+    void it("rejects whitespace inside a declaration whose prefix only differs in case from `function`", () => {
+        const sourceText = "Function foo(a   b) {}";
+        const gapStart = sourceText.indexOf("a   ") + 1;
+        assert.equal(isLikelyCallArgumentGap(sourceText, gapStart + 2), true);
+    });
+
     void it("matches the behaviour exposed through the Core namespace", () => {
         const sourceText = "foo(a   b)";
         const gapStart = sourceText.indexOf("a   ") + 1;

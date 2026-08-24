@@ -53,6 +53,8 @@ void describe("createGmlParserAdapter", () => {
             simplifyLocations: true,
             attachFunctionDocComments: false,
             sllPredictionMaxSourceLength: 8000,
+            predictionCacheReleaseMaxSourceLength: 8000,
+            predictionCacheReleaseInterval: 16,
             astFormat: "gml",
             asJSON: false
         });
