@@ -61,17 +61,10 @@ export function isWorkerOverlayBoundaryCurrent(
     }
     return documents.every((document) => {
         const entry = boundary.get(path.resolve(document.filePath));
-        // Guard explicitly instead of relying on `&&` short-circuiting through
-        // `entry?.version === document.version`. That comparison is only a
-        // safe stand-in for "entry exists" when `document.version` can never
-        // itself be `undefined`, but this module runs with `strict: false`
-        // (see tsconfig.base.json), so nothing at compile time guarantees a
-        // caller-supplied document actually carries a numeric version. If a
-        // document with an `undefined` version has no matching boundary
-        // entry, `entry?.version === document.version` evaluates to
-        // `undefined === undefined` → `true`, and the unguarded
-        // `entry.contentHash` read below would throw
-        // `TypeError: Cannot read properties of undefined (reading 'contentHash')`.
+        // Guard for callers that pass `version: undefined` despite the `number`
+        // annotation (`strict: false` permits this); without the guard,
+        // `entry?.version === document.version` resolves to `undefined ===
+        // undefined` for unmatched paths and falls through to `entry.contentHash`.
         if (entry === undefined) {
             return false;
         }
