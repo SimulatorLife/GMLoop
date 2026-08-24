@@ -1,8 +1,8 @@
 import { Core } from "@gmloop/core";
 
-import { defaultGmlProgramParser } from "../../parser-adapter.js";
-import type { RepairSpriteTextureUvResolutionResult } from "../../types.js";
-import { applySourceTextEdits } from "../codemod-helpers.js";
+import { defaultGmlProgramParser } from "../parser-adapter.js";
+import type { RepairSpriteTextureUvResolutionResult } from "../types.js";
+import { applySourceTextEdits } from "./codemod-helpers.js";
 
 type AstRecord = Record<string, unknown>;
 type SourceEdit = Readonly<{ start: number; end: number; text: string }>;

@@ -1,7 +1,7 @@
 import { Core } from "@gmloop/core";
 
-import type { RepairArgumentSeparatorsEdit, RepairArgumentSeparatorsResult } from "../../types.js";
-import { applySourceTextEdits } from "../codemod-helpers.js";
+import type { RepairArgumentSeparatorsEdit, RepairArgumentSeparatorsResult } from "../types.js";
+import { applySourceTextEdits } from "./codemod-helpers.js";
 
 /**
  * Repairs missing argument separators (commas) in function calls (e.g. `foo(a b c)` to `foo(a, b, c)`).
