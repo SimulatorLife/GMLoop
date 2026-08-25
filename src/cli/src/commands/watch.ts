@@ -777,10 +777,21 @@ function logWatchStartup(
     }
 }
 
-async function stopServerAfterStartupFailure(
+/**
+ * Stop a server and log (rather than throw) if the stop itself fails.
+ *
+ * Every startup-failure and shutdown path in this file needs the same
+ * "best-effort stop, never let a cleanup failure mask the original error"
+ * behavior. This was previously reimplemented inline with a slightly
+ * different message at each call site; centralizing it keeps the wording and
+ * error-extraction behavior consistent across every server (runtime,
+ * WebSocket, status) and every trigger (startup failure or normal shutdown).
+ */
+async function stopServerSafely(
     label: string,
     server: { stop: () => Promise<void> } | null,
-    unknownServerStopErrorMessage: string
+    unknownServerStopErrorMessage: string,
+    context: "during cleanup" | "" = "during cleanup"
 ): Promise<void> {
     if (server === null) {
         return;
@@ -792,7 +803,8 @@ async function stopServerAfterStartupFailure(
         const stopMessage = getErrorMessage(stopError, {
             fallback: unknownServerStopErrorMessage
         });
-        console.error(`Failed to stop ${label} during cleanup: ${stopMessage}`);
+        const suffix = context ? ` ${context}` : "";
+        console.error(`Failed to stop ${label}${suffix}: ${stopMessage}`);
     }
 }
 
@@ -828,12 +840,8 @@ async function startWatchRuntimeServerAfterPatchServers({
             fallback: "Unknown runtime server error"
         });
 
-        await stopServerAfterStartupFailure(
-            "WebSocket server",
-            websocketServerController,
-            unknownServerStopErrorMessage
-        );
-        await stopServerAfterStartupFailure("status server", statusServerController, unknownServerStopErrorMessage);
+        await stopServerSafely("WebSocket server", websocketServerController, unknownServerStopErrorMessage);
+        await stopServerSafely("status server", statusServerController, unknownServerStopErrorMessage);
 
         handleCliError(new Error(`Failed to start runtime static server: ${message}`));
     }
@@ -1119,16 +1127,7 @@ async function startWatchStatusServer({
         });
 
         const websocketServerController = getWebSocketServerController();
-        if (websocketServerController) {
-            try {
-                await websocketServerController.stop();
-            } catch (stopError) {
-                const stopMessage = getErrorMessage(stopError, {
-                    fallback: unknownServerStopErrorMessage
-                });
-                console.error(`Failed to stop WebSocket server during cleanup: ${stopMessage}`);
-            }
-        }
+        await stopServerSafely("WebSocket server", websocketServerController, unknownServerStopErrorMessage);
 
         handleCliError(new Error(`Failed to start status server: ${message}`));
     }
@@ -1427,38 +1426,9 @@ export async function runWatchCommand(targetPath: string, options: WatchCommandO
 
             displayTranspilationStatistics(runtimeContext, verbose, quiet);
 
-            if (runtimeServerController) {
-                try {
-                    await runtimeServerController.stop();
-                } catch (error) {
-                    const message = getErrorMessage(error, {
-                        fallback: unknownServerStopErrorMessage
-                    });
-                    console.error(`Failed to stop runtime static server: ${message}`);
-                }
-            }
-
-            if (websocketServerController) {
-                try {
-                    await websocketServerController.stop();
-                } catch (error) {
-                    const message = getErrorMessage(error, {
-                        fallback: unknownServerStopErrorMessage
-                    });
-                    console.error(`Failed to stop WebSocket server: ${message}`);
-                }
-            }
-
-            if (statusServerController) {
-                try {
-                    await statusServerController.stop();
-                } catch (error) {
-                    const message = getErrorMessage(error, {
-                        fallback: unknownServerStopErrorMessage
-                    });
-                    console.error(`Failed to stop status server: ${message}`);
-                }
-            }
+            await stopServerSafely("runtime static server", runtimeServerController, unknownServerStopErrorMessage, "");
+            await stopServerSafely("WebSocket server", websocketServerController, unknownServerStopErrorMessage, "");
+            await stopServerSafely("status server", statusServerController, unknownServerStopErrorMessage, "");
 
             if (abortSignal) {
                 resolve();
