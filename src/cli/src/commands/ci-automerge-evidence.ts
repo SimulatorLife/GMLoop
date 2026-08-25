@@ -5,6 +5,13 @@ import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 
+import {
+    appendAutoMergeGitHubOutputs as appendOutputs,
+    readAutoMergeJsonArtifact as readJson,
+    readOptionalAutoMergeJsonArtifact as readOptionalJson,
+    writeAutoMergeJsonArtifact as writeJson
+} from "./ci-automerge-artifacts.js";
+
 const BUILD_FILE = "build-evidence.json";
 const REPORT_FILE = "auto-merge-report.json";
 const MANIFEST_FILE = "test-manifest.json";
@@ -124,29 +131,6 @@ function normalizeRepositoryPath(value: string): string {
     const marker = "/GMLoop/";
     const markerIndex = normalized.lastIndexOf(marker);
     return markerIndex === -1 ? normalized.replace(/^\.\//u, "") : normalized.slice(markerIndex + marker.length);
-}
-
-function readJson(file: string): unknown {
-    return JSON.parse(fs.readFileSync(file, "utf8")) as unknown;
-}
-
-function readOptionalJson(file: string): unknown | null {
-    try {
-        return readJson(file);
-    } catch {
-        return null;
-    }
-}
-
-function writeJson(file: string, value: unknown): void {
-    fs.mkdirSync(path.dirname(file), { recursive: true });
-    fs.writeFileSync(file, `${JSON.stringify(value, null, 2)}\n`, "utf8");
-}
-
-function appendOutputs(file: string | undefined, values: Readonly<Record<string, string | number | boolean>>): void {
-    if (!file) return;
-    const lines = Object.entries(values).map(([key, value]) => `${key}=${String(value)}`);
-    fs.appendFileSync(file, `${lines.join("\n")}\n`, "utf8");
 }
 
 function collectFiles(rootDirectory: string): Array<string> {
