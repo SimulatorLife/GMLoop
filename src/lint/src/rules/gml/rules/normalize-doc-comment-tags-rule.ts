@@ -1,8 +1,10 @@
 import type { Rule } from "eslint";
 
-import { normalizeDocCommentTagAliasLine } from "../doc-comment-tag-aliases.js";
+import { gmlRuleDocCommentServices } from "../gml-rule-services.js";
 import type { GmlRuleDefinition } from "../index.js";
 import { createMeta, reportLineTextFixes } from "../rule-base-helpers.js";
+
+const { normalizeDocCommentTagAliasLine } = gmlRuleDocCommentServices;
 
 function normalizeDocCommentPrefixLine(line: string): string {
     const docSlashMatch = /^(\s*)\/\/\s*\/(?!\/)(.*)$/u.exec(line);
