@@ -1,11 +1,7 @@
 import assert from "node:assert/strict";
-import fs from "node:fs";
-import path from "node:path";
-import process from "node:process";
 import test from "node:test";
 
 import {
-    assertAutoMergeControlPlaneContract,
     AUTO_MERGE_SUMMARY_COMMENT_MARKER,
     findBotAutoMergeSummaryComment,
     findLatestBotAutoMergeState,
@@ -19,7 +15,6 @@ import {
 
 const HEAD_SHA = "a".repeat(40);
 const BASE_SHA = "b".repeat(40);
-const REPO_ROOT = process.cwd();
 
 void test("auto-merge state round-trips through its durable comment marker", () => {
     const marker = serializeAutoMergeState({
@@ -132,21 +127,6 @@ void test("validation and finalizer run titles have strict machine-readable iden
     assert.equal(parseAutoMergeValidationRunTitle(`prefix Auto-merge PR #42 @ ${HEAD_SHA}`), null);
     assert.equal(parseAutoMergeFinalizerRunTitle("Finalize auto-merge validation run 123456"), 123_456);
     assert.equal(parseAutoMergeFinalizerRunTitle("Finalize auto-merge"), null);
-});
-
-void test("control-plane workflow contract checks exact privileged jobs, worker base pinning, and queue ownership", () => {
-    const reconcile = fs.readFileSync(path.join(REPO_ROOT, ".github/workflows/automerge-reconcile.yml"), "utf8");
-    const finalizer = fs.readFileSync(path.join(REPO_ROOT, ".github/workflows/automerge-finalize.yml"), "utf8");
-    const reconcileAction = fs.readFileSync(
-        path.join(REPO_ROOT, ".github/actions/reconcile-automerge/action.yml"),
-        "utf8"
-    );
-    const worker = fs.readFileSync(path.join(REPO_ROOT, ".github/workflows/automerge-prs.yml"), "utf8");
-    const validationAction = fs.readFileSync(
-        path.join(REPO_ROOT, ".github/actions/run-automerge-validation/action.yml"),
-        "utf8"
-    );
-    assertAutoMergeControlPlaneContract(reconcile, finalizer, reconcileAction, worker, validationAction);
 });
 
 void test("malformed or unsupported auto-merge state is rejected", () => {

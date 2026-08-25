@@ -7,6 +7,7 @@ import { pathToFileURL } from "node:url";
 const BUILD_EVIDENCE_SCHEMA_VERSION = 1;
 const BUILD_EVIDENCE_FILE = "build-evidence.json";
 const MAX_TYPESCRIPT_EXIT_STATUS = 4;
+const BUILD_FAILED_REASON = "build-failed";
 
 type BuildEvidence = Readonly<{
     schemaVersion: number;
@@ -15,7 +16,7 @@ type BuildEvidence = Readonly<{
     succeeded: boolean;
     status: number | null;
     signal: NodeJS.Signals | null;
-    testsSkippedReason: "build-failed" | null;
+    testsSkippedReason: typeof BUILD_FAILED_REASON | null;
 }>;
 
 type ProcessResult = Readonly<{
@@ -80,7 +81,7 @@ function parseEvidence(value: unknown): BuildEvidence {
         succeeded: record.succeeded === true,
         status,
         signal,
-        testsSkippedReason: record.testsSkippedReason === "build-failed" ? "build-failed" : null
+        testsSkippedReason: record.testsSkippedReason === BUILD_FAILED_REASON ? BUILD_FAILED_REASON : null
     });
 }
 
@@ -102,7 +103,7 @@ function validateEvidence(
     if (evidence.succeeded && evidence.testsSkippedReason !== null) {
         errors.push("successful build incorrectly declares skipped tests");
     }
-    if (!evidence.succeeded && evidence.completed && evidence.testsSkippedReason !== "build-failed") {
+    if (!evidence.succeeded && evidence.completed && evidence.testsSkippedReason !== BUILD_FAILED_REASON) {
         errors.push("failed build does not explicitly declare tests skipped because the build failed");
     }
     if (requireFailure && evidence.succeeded) {
@@ -128,7 +129,7 @@ async function runCommand(): Promise<number> {
         succeeded,
         status: result.status,
         signal: result.signal,
-        testsSkippedReason: completed && !succeeded ? "build-failed" : null
+        testsSkippedReason: completed && !succeeded ? BUILD_FAILED_REASON : null
     });
     await writeEvidence(reportDirectory, evidence);
     await appendOutputs(readOption("--github-output"), evidence);

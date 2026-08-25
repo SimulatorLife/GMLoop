@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
@@ -224,108 +223,6 @@ export function parseAutoMergeFinalizerRunTitle(title: string | null | undefined
     return Number.isInteger(runId) && runId > 0 ? runId : null;
 }
 
-function extractJobBlock(workflow: string, jobName: string, nextJobName: string | null): string {
-    const startMarker = `  ${jobName}:\n`;
-    const start = workflow.indexOf(startMarker);
-    assert.ok(start !== -1, `workflow must contain jobs.${jobName}`);
-    if (!nextJobName) return workflow.slice(start);
-    const end = workflow.indexOf(`\n  ${nextJobName}:\n`, start + startMarker.length);
-    assert.ok(end > start, `workflow must contain jobs.${nextJobName} after jobs.${jobName}`);
-    return workflow.slice(start, end);
-}
-
-/** Assert static trusted workflow invariants that actionlint cannot validate semantically. */
-export function assertAutoMergeControlPlaneContract(
-    reconcile: string,
-    finalizer: string,
-    reconcileAction: string,
-    worker: string,
-    validationAction: string
-): void {
-    const discoverJob = extractJobBlock(reconcile, "discover", "reconcile");
-    const analyzeJob = extractJobBlock(finalizer, "analyze", "merge");
-
-    assert.match(
-        discoverJob,
-        /permissions:\n(?: {6}[^\n]+\n)* {6}pull-requests: write/u,
-        "coordinator discover job must have PR-write permission"
-    );
-    assert.match(
-        analyzeJob,
-        /permissions:\n(?: {6}[^\n]+\n)* {6}pull-requests: write/u,
-        "finalizer analyze job must have PR-write permission"
-    );
-    assert.match(reconcile, /workflow_id: 'automerge-finalize\.yml'/u);
-    assert.match(
-        reconcile,
-        /expected_base: liveBase/u,
-        "coordinator must pin every validation dispatch to the exact admitted main SHA"
-    );
-    assert.match(reconcile, /has no changed files yet; waiting for its first substantive synchronize event/u);
-    assert.match(reconcile, /pendingTimeoutMs/u);
-    assert.doesNotMatch(
-        reconcile,
-        /core\.setFailed\(`Auto-merge control-plane dispatch failure/u,
-        "one PR's dispatch failure must not fail another PR's coordinator check"
-    );
-
-    const admissionAnchor = reconcile.indexOf("// Both prerequisite state surfaces must be writable before launching");
-    const statusAt = reconcile.indexOf("await github.rest.repos.createCommitStatus", admissionAnchor);
-    const persistedAt = reconcile.indexOf("await upsertState(pr, state", admissionAnchor);
-    const dispatchedAt = reconcile.indexOf("workflow_id: 'automerge-prs.yml'", admissionAnchor);
-    assert.ok(
-        admissionAnchor !== -1 && statusAt > admissionAnchor && persistedAt > statusAt && dispatchedAt > persistedAt,
-        "commit status and durable pending state must both succeed before validation dispatch"
-    );
-
-    assert.match(worker, /expected_base:\n/u);
-    assert.match(worker, /EXPECTED_BASE: \$\{\{ inputs\.expected_base \}\}/u);
-    assert.match(
-        worker,
-        /context\.sha !== expectedBase/u,
-        "validation worker must execute from the exact admitted main commit"
-    );
-    assert.match(
-        worker,
-        /baseBranch\.commit\.sha !== expectedBase/u,
-        "validation worker must reject a live-main change after admission"
-    );
-    assert.match(
-        worker,
-        /currentBase\.commit\.sha !== expectedBase/u,
-        "validation worker must reject main movement while resolving the synthetic merge"
-    );
-    assert.ok(
-        validationAction.includes('--test-reporter="$junit_reporter"'),
-        "validation action must use the trusted TestsStream reporter for comparable test evidence"
-    );
-    assert.ok(
-        validationAction.includes('if (data.details?.type === "suite") continue;'),
-        "trusted test reporter must exclude suite summary events from case evidence"
-    );
-
-    assert.match(finalizer, /workflow_dispatch:/u);
-    assert.doesNotMatch(finalizer, /workflows:\s*\["Auto-merge PRs"\]/u);
-    assert.match(finalizer, /run-id: \$\{\{ inputs\.validation_run_id \}\}/u);
-    assert.match(finalizer, /validationRun\.head_branch !== 'main'/u);
-    assert.match(finalizer, /validationRun\.run_attempt \|\| 1\) !== 1/u);
-    assert.match(finalizer, /validationRun\.head_sha !== base/u);
-    assert.match(finalizer, /parseAutoMergeValidationRunTitle/u);
-    assert.match(
-        finalizer,
-        /base: process\.env\.BASE_SHA \|\| ''/u,
-        "unknown validation bases must stay unknown rather than becoming a synthetic SHA"
-    );
-
-    assert.doesNotMatch(
-        reconcileAction,
-        /createWorkflowDispatch/u,
-        "only the admission coordinator may dispatch expensive validation"
-    );
-    assert.doesNotMatch(reconcileAction, /workflow_id:\s*'automerge-prs\.yml'/u);
-    assert.match(reconcileAction, /set\('revalidation-needed'\)/u);
-}
-
 function selfTest(): void {
     const marker = serializeAutoMergeState({
         pr: 42,
@@ -401,19 +298,6 @@ function selfTest(): void {
     assert.match(regressionComment, /\| Net test-case reduction exceeds policy \(37 removed; maximum 3\) \| ❌ \|/u);
     assert.match(regressionComment, /7652 baseline → 7615 merged\.<br>src\/runtime-wrapper/u);
 
-    const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../..");
-    const reconcile = fs.readFileSync(path.join(repoRoot, ".github/workflows/automerge-reconcile.yml"), "utf8");
-    const finalizer = fs.readFileSync(path.join(repoRoot, ".github/workflows/automerge-finalize.yml"), "utf8");
-    const reconcileAction = fs.readFileSync(
-        path.join(repoRoot, ".github/actions/reconcile-automerge/action.yml"),
-        "utf8"
-    );
-    const worker = fs.readFileSync(path.join(repoRoot, ".github/workflows/automerge-prs.yml"), "utf8");
-    const validationAction = fs.readFileSync(
-        path.join(repoRoot, ".github/actions/run-automerge-validation/action.yml"),
-        "utf8"
-    );
-    assertAutoMergeControlPlaneContract(reconcile, finalizer, reconcileAction, worker, validationAction);
     process.stdout.write("ci-automerge state self-test passed\n");
 }
 

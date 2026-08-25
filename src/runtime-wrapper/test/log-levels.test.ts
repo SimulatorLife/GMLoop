@@ -20,9 +20,6 @@ void describe("LIVE_RELOAD_LOG_LEVELS", () => {
     });
 
     void it("keeps the entry names in sync with the level values", () => {
-        // Regression: previously the level union was inlined as `"quiet" | "normal" | "debug"`
-        // in two separate files, which meant a new level could be added to one without the
-        // other. The frozen object is now the single source of truth.
         assert.equal(LIVE_RELOAD_LOG_LEVELS.QUIET, "quiet");
         assert.equal(LIVE_RELOAD_LOG_LEVELS.NORMAL, "normal");
         assert.equal(LIVE_RELOAD_LOG_LEVELS.DEBUG, "debug");
@@ -50,20 +47,20 @@ void describe("isLiveReloadLogLevel", () => {
 
     void it("rejects look-alike and out-of-vocabulary strings", () => {
         const invalidStrings: ReadonlyArray<string> = [
-            "Quiet", // wrong case
+            "Quiet",
             "NORMAL",
             "DEBUG",
-            "info", // not a supported bootstrap level (the runtime log levels use this name)
+            "info",
             "warn",
             "error",
             "silent",
             "verbose",
-            " quiet", // leading whitespace
+            " quiet",
             "quiet ",
             "quiet\n",
             "true",
             "false",
-            "" // empty string — the previous `if (logLevel === "quiet")` branch silently fell through to "normal"
+            ""
         ];
 
         for (const candidate of invalidStrings) {
@@ -110,16 +107,8 @@ void describe("coerceLiveReloadLogLevel", () => {
             () => coerceLiveReloadLogLevel("Quiet"),
             (error: unknown) => {
                 assert.ok(error instanceof Error);
-                assert.match(
-                    error.message,
-                    /Invalid live-reload bootstrap log level/,
-                    `expected the error to identify the level kind, got: ${error.message}`
-                );
-                assert.match(
-                    error.message,
-                    /quiet.*normal.*debug/u,
-                    `expected the error to list valid levels, got: ${error.message}`
-                );
+                assert.match(error.message, /Invalid live-reload bootstrap log level/);
+                assert.match(error.message, /quiet.*normal.*debug/u);
                 return true;
             }
         );
@@ -140,28 +129,16 @@ void describe("assertLiveReloadLogLevel", () => {
     });
 
     void it("fails fast on invalid string values", () => {
-        // Cast through `unknown` so the runtime check is the only thing standing between
-        // the caller and an invalid level. Without the guard, the previous implementation
-        // silently fell through to the documented "normal" behaviour for any other
-        // value — this regression test pins the new fail-fast behaviour in place.
         const invalidInputs: ReadonlyArray<unknown> = ["Quiet", "NORMAL", "info", "warn", "", "quiet ", " quiet"];
 
         for (const invalid of invalidInputs) {
             assert.throws(
                 () => assertLiveReloadLogLevel(invalid as never),
                 (error: unknown) => {
-                    assert.ok(
-                        error instanceof RangeError,
-                        `expected RangeError, got ${error instanceof Error ? error.message : JSON.stringify(error)}`
-                    );
-                    assert.match(
-                        error.message,
-                        /Unsupported live-reload bootstrap log level/,
-                        `expected the error message to call out the offending level, got: ${error.message}`
-                    );
+                    assert.ok(error instanceof RangeError);
+                    assert.match(error.message, /Unsupported live-reload bootstrap log level/);
                     return true;
-                },
-                `expected assertLiveReloadLogLevel to throw on invalid level ${JSON.stringify(invalid)}`
+                }
             );
         }
     });

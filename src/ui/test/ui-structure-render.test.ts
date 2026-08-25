@@ -360,6 +360,23 @@ void test("toolbar stylesheet keeps graph toolbar controls in a full-width horiz
     assert.match(source, /\.toolbar-search-group\s*\{[\s\S]*flex:\s*1 1 220px;[\s\S]*max-width:\s*360px;/u);
 });
 
+void test("docs toolbar lays docs subtabs and search controls out side-by-side instead of stacking", () => {
+    const toolbarSource = readFileSync(new URL("../../src/web/styles/toolbar.css", import.meta.url), "utf8");
+    const docsSource = readFileSync(new URL("../../src/web/styles/docs.css", import.meta.url), "utf8");
+
+    const docsControlsRule = /\.toolbar-docs-controls\s*\{[\s\S]*?\}/u.exec(toolbarSource)?.[0] ?? "";
+    const docsSearchRule = /\.toolbar-docs-search\s*\{[\s\S]*?\}/u.exec(docsSource)?.[0] ?? "";
+
+    assert.match(
+        toolbarSource,
+        /\.toolbar-docs-controls\s*\{[\s\S]*flex-direction:\s*row;[\s\S]*flex-wrap:\s*wrap;[\s\S]*align-items:\s*flex-start;/u
+    );
+    assert.doesNotMatch(docsControlsRule, /flex-direction:\s*column;/u);
+    assert.match(toolbarSource, /\.toolbar-docs-subtabs\s*\{[\s\S]*flex:\s*0 1 auto;/u);
+    assert.match(docsSource, /\.toolbar-docs-search\s*\{[\s\S]*flex:\s*1 1 220px;[\s\S]*max-width:\s*360px;/u);
+    assert.doesNotMatch(docsSearchRule, /width:\s*100%/u);
+});
+
 void test("spacing tokens define shared page and toolbar rhythm", () => {
     const tokensSource = readFileSync(new URL("../../src/web/styles/tokens.css", import.meta.url), "utf8");
     const layoutSource = readFileSync(new URL("../../src/web/styles/layout.css", import.meta.url), "utf8");
