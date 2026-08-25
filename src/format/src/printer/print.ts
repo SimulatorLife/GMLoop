@@ -134,14 +134,12 @@ function tryPrintControlStructureNode(node, path, options, print) {
             return printTernaryExpressionNode(node, path, options, print);
         }
         case "ForStatement": {
+            const init = node.init && print("init");
+            const test = node.test && [line, print("test")];
+            const update = node.update && [line, print("update")];
             return concat([
                 "for (",
-                group([
-                    indent([
-                        ifBreak(line),
-                        concat([print("init"), ";", line, print("test"), ";", line, print("update")])
-                    ])
-                ]),
+                group([indent([ifBreak(line), init, ";", test, ";", update])]),
                 ") ",
                 printInBlock(path, options, print, "body")
             ]);
@@ -526,12 +524,9 @@ function printStructExpressionNode(node, path, options, print) {
     const shouldPreserveStructWrap =
         objectWrapOption === ObjectWrapOption.PRESERVE && structLiteralHasLeadingLineBreak(node, options);
 
-    // Respect the formatter's `bracketSpacing` option for struct literals.
-    // The same option also applies to array literals via
-    // `printArrayExpressionNode` below, so the contract is identical for both
-    // literal kinds and the catalog description mentions both forms.
-    // bracketSpacing: true  → { x: 1 } / [ x, y ] (with spaces)
-    // bracketSpacing: false → {x: 1}   / [x, y]   (without spaces)
+    // Respect Prettier's bracketSpacing option for struct literals
+    // bracketSpacing: true  → { x: 1 } (with spaces)
+    // bracketSpacing: false → {x: 1}   (without spaces)
     const padding = options.bracketSpacing ? " " : "";
 
     return concat(
@@ -553,11 +548,10 @@ function printPropertyNode(node, path, options, print) {
 function printArrayExpressionNode(node, path, options, print) {
     const allowTrailingComma = shouldAllowTrailingComma(options);
     // Match the same bracketSpacing-aware padding that `printStructExpressionNode`
-    // applies to struct literals. The formatter contract advertised by the
-    // `bracketSpacing` option promises that *both* literal kinds honour the
-    // option, so without this branch the array path would silently render
-    // without inner spaces even when the user opts in. The flow is
-    // intentionally identical to the struct case so callers and tests can
+    // applies to struct literals. Without this, array literals would always
+    // render without inner spaces regardless of `options.bracketSpacing`, even
+    // though the parallel struct path correctly respects the option. The flow
+    // is intentionally identical to the struct case so callers and tests can
     // treat both literal kinds uniformly.
     const padding = options.bracketSpacing ? " " : "";
     return concat(
