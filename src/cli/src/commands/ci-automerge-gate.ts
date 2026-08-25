@@ -90,16 +90,6 @@ function readMaxRemovedTestCases(): number {
     return value;
 }
 
-function normalizeLintMessage(ruleId: string, message: string): string {
-    if (ruleId === "max-lines" || ruleId === "max-lines-per-function") {
-        return message.replace(/too many lines \(\d+\)(?=\. Maximum allowed is \d+\.)/u, "too many lines (<current>)");
-    }
-    if (ruleId === "sonarjs/cognitive-complexity") {
-        return message.replace(/Cognitive Complexity from \d+ to the (?=\d+ allowed\.)/u, "Cognitive Complexity from <current> to the ");
-    }
-    return message;
-}
-
 function collectLintFindings(value: unknown): Array<LintFinding> {
     if (!Array.isArray(value)) throw new Error("Lint evidence is not an array.");
     const output: Array<LintFinding> = [];
@@ -110,7 +100,7 @@ function collectLintFindings(value: unknown): Array<LintFinding> {
             const file = normalizeRepositoryPath(fileValue.filePath);
             const severity = Number(message.severity);
             const ruleId = typeof message.ruleId === "string" ? message.ruleId : "";
-            const identity = [file, ruleId, normalizeLintMessage(ruleId, message.message)].join("\0");
+            const identity = [file, ruleId, message.message].join("\0");
             output.push(Object.freeze({ file, severity, ruleId, message: message.message, identity }));
         }
     }
@@ -316,17 +306,6 @@ function selfTest(): void {
     assert.equal(compareLint(baselineLint, movedLint).added.length, 0);
     const upgradedLint = [{ filePath: "/repo/a.ts", messages: [{ severity: 2, ruleId: "x", message: "old", line: 99 }] }];
     assert.equal(compareLint(baselineLint, upgradedLint).added.length, 1);
-    const baselineMaxLines = [{ filePath: "/repo/a.ts", messages: [{ severity: 1, ruleId: "max-lines", message: "File has too many lines (1000). Maximum allowed is 600." }] }];
-    const changedMaxLines = [{ filePath: "/repo/a.ts", messages: [{ severity: 1, ruleId: "max-lines", message: "File has too many lines (1070). Maximum allowed is 600." }] }];
-    assert.equal(compareLint(baselineMaxLines, changedMaxLines).added.length, 0);
-    const baselineFunctionLines = [{ filePath: "/repo/a.ts", messages: [{ severity: 1, ruleId: "max-lines-per-function", message: "Function 'work' has too many lines (220). Maximum allowed is 150." }] }];
-    const changedFunctionLines = [{ filePath: "/repo/a.ts", messages: [{ severity: 1, ruleId: "max-lines-per-function", message: "Function 'work' has too many lines (240). Maximum allowed is 150." }] }];
-    assert.equal(compareLint(baselineFunctionLines, changedFunctionLines).added.length, 0);
-    const baselineComplexity = [{ filePath: "/repo/a.ts", messages: [{ severity: 1, ruleId: "sonarjs/cognitive-complexity", message: "Refactor this function to reduce its Cognitive Complexity from 70 to the 15 allowed." }] }];
-    const changedComplexity = [{ filePath: "/repo/a.ts", messages: [{ severity: 1, ruleId: "sonarjs/cognitive-complexity", message: "Refactor this function to reduce its Cognitive Complexity from 72 to the 15 allowed." }] }];
-    assert.equal(compareLint(baselineComplexity, changedComplexity).added.length, 0);
-    const changedThreshold = [{ filePath: "/repo/a.ts", messages: [{ severity: 1, ruleId: "max-lines", message: "File has too many lines (1070). Maximum allowed is 500." }] }];
-    assert.equal(compareLint(baselineMaxLines, changedThreshold).added.length, 1);
     const manifest = { tests: ["a.test.js"] };
     const passing = [{ file: "a.test.js", name: "works", status: "passed" }];
     assert.equal(compareTests(manifest, manifest, passing, [{ ...passing[0], status: "failed" }]).newFailures.length, 1);

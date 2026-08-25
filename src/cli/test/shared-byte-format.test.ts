@@ -5,6 +5,7 @@ import {
     DEFAULT_BYTE_FORMAT_RADIX,
     formatBytes,
     formatByteSize,
+    formatByteSizeDisplay,
     getDefaultByteFormatRadix,
     setDefaultByteFormatRadix
 } from "../src/shared/byte-format.js";
@@ -78,6 +79,36 @@ void describe("byte-format", () => {
             } finally {
                 setDefaultByteFormatRadix(originalRadix);
             }
+        });
+
+        void it("clamps counts beyond the largest unit instead of indexing past it", () => {
+            // 1024^5 bytes is larger than the largest configured unit (PB), so the
+            // implementation must clamp to that unit rather than reading past the
+            // end of its unit table.
+            assert.strictEqual(formatByteSize(1024 ** 5), "1.0PB");
+        });
+
+        void it("clamps negative and non-finite counts to zero bytes", () => {
+            assert.strictEqual(formatByteSize(-1024), "0B");
+            assert.strictEqual(formatByteSize(Number.NaN), "0B");
+            assert.strictEqual(formatByteSize(Number.POSITIVE_INFINITY), "0B");
+        });
+
+        void it("keeps values on the correct side of a unit boundary", () => {
+            assert.strictEqual(formatByteSize(1023.9, { decimals: 1, decimalsForBytes: 1 }), "1023.9B");
+            assert.strictEqual(formatByteSize(1024.1, { decimals: 1 }), "1.0KB");
+        });
+    });
+
+    void describe("formatByteSizeDisplay", () => {
+        void it("reports an invalid-value placeholder for negative, NaN, and Infinity input", () => {
+            assert.strictEqual(formatByteSizeDisplay(-1024), "N/A");
+            assert.strictEqual(formatByteSizeDisplay(Number.NaN), "N/A");
+            assert.strictEqual(formatByteSizeDisplay(Number.POSITIVE_INFINITY), "N/A");
+        });
+
+        void it("signs negative values when negatives are explicitly allowed", () => {
+            assert.strictEqual(formatByteSizeDisplay(-1024, { allowNegative: true }), "-1.00KB");
         });
     });
 
