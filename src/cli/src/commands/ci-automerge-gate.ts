@@ -90,16 +90,6 @@ function readMaxRemovedTestCases(): number {
     return value;
 }
 
-function normalizeLintMessage(ruleId: string, message: string): string {
-    if (ruleId === "max-lines" || ruleId === "max-lines-per-function") {
-        return message.replace(/too many lines \(\d+\)(?=\. Maximum allowed is \d+\.)/u, "too many lines (<current>)");
-    }
-    if (ruleId === "sonarjs/cognitive-complexity") {
-        return message.replace(/Cognitive Complexity from \d+ to the (?=\d+ allowed\.)/u, "Cognitive Complexity from <current> to the ");
-    }
-    return message;
-}
-
 function collectLintFindings(value: unknown): Array<LintFinding> {
     if (!Array.isArray(value)) throw new Error("Lint evidence is not an array.");
     const output: Array<LintFinding> = [];
@@ -110,7 +100,7 @@ function collectLintFindings(value: unknown): Array<LintFinding> {
             const file = normalizeRepositoryPath(fileValue.filePath);
             const severity = Number(message.severity);
             const ruleId = typeof message.ruleId === "string" ? message.ruleId : "";
-            const identity = [file, ruleId, normalizeLintMessage(ruleId, message.message)].join("\0");
+            const identity = [file, ruleId, message.message].join("\0");
             output.push(Object.freeze({ file, severity, ruleId, message: message.message, identity }));
         }
     }
@@ -206,10 +196,6 @@ function compareTests(baseManifest: unknown, targetManifest: unknown, baseCasesV
     });
 }
 
-function isPassingTestReport(value: unknown): boolean {
-    return isRecord(value) && value.completed === true && value.testStatus === 0;
-}
-
 function evidenceKind(directory: string): "full" | "build-failure" {
     const build = readJson(path.join(directory, BUILD_FILE));
     if (!isRecord(build) || build.completed !== true) throw new Error(`Incomplete build evidence in ${directory}.`);
@@ -261,35 +247,25 @@ function commandEvaluate(args: ParsedArgs): number {
                 readJson(path.join(baselineDirectory, MANIFEST_FILE)), readJson(path.join(mergeDirectory, MANIFEST_FILE)),
                 readJson(path.join(baselineDirectory, CASES_FILE)), readJson(path.join(mergeDirectory, CASES_FILE))
             );
-            const comparableCaseInventory = isPassingTestReport(readJson(path.join(baselineDirectory, REPORT_FILE)))
-                && isPassingTestReport(readJson(path.join(mergeDirectory, REPORT_FILE)));
-            netRemovedTestCases = comparableCaseInventory ? tests.netRemovedCaseCount : 0;
-            const exceedsRemovalBudget = comparableCaseInventory && tests.netRemovedCaseCount > maxRemovedTestCases;
-            const removedFilesWithoutComparableCases = !comparableCaseInventory && tests.removedFiles.length > 0;
-            const hasRegression = lint.added.length > 0 || exceedsRemovalBudget || removedFilesWithoutComparableCases
+            netRemovedTestCases = tests.netRemovedCaseCount;
+            const exceedsRemovalBudget = tests.netRemovedCaseCount > maxRemovedTestCases;
+            const hasRegression = lint.added.length > 0 || exceedsRemovalBudget
                 || tests.newFailures.length > 0 || tests.newSkips.length > 0;
             if (!hasRegression) {
                 green = true;
                 reason = baseKind === "build-failure" ? "recovery" : "clean";
                 lines.push(
                     "",
-                    "✅ No new lint warnings/errors, newly failing tests, or newly skipped tests were introduced.",
+                    "✅ No new lint warnings/errors, newly failing tests, or newly skipped tests were introduced, and net test removal stays within policy.",
                     "",
                     `- Lint findings: ${lint.baseCount} baseline → ${lint.targetCount} merged; **0 new/upgraded**.`,
-                    `- Canonical test files removed: **${tests.removedFiles.length}**.`,
+                    `- Test cases: ${tests.baseCaseCount} baseline → ${tests.targetCaseCount} merged; **net reduction ${tests.netRemovedCaseCount}/${maxRemovedTestCases} allowed**.`,
+                    `- Canonical test files removed: **${tests.removedFiles.length}** (informational; case-count budget is authoritative).`,
                     "- Newly failing / newly skipped test cases: **0 / 0**."
                 );
-                if (comparableCaseInventory) {
-                    lines.push(`- Test cases: ${tests.baseCaseCount} baseline → ${tests.targetCaseCount} merged; **net reduction ${tests.netRemovedCaseCount}/${maxRemovedTestCases} allowed**.`);
-                    if (tests.removedCases.length > 0) {
-                        const grossRemovedCases = tests.removedCases.reduce((total, item) => total + item.count, 0);
-                        lines.push("", `ℹ️ Gross removed/renamed test-case identities: **${grossRemovedCases}**; new passing cases offset these when calculating net reduction.`);
-                    }
-                } else {
-                    lines.push(
-                        "- Test-case removal budget: **not evaluated from partial failing-run JUnit inventories**.",
-                        "- Canonical test-file removal remains enforced while baseline or merge tests are not fully passing."
-                    );
+                if (tests.removedCases.length > 0) {
+                    const grossRemovedCases = tests.removedCases.reduce((total, item) => total + item.count, 0);
+                    lines.push("", `ℹ️ Gross removed/renamed test-case identities: **${grossRemovedCases}**; new passing cases offset these when calculating net reduction.`);
                 }
             } else {
                 reason = "quality-regression";
@@ -303,13 +279,6 @@ function commandEvaluate(args: ParsedArgs): number {
                     );
                     if (tests.removedFiles.length > 0) lines.push(`- Removed canonical test files: ${tests.removedFiles.length}.`);
                     if (tests.removedCases.length > 0) lines.push(...formatSamples(tests.removedCases));
-                }
-                if (removedFilesWithoutComparableCases) {
-                    lines.push(
-                        "",
-                        `**Canonical test files removed while test-case inventories are partial (${tests.removedFiles.length})**`,
-                        ...tests.removedFiles.slice(0, 8).map((file) => `- ${file}`)
-                    );
                 }
                 if (tests.newFailures.length > 0) lines.push("", `**Newly failing test cases (${tests.newFailures.reduce((total, item) => total + item.count, 0)})**`, ...formatSamples(tests.newFailures));
                 if (tests.newSkips.length > 0) lines.push("", `**Newly skipped test cases (${tests.newSkips.reduce((total, item) => total + item.count, 0)})**`, ...formatSamples(tests.newSkips));
@@ -337,17 +306,6 @@ function selfTest(): void {
     assert.equal(compareLint(baselineLint, movedLint).added.length, 0);
     const upgradedLint = [{ filePath: "/repo/a.ts", messages: [{ severity: 2, ruleId: "x", message: "old", line: 99 }] }];
     assert.equal(compareLint(baselineLint, upgradedLint).added.length, 1);
-    const baselineMaxLines = [{ filePath: "/repo/a.ts", messages: [{ severity: 1, ruleId: "max-lines", message: "File has too many lines (1000). Maximum allowed is 600." }] }];
-    const changedMaxLines = [{ filePath: "/repo/a.ts", messages: [{ severity: 1, ruleId: "max-lines", message: "File has too many lines (1070). Maximum allowed is 600." }] }];
-    assert.equal(compareLint(baselineMaxLines, changedMaxLines).added.length, 0);
-    const baselineFunctionLines = [{ filePath: "/repo/a.ts", messages: [{ severity: 1, ruleId: "max-lines-per-function", message: "Function 'work' has too many lines (220). Maximum allowed is 150." }] }];
-    const changedFunctionLines = [{ filePath: "/repo/a.ts", messages: [{ severity: 1, ruleId: "max-lines-per-function", message: "Function 'work' has too many lines (240). Maximum allowed is 150." }] }];
-    assert.equal(compareLint(baselineFunctionLines, changedFunctionLines).added.length, 0);
-    const baselineComplexity = [{ filePath: "/repo/a.ts", messages: [{ severity: 1, ruleId: "sonarjs/cognitive-complexity", message: "Refactor this function to reduce its Cognitive Complexity from 70 to the 15 allowed." }] }];
-    const changedComplexity = [{ filePath: "/repo/a.ts", messages: [{ severity: 1, ruleId: "sonarjs/cognitive-complexity", message: "Refactor this function to reduce its Cognitive Complexity from 72 to the 15 allowed." }] }];
-    assert.equal(compareLint(baselineComplexity, changedComplexity).added.length, 0);
-    const changedThreshold = [{ filePath: "/repo/a.ts", messages: [{ severity: 1, ruleId: "max-lines", message: "File has too many lines (1070). Maximum allowed is 500." }] }];
-    assert.equal(compareLint(baselineMaxLines, changedThreshold).added.length, 1);
     const manifest = { tests: ["a.test.js"] };
     const passing = [{ file: "a.test.js", name: "works", status: "passed" }];
     assert.equal(compareTests(manifest, manifest, passing, [{ ...passing[0], status: "failed" }]).newFailures.length, 1);
@@ -355,9 +313,6 @@ function selfTest(): void {
     assert.equal(compareTests(manifest, manifest, passing, []).removedCases.length, 1);
     assert.equal(compareTests(manifest, { tests: [] }, passing, []).removedFiles.length, 1);
     assert.equal(compareTests(manifest, manifest, [], [{ file: "a.test.js", name: "new", status: "failed" }]).newFailures.length, 1);
-    assert.equal(isPassingTestReport({ completed: true, testStatus: 0 }), true);
-    assert.equal(isPassingTestReport({ completed: true, testStatus: 1 }), false);
-    assert.equal(isPassingTestReport({ completed: false, testStatus: 0 }), false);
 
     const baselineCases = ["one", "two", "three", "four", "five"].map((name) => ({ file: "a.test.js", name, status: "passed" as const }));
     const threeRemoved = compareTests(manifest, manifest, baselineCases, baselineCases.slice(0, 2));
