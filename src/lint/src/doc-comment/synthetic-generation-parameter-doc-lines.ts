@@ -176,74 +176,96 @@ function appendExplicitParameterDocLine({
     lines.push(newLine);
 }
 
-function handleOrdinalDocPreferences({
+// Records the ordinal-derived param name as preferred for this node/index, unless the
+// documented metadata already covers that canonical name (in which case ordinal ordering
+// must not override it).
+function recordPreferredOrdinalDocName({
     node,
     paramInfo,
     paramIndex,
-    options,
     shouldAdoptOrdinalName,
     hasCompleteOrdinalDocs,
+    rawOrdinalName,
+    paramMetadataByCanonical
+}: OrdinalDocPreferencesParams) {
+    if (!hasCompleteOrdinalDocs || !node || typeof paramIndex !== NUMBER_TYPE || !shouldAdoptOrdinalName) {
+        return;
+    }
+
+    const documentedParamCanonical = getCanonicalParamNameFromText(paramInfo.name) ?? null;
+    if (documentedParamCanonical && paramMetadataByCanonical.has(documentedParamCanonical)) {
+        // The parameter already appears in the documented metadata;
+        // avoid overriding it with mismatched ordinal ordering.
+        return;
+    }
+
+    let preferredDocs = preferredParamDocNamesByNode.get(node);
+    if (!preferredDocs) {
+        preferredDocs = new Map();
+        preferredParamDocNamesByNode.set(node, preferredDocs);
+    }
+    if (!preferredDocs.has(paramIndex)) {
+        preferredDocs.set(paramIndex, rawOrdinalName);
+    }
+}
+
+// Suppresses a canonical ordinal name from implicit-doc generation when it mismatches the
+// declared parameter at this index, unless another declared parameter or implicit alias
+// already claims that canonical name (in which case it must be preserved, not suppressed).
+function suppressMismatchedOrdinalDocName({
+    node,
+    paramIndex,
+    options,
+    shouldAdoptOrdinalName,
     canonicalOrdinal,
     canonicalParamName,
-    rawOrdinalName,
     paramMetadataByCanonical,
     implicitDocEntryByIndex
 }: OrdinalDocPreferencesParams) {
-    if (hasCompleteOrdinalDocs && node && typeof paramIndex === NUMBER_TYPE && shouldAdoptOrdinalName) {
-        const documentedParamCanonical = getCanonicalParamNameFromText(paramInfo.name) ?? null;
-        if (documentedParamCanonical && paramMetadataByCanonical.has(documentedParamCanonical)) {
-            // The parameter already appears in the documented metadata;
-            // avoid overriding it with mismatched ordinal ordering.
-        } else {
-            let preferredDocs = preferredParamDocNamesByNode.get(node);
-            if (!preferredDocs) {
-                preferredDocs = new Map();
-                preferredParamDocNamesByNode.set(node, preferredDocs);
-            }
-            if (!preferredDocs.has(paramIndex)) {
-                preferredDocs.set(paramIndex, rawOrdinalName);
-            }
-        }
-    }
-
     if (
-        !shouldAdoptOrdinalName &&
-        canonicalOrdinal &&
-        canonicalParamName &&
-        canonicalOrdinal !== canonicalParamName &&
-        node &&
-        !paramMetadataByCanonical.has(canonicalParamName)
+        shouldAdoptOrdinalName ||
+        !canonicalOrdinal ||
+        !canonicalParamName ||
+        canonicalOrdinal === canonicalParamName ||
+        !node ||
+        paramMetadataByCanonical.has(canonicalParamName)
     ) {
-        const canonicalOrdinalMatchesDeclaredParam = Array.isArray(node?.params)
-            ? node.params.some((candidate: any, candidateIndex: number) => {
-                  if (candidateIndex === paramIndex) {
-                      return false;
-                  }
-
-                  const candidateInfo = getParameterDocInfo(candidate, node, options);
-                  const candidateCanonical = candidateInfo?.name
-                      ? getCanonicalParamNameFromText(candidateInfo.name)
-                      : null;
-
-                  return candidateCanonical === canonicalOrdinal;
-              })
-            : false;
-
-        const canonicalOrdinalMatchesImplicitAlias =
-            implicitDocEntryByIndex &&
-            Array.from(implicitDocEntryByIndex.values()).some((entry) => entry.name === canonicalOrdinal);
-
-        if (canonicalOrdinalMatchesDeclaredParam || canonicalOrdinalMatchesImplicitAlias) {
-            // Preserve canonical ordinal names when they match declared parameters or aliases.
-        } else {
-            let suppressedCanonicals = suppressedImplicitDocCanonicalByNode.get(node);
-            if (!suppressedCanonicals) {
-                suppressedCanonicals = new Set();
-                suppressedImplicitDocCanonicalByNode.set(node, suppressedCanonicals);
-            }
-            suppressedCanonicals.add(canonicalOrdinal);
-        }
+        return;
     }
+
+    const canonicalOrdinalMatchesDeclaredParam = Array.isArray(node?.params)
+        ? node.params.some((candidate: any, candidateIndex: number) => {
+              if (candidateIndex === paramIndex) {
+                  return false;
+              }
+
+              const candidateInfo = getParameterDocInfo(candidate, node, options);
+              const candidateCanonical = candidateInfo?.name ? getCanonicalParamNameFromText(candidateInfo.name) : null;
+
+              return candidateCanonical === canonicalOrdinal;
+          })
+        : false;
+
+    const canonicalOrdinalMatchesImplicitAlias =
+        implicitDocEntryByIndex &&
+        Array.from(implicitDocEntryByIndex.values()).some((entry) => entry.name === canonicalOrdinal);
+
+    if (canonicalOrdinalMatchesDeclaredParam || canonicalOrdinalMatchesImplicitAlias) {
+        // Preserve canonical ordinal names when they match declared parameters or aliases.
+        return;
+    }
+
+    let suppressedCanonicals = suppressedImplicitDocCanonicalByNode.get(node);
+    if (!suppressedCanonicals) {
+        suppressedCanonicals = new Set();
+        suppressedImplicitDocCanonicalByNode.set(node, suppressedCanonicals);
+    }
+    suppressedCanonicals.add(canonicalOrdinal);
+}
+
+function handleOrdinalDocPreferences(params: OrdinalDocPreferencesParams) {
+    recordPreferredOrdinalDocName(params);
+    suppressMismatchedOrdinalDocName(params);
 }
 
 function applyImplicitNameOverride({

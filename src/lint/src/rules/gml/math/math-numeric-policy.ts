@@ -29,11 +29,16 @@ const { isObjectLike } = Core;
  * Configurable numeric-safety policy for math transform passes.
  *
  * @remarks
- * Both fields must be positive finite numbers. `minSafeDivisor` and
+ * All fields must be positive finite numbers. `minSafeDivisor` and
  * `maxSafeReciprocal` are expected to be reciprocals of each other; the
  * resolver does not enforce that relationship so that callers can intentionally
  * pick asymmetric bounds (for example, a stricter reciprocal cap combined with
  * a more permissive divisor floor) without fighting the helper.
+ * `zeroQuantityEpsilon` is intentionally independent from the reciprocal pair:
+ * it tunes how aggressively residual floating-point noise (for example, a
+ * nearly-zero accumulated delta from a sequence of `+=` and `-=` writes, or
+ * a near-zero factor exponent) is collapsed to an "effectively zero" value,
+ * which is a different concern from safe division boundaries.
  */
 export type MathNumericPolicy = Readonly<{
     /**
@@ -52,21 +57,40 @@ export type MathNumericPolicy = Readonly<{
      * `maxSafeReciprocal` (`minSafeDivisor ≈ 1 / maxSafeReciprocal`).
      */
     minSafeDivisor: number;
+
+    /**
+     * Tolerance (in absolute terms) below which a floating-point quantity is
+     * treated as effectively zero by the rule-level cleanup paths — for
+     * instance, the residual exponent on a near-zero factor or the residual
+     * delta accumulated across a sequence of `+=` / `-=` statements.
+     *
+     * The value is intentionally wider than `Number.EPSILON` because real GML
+     * code accumulates tiny residuals across many chained updates; a value
+     * near machine epsilon would never recognise those residuals as zero and
+     * the corresponding cleanup rewrites would silently no-op.
+     */
+    zeroQuantityEpsilon: number;
 }>;
 
 const DEFAULT_MAX_SAFE_RECIPROCAL = 1e10;
 const DEFAULT_MIN_SAFE_DIVISOR = 1e-10;
+const DEFAULT_ZERO_QUANTITY_EPSILON = 1e-10;
 
 /**
  * Default numeric-safety policy used by the math transform passes.
  *
  * Values match the thresholds previously hardcoded in
- * `math-division-to-multiplication.ts` and `math-traversal-normalization.ts`,
- * so existing rewrites behave identically with no opt-in required.
+ * `math-division-to-multiplication.ts`, `math-traversal-normalization.ts`,
+ * and `optimize-math-expressions-rule.ts`, so existing rewrites behave
+ * identically with no opt-in required. The
+ * `optimize-math-expressions` rule consumes `zeroQuantityEpsilon` directly
+ * to replace two duplicated `1e-10` literals that previously lived inline
+ * in the rule file.
  */
 export const DEFAULT_MATH_NUMERIC_POLICY: MathNumericPolicy = Object.freeze({
     maxSafeReciprocal: DEFAULT_MAX_SAFE_RECIPROCAL,
-    minSafeDivisor: DEFAULT_MIN_SAFE_DIVISOR
+    minSafeDivisor: DEFAULT_MIN_SAFE_DIVISOR,
+    zeroQuantityEpsilon: DEFAULT_ZERO_QUANTITY_EPSILON
 });
 
 type NormalizePolicyOptions = {
@@ -101,7 +125,8 @@ export function resolveMathNumericPolicy(value: unknown, { fallback }: Normalize
 
     return Object.freeze({
         maxSafeReciprocal: normalizePolicyNumber(override.maxSafeReciprocal, basePolicy.maxSafeReciprocal),
-        minSafeDivisor: normalizePolicyNumber(override.minSafeDivisor, basePolicy.minSafeDivisor)
+        minSafeDivisor: normalizePolicyNumber(override.minSafeDivisor, basePolicy.minSafeDivisor),
+        zeroQuantityEpsilon: normalizePolicyNumber(override.zeroQuantityEpsilon, basePolicy.zeroQuantityEpsilon)
     });
 }
 

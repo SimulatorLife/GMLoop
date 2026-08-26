@@ -173,13 +173,23 @@ export async function buildSemanticFileManifest(
             const relativePath = Core.toPosixPath(file.relativePath);
 
             const previousEntry = previousManifest?.entries.get(relativePath);
+            // Use the shared tolerance-aware comparison so sub-microsecond
+            // mtime drift (e.g. across `fs.stat` round trips, filesystem
+            // precision rounding, or serialization through the persisted
+            // semantic snapshot) does not silently invalidate the manifest
+            // cache. A bare `===` check would treat `1_700_000_000_000.0001`
+            // and `1_700_000_000_000.0002` as different files despite both
+            // pointing at the same logical content; the epsilon helper
+            // scales the tolerance to the magnitude of the mtime and
+            // matches the policy used by `Core.areNumbersApproximatelyEqual`
+            // throughout the runtime wrapper and hot-reload asset sync.
             if (
                 !overlay &&
                 previousEntry &&
                 previousEntry.sourceOrigin === "disk" &&
                 file.mtimeMs !== null &&
                 previousEntry.mtimeMs !== null &&
-                file.mtimeMs === previousEntry.mtimeMs
+                Core.areNumbersApproximatelyEqual(file.mtimeMs, previousEntry.mtimeMs)
             ) {
                 return { entry: previousEntry, wasCacheHit: true };
             }

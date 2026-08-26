@@ -1,3 +1,5 @@
+import { Core } from "@gmloop/core";
+
 import type { SemanticSnapshotAcquireResult, SemanticSnapshotLease } from "../semantic-snapshot.js";
 
 /** Sentinel returned when one request stops waiting for shared project work. */
@@ -24,7 +26,7 @@ export function waitForSemanticProjectWork<T>(
             },
             (error) => {
                 signal.removeEventListener("abort", onAbort);
-                return reject(error instanceof Error ? error : new Error("Shared semantic project work failed."));
+                return reject(Core.isErrorLike(error) ? error : new Error("Shared semantic project work failed."));
             }
         );
     });

@@ -470,6 +470,14 @@ void describe("GameMaker parser fixtures", () => {
         assert.equal(parser.options.getLocations, true);
         assert.equal(parser.options.attachFunctionDocComments, true);
         assert.equal(parser.options.sllPredictionMaxSourceLength, defaultParserOptions.sllPredictionMaxSourceLength);
+        assert.equal(
+            parser.options.predictionCacheReleaseMaxSourceLength,
+            defaultParserOptions.predictionCacheReleaseMaxSourceLength
+        );
+        assert.equal(
+            parser.options.predictionCacheReleaseInterval,
+            defaultParserOptions.predictionCacheReleaseInterval
+        );
         assert.equal(parser.options.astFormat, "gml");
     });
 
@@ -495,6 +503,54 @@ void describe("GameMaker parser fixtures", () => {
         });
 
         assert.equal(parser.options.sllPredictionMaxSourceLength, defaultParserOptions.sllPredictionMaxSourceLength);
+    });
+
+    void it("honors an explicit prediction-cache release size threshold override", () => {
+        const parser = new GMLParser("x = 1;", { predictionCacheReleaseMaxSourceLength: 32 });
+
+        assert.equal(parser.options.predictionCacheReleaseMaxSourceLength, 32);
+    });
+
+    void it("treats a prediction-cache release size threshold of 0 as unset", () => {
+        const parser = new GMLParser("x = 1;", { predictionCacheReleaseMaxSourceLength: 0 });
+
+        assert.equal(
+            parser.options.predictionCacheReleaseMaxSourceLength,
+            defaultParserOptions.predictionCacheReleaseMaxSourceLength
+        );
+    });
+
+    void it("falls back to defaults when the prediction-cache release size threshold is invalid", () => {
+        const parser = new GMLParser("x = 1;", { predictionCacheReleaseMaxSourceLength: Number.NaN });
+
+        assert.equal(
+            parser.options.predictionCacheReleaseMaxSourceLength,
+            defaultParserOptions.predictionCacheReleaseMaxSourceLength
+        );
+    });
+
+    void it("honors an explicit prediction-cache release interval override", () => {
+        const parser = new GMLParser("x = 1;", { predictionCacheReleaseInterval: 4 });
+
+        assert.equal(parser.options.predictionCacheReleaseInterval, 4);
+    });
+
+    void it("treats a prediction-cache release interval of 0 as unset", () => {
+        const parser = new GMLParser("x = 1;", { predictionCacheReleaseInterval: 0 });
+
+        assert.equal(
+            parser.options.predictionCacheReleaseInterval,
+            defaultParserOptions.predictionCacheReleaseInterval
+        );
+    });
+
+    void it("falls back to defaults when the prediction-cache release interval is invalid", () => {
+        const parser = new GMLParser("x = 1;", { predictionCacheReleaseInterval: Number.NaN });
+
+        assert.equal(
+            parser.options.predictionCacheReleaseInterval,
+            defaultParserOptions.predictionCacheReleaseInterval
+        );
     });
 
     void it("counts CRLF sequences as a single line break", () => {
