@@ -10,11 +10,15 @@ import {
 
 void test("DEFAULT_MATH_NUMERIC_POLICY matches the previous hardcoded thresholds", () => {
     // The values here intentionally match the constants that used to live as
-    // duplicated `const` declarations in math-division-to-multiplication.ts
-    // and math-traversal-normalization.ts. Updating either side without the
-    // other would change observable rewrite behavior, so we pin them here.
+    // duplicated `const` declarations in math-division-to-multiplication.ts,
+    // math-traversal-normalization.ts, and two duplicated `1e-10` literals
+    // inside optimize-math-expressions-rule.ts
+    // (`buildMultiplicativeExpression` and `performDeadCodeElimination`).
+    // Updating either side without the other would change observable rewrite
+    // behavior, so we pin them here.
     assert.strictEqual(DEFAULT_MATH_NUMERIC_POLICY.maxSafeReciprocal, 1e10);
     assert.strictEqual(DEFAULT_MATH_NUMERIC_POLICY.minSafeDivisor, 1e-10);
+    assert.strictEqual(DEFAULT_MATH_NUMERIC_POLICY.zeroQuantityEpsilon, 1e-10);
 });
 
 void test("DEFAULT_MATH_NUMERIC_POLICY is frozen to prevent mutation", () => {
@@ -38,7 +42,8 @@ void test("resolveMathNumericPolicy returns the default policy for non-object in
 void test("resolveMathNumericPolicy accepts a complete policy override", () => {
     const override: MathNumericPolicy = Object.freeze({
         maxSafeReciprocal: 5e5,
-        minSafeDivisor: 2e-6
+        minSafeDivisor: 2e-6,
+        zeroQuantityEpsilon: 5e-6
     });
     const resolved = resolveMathNumericPolicy(override);
     assert.deepStrictEqual(resolved, override);
@@ -50,6 +55,7 @@ void test("resolveMathNumericPolicy merges partial overrides with the defaults",
     const resolved = resolveMathNumericPolicy(partial);
     assert.strictEqual(resolved.maxSafeReciprocal, 5e5);
     assert.strictEqual(resolved.minSafeDivisor, DEFAULT_MATH_NUMERIC_POLICY.minSafeDivisor);
+    assert.strictEqual(resolved.zeroQuantityEpsilon, DEFAULT_MATH_NUMERIC_POLICY.zeroQuantityEpsilon);
 });
 
 void test("resolveMathNumericPolicy falls back per-field for invalid numeric overrides", () => {
@@ -98,7 +104,8 @@ void test("resolveMathNumericPolicy treats blank and non-numeric strings as miss
 void test("resolveMathNumericPolicy honours a custom fallback policy", () => {
     const customFallback: MathNumericPolicy = Object.freeze({
         maxSafeReciprocal: 100,
-        minSafeDivisor: 0.01
+        minSafeDivisor: 0.01,
+        zeroQuantityEpsilon: 0.02
     });
     const resolved = resolveMathNumericPolicy(undefined, { fallback: customFallback });
     assert.deepStrictEqual(resolved, customFallback);
@@ -110,6 +117,7 @@ void test("resolveMathNumericPolicy honours a custom fallback policy", () => {
     const merged = resolveMathNumericPolicy(partialOverride, { fallback: customFallback });
     assert.strictEqual(merged.maxSafeReciprocal, customFallback.maxSafeReciprocal);
     assert.strictEqual(merged.minSafeDivisor, 0.5);
+    assert.strictEqual(merged.zeroQuantityEpsilon, customFallback.zeroQuantityEpsilon);
 });
 
 void test("resolveMathNumericPolicy ignores boolean and object field overrides", () => {
@@ -357,4 +365,54 @@ void test("applyDivisionToMultiplication rejects reciprocal numerators outside t
     // division because the numerator is clearly not within tolerance of 1.
     assert.strictEqual(ast.right.operator, "*");
     assert.strictEqual(ast.right.right.value, "0.5");
+});
+
+void test("resolveMathNumericPolicy accepts a zeroQuantityEpsilon override on its own", () => {
+    // The zero-quantity tolerance is independent of the reciprocal/divisor
+    // pair; downstream callers should be able to tune it without touching
+    // the other two fields. Pin the merge semantics so future refactors
+    // can't silently drop the override.
+    const override = { zeroQuantityEpsilon: 1e-6 };
+    const resolved = resolveMathNumericPolicy(override);
+    assert.strictEqual(resolved.zeroQuantityEpsilon, 1e-6);
+    assert.strictEqual(resolved.maxSafeReciprocal, DEFAULT_MATH_NUMERIC_POLICY.maxSafeReciprocal);
+    assert.strictEqual(resolved.minSafeDivisor, DEFAULT_MATH_NUMERIC_POLICY.minSafeDivisor);
+});
+
+void test("resolveMathNumericPolicy rejects non-positive zeroQuantityEpsilon overrides", () => {
+    // Negative, NaN, infinite, and zero zeroQuantityEpsilon values are
+    // rejected so callers can't accidentally widen the rewrite to include
+    // clearly non-zero quantities. The fallback preserves the corresponding
+    // field from the default policy.
+    const resolved = resolveMathNumericPolicy({
+        zeroQuantityEpsilon: -1e-12
+    });
+    assert.strictEqual(resolved.zeroQuantityEpsilon, DEFAULT_MATH_NUMERIC_POLICY.zeroQuantityEpsilon);
+
+    const zeroResolved = resolveMathNumericPolicy({ zeroQuantityEpsilon: 0 });
+    assert.strictEqual(zeroResolved.zeroQuantityEpsilon, DEFAULT_MATH_NUMERIC_POLICY.zeroQuantityEpsilon);
+
+    const nanResolved = resolveMathNumericPolicy({ zeroQuantityEpsilon: Number.NaN });
+    assert.strictEqual(nanResolved.zeroQuantityEpsilon, DEFAULT_MATH_NUMERIC_POLICY.zeroQuantityEpsilon);
+});
+
+void test("resolveMathNumericPolicy parses zeroQuantityEpsilon from numeric strings", () => {
+    // Numeric coercion must mirror the other fields so JSON/YAML config
+    // sources can supply the threshold as a string (for example, "5e-7")
+    // without the rule throwing at parse time.
+    const resolved = resolveMathNumericPolicy({ zeroQuantityEpsilon: "  5e-7 " });
+    assert.strictEqual(resolved.zeroQuantityEpsilon, 5e-7);
+});
+
+void test("resolveMathNumericPolicy surfaces a custom zeroQuantityEpsilon through the custom fallback", () => {
+    // A custom fallback policy must drive zeroQuantityEpsilon the same way
+    // it drives the reciprocal/divisor pair, so callers can lock all three
+    // settings together by passing a dedicated fallback policy.
+    const customFallback: MathNumericPolicy = Object.freeze({
+        maxSafeReciprocal: 1e8,
+        minSafeDivisor: 1e-9,
+        zeroQuantityEpsilon: 1e-9
+    });
+    const resolved = resolveMathNumericPolicy(undefined, { fallback: customFallback });
+    assert.strictEqual(resolved.zeroQuantityEpsilon, 1e-9);
 });
