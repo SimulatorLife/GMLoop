@@ -7,6 +7,7 @@ import {
     cullGraphLayoutToViewport,
     EDGE_LINE_VISUAL_STYLES,
     filterGraphLayoutForDisplay,
+    getEdgeIntersection,
     type GraphLayout,
     type GraphLayoutNode,
     type GraphLegendNodeKind,
@@ -335,26 +336,6 @@ export class GmGraphPanel extends LightDomLitElement {
         this.#refreshViewportRenderIfNeeded();
     };
 
-    #getEdgeIntersection(source: GraphLayoutNode, target: GraphLayoutNode) {
-        const dx = target.x - source.x;
-        const dy = target.y - source.y;
-        const dist = Math.hypot(dx, dy);
-
-        if (dist === 0) {
-            return { x1: source.x, y1: source.y, x2: target.x, y2: target.y };
-        }
-
-        const nx = dx / dist;
-        const ny = dy / dist;
-
-        return {
-            x1: source.x + nx * source.radius,
-            y1: source.y + ny * source.radius,
-            x2: target.x - nx * target.radius,
-            y2: target.y - ny * target.radius
-        };
-    }
-
     protected toggleNodeKind(kind: GraphLegendNodeKind): void {
         if (this.#enabledNodeKinds.has(kind)) {
             this.#enabledNodeKinds.delete(kind);
@@ -640,7 +621,7 @@ export class GmGraphPanel extends LightDomLitElement {
         }
 
         return layout.edges.map((edge) => {
-            const geometry = this.#getEdgeIntersection(edge.sourceNode, edge.targetNode);
+            const geometry = getEdgeIntersection(edge);
             const aggregateCount = readGraphEdgeAggregateCount(edge);
             return svg`
                 <line
