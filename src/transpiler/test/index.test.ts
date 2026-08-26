@@ -122,7 +122,7 @@ void test("transpileScript rejects malformed ast objects before property access"
                 ast: { type: "Program" }
             }),
         {
-            message: /ast\.body to be an array/
+            message: /satisfy the ProgramNode contract/
         }
     );
 });
@@ -138,7 +138,7 @@ void test("transpileScript rejects non-Program ast objects", () => {
                 ast: { type: "BinaryExpression", body: [] }
             }),
         {
-            message: /ast\.type to be 'Program'/
+            message: /satisfy the ProgramNode contract/
         }
     );
 });

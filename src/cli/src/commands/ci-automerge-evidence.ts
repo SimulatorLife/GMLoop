@@ -5,7 +5,12 @@ import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 
-import { Core } from "@gmloop/core";
+import {
+    appendAutoMergeGitHubOutputs as appendOutputs,
+    readAutoMergeJsonArtifact as readJson,
+    readOptionalAutoMergeJsonArtifact as readOptionalJson,
+    writeAutoMergeJsonArtifact as writeJson
+} from "./ci-automerge-artifacts.js";
 
 const BUILD_FILE = "build-evidence.json";
 const REPORT_FILE = "auto-merge-report.json";
@@ -21,10 +26,6 @@ const EVIDENCE_FILES = [
     "src/cli/src/commands/ci-automerge-evidence.ts",
     "src/cli/src/commands/ci-automerge-gate.ts",
     "src/cli/src/commands/ci-automerge-state.ts",
-    ".github/ci/automerge-policy.json",
-    ".github/actions/run-automerge-validation/action.yml",
-    ".github/workflows/automerge-prs.yml",
-    ".github/workflows/cache-automerge-base-report.yml",
     "package.json",
     "pnpm-lock.yaml",
     "pnpm-workspace.yaml",
@@ -132,29 +133,6 @@ function normalizeRepositoryPath(value: string): string {
     return markerIndex === -1 ? normalized.replace(/^\.\//u, "") : normalized.slice(markerIndex + marker.length);
 }
 
-function readJson(file: string): unknown {
-    return JSON.parse(fs.readFileSync(file, "utf8")) as unknown;
-}
-
-function readOptionalJson(file: string): unknown | null {
-    try {
-        return readJson(file);
-    } catch {
-        return null;
-    }
-}
-
-function writeJson(file: string, value: unknown): void {
-    fs.mkdirSync(path.dirname(file), { recursive: true });
-    fs.writeFileSync(file, `${JSON.stringify(value, null, 2)}\n`, "utf8");
-}
-
-function appendOutputs(file: string | undefined, values: Readonly<Record<string, string | number | boolean>>): void {
-    if (!file) return;
-    const lines = Object.entries(values).map(([key, value]) => `${key}=${String(value)}`);
-    fs.appendFileSync(file, `${lines.join("\n")}\n`, "utf8");
-}
-
 function collectFiles(rootDirectory: string): Array<string> {
     if (!fs.existsSync(rootDirectory)) return [];
     const output: Array<string> = [];
@@ -255,7 +233,7 @@ function createTestWeights(tests: ReadonlyArray<string>, historyFile: string | u
     return tests.map((testFile) => {
         const duration = durations.get(testFile);
         if (duration !== undefined) return Object.freeze({ file: testFile, weightMs: duration });
-        const sizeRatio = Core.clamp((sizes.get(testFile) ?? medianSize) / medianSize, 0.5, 2);
+        const sizeRatio = Math.min(2, Math.max(0.5, (sizes.get(testFile) ?? medianSize) / medianSize));
         return Object.freeze({ file: testFile, weightMs: Math.max(1, fallbackDuration * sizeRatio) });
     });
 }

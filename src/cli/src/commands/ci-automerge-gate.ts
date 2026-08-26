@@ -4,11 +4,18 @@ import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 
+import {
+    appendAutoMergeGitHubOutputs as appendOutputs,
+    readAutoMergeJsonArtifact as readJson,
+    writeAutoMergeJsonArtifact as writeJson
+} from "./ci-automerge-artifacts.js";
+
 const BUILD_FILE = "build-evidence.json";
 const REPORT_FILE = "auto-merge-report.json";
 const MANIFEST_FILE = "test-manifest.json";
 const LINT_FILE = "eslint.json";
 const CASES_FILE = "test-cases.json";
+const POLICY_FILE = ".github/ci/automerge-policy.json";
 
 type StringMap = Record<string, string>;
 type JsonRecord = Record<string, unknown>;
@@ -17,6 +24,15 @@ type LintFinding = Readonly<{ file: string; severity: number; ruleId: string; me
 type CaseEvidence = Readonly<{ file: string; name: string; status: "passed" | "failed" | "skipped" }>;
 type CaseCounts = { total: number; failed: number; skipped: number; sample: CaseEvidence };
 type ComparisonItem = Readonly<{ key: string; count: number; sample: CaseEvidence }>;
+type TestComparison = Readonly<{
+    baseCaseCount: number;
+    targetCaseCount: number;
+    netRemovedCaseCount: number;
+    removedFiles: ReadonlyArray<string>;
+    removedCases: ReadonlyArray<ComparisonItem>;
+    newFailures: ReadonlyArray<ComparisonItem>;
+    newSkips: ReadonlyArray<ComparisonItem>;
+}>;
 
 function isRecord(value: unknown): value is JsonRecord {
     return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -43,20 +59,6 @@ function requireOption(args: ParsedArgs, name: string): string {
     return value;
 }
 
-function readJson(file: string): unknown {
-    return JSON.parse(fs.readFileSync(file, "utf8")) as unknown;
-}
-
-function writeJson(file: string, value: unknown): void {
-    fs.mkdirSync(path.dirname(file), { recursive: true });
-    fs.writeFileSync(file, `${JSON.stringify(value, null, 2)}\n`, "utf8");
-}
-
-function appendOutputs(file: string | undefined, values: Readonly<Record<string, string | boolean>>): void {
-    if (!file) return;
-    fs.appendFileSync(file, `${Object.entries(values).map(([key, value]) => `${key}=${String(value)}`).join("\n")}\n`, "utf8");
-}
-
 function normalizePath(value: string): string {
     return value.replaceAll("\\", "/");
 }
@@ -68,6 +70,16 @@ function normalizeRepositoryPath(value: string): string {
     const marker = "/GMLoop/";
     const markerIndex = normalized.lastIndexOf(marker);
     return markerIndex >= 0 ? normalized.slice(markerIndex + marker.length) : normalized.replace(/^\.\//u, "");
+}
+
+function readMaxRemovedTestCases(): number {
+    const policy = readJson(POLICY_FILE);
+    if (!isRecord(policy)) throw new Error("Malformed auto-merge policy.");
+    const value = policy.maxRemovedTestCases;
+    if (typeof value !== "number" || !Number.isInteger(value) || value < 0 || value > 100) {
+        throw new Error("Auto-merge policy maxRemovedTestCases must be an integer from 0 through 100.");
+    }
+    return value;
 }
 
 function collectLintFindings(value: unknown): Array<LintFinding> {
@@ -143,17 +155,14 @@ function summarizeCases(cases: ReadonlyArray<CaseEvidence>): Map<string, CaseCou
     return result;
 }
 
-function compareTests(baseManifest: unknown, targetManifest: unknown, baseCasesValue: unknown, targetCasesValue: unknown): Readonly<{
-    removedFiles: ReadonlyArray<string>;
-    removedCases: ReadonlyArray<ComparisonItem>;
-    newFailures: ReadonlyArray<ComparisonItem>;
-    newSkips: ReadonlyArray<ComparisonItem>;
-}> {
+function compareTests(baseManifest: unknown, targetManifest: unknown, baseCasesValue: unknown, targetCasesValue: unknown): TestComparison {
     const baseFiles = new Set(readManifestTests(baseManifest));
     const targetFiles = new Set(readManifestTests(targetManifest));
     const removedFiles = [...baseFiles].filter((file) => !targetFiles.has(file)).sort((left, right) => left.localeCompare(right));
-    const base = summarizeCases(readCases(baseCasesValue));
-    const target = summarizeCases(readCases(targetCasesValue));
+    const baseCases = readCases(baseCasesValue);
+    const targetCases = readCases(targetCasesValue);
+    const base = summarizeCases(baseCases);
+    const target = summarizeCases(targetCases);
     const removedCases: Array<ComparisonItem> = [];
     const newFailures: Array<ComparisonItem> = [];
     const newSkips: Array<ComparisonItem> = [];
@@ -168,7 +177,15 @@ function compareTests(baseManifest: unknown, targetManifest: unknown, baseCasesV
         if (targetCounts.failed > 0) newFailures.push(Object.freeze({ key, count: targetCounts.failed, sample: targetCounts.sample }));
         if (targetCounts.skipped > 0) newSkips.push(Object.freeze({ key, count: targetCounts.skipped, sample: targetCounts.sample }));
     }
-    return Object.freeze({ removedFiles: Object.freeze(removedFiles), removedCases: Object.freeze(removedCases), newFailures: Object.freeze(newFailures), newSkips: Object.freeze(newSkips) });
+    return Object.freeze({
+        baseCaseCount: baseCases.length,
+        targetCaseCount: targetCases.length,
+        netRemovedCaseCount: Math.max(0, baseCases.length - targetCases.length),
+        removedFiles: Object.freeze(removedFiles),
+        removedCases: Object.freeze(removedCases),
+        newFailures: Object.freeze(newFailures),
+        newSkips: Object.freeze(newSkips)
+    });
 }
 
 function evidenceKind(directory: string): "full" | "build-failure" {
@@ -188,6 +205,7 @@ function commandEvaluate(args: ParsedArgs): number {
     const baseDirectory = requireOption(args, "base");
     const mergeDirectory = requireOption(args, "merge");
     const ancestorDirectory = args.options.ancestor?.trim() ?? "";
+    const maxRemovedTestCases = readMaxRemovedTestCases();
     const baseKind = evidenceKind(baseDirectory);
     const mergeKind = evidenceKind(mergeDirectory);
     const baseBuild = readJson(path.join(baseDirectory, BUILD_FILE));
@@ -197,6 +215,7 @@ function commandEvaluate(args: ParsedArgs): number {
     let green = false;
     let reason = "infrastructure";
     let baselineKind = "base";
+    let netRemovedTestCases = 0;
     const lines = ["### Trusted auto-merge evaluation", ""];
     if (mergeKind === "build-failure") {
         reason = "build-failure";
@@ -220,26 +239,54 @@ function commandEvaluate(args: ParsedArgs): number {
                 readJson(path.join(baselineDirectory, MANIFEST_FILE)), readJson(path.join(mergeDirectory, MANIFEST_FILE)),
                 readJson(path.join(baselineDirectory, CASES_FILE)), readJson(path.join(mergeDirectory, CASES_FILE))
             );
-            const hasRegression = lint.added.length > 0 || tests.removedFiles.length > 0 || tests.removedCases.length > 0
+            netRemovedTestCases = tests.netRemovedCaseCount;
+            const exceedsRemovalBudget = tests.netRemovedCaseCount > maxRemovedTestCases;
+            const hasRegression = lint.added.length > 0 || exceedsRemovalBudget
                 || tests.newFailures.length > 0 || tests.newSkips.length > 0;
             if (!hasRegression) {
                 green = true;
                 reason = baseKind === "build-failure" ? "recovery" : "clean";
-                lines.push("", "✅ No new lint warnings/errors, removed tests, newly failing tests, or newly skipped tests were introduced.", "",
+                lines.push(
+                    "",
+                    "✅ No new lint warnings/errors, newly failing tests, or newly skipped tests were introduced, and net test removal stays within policy.",
+                    "",
                     `- Lint findings: ${lint.baseCount} baseline → ${lint.targetCount} merged; **0 new/upgraded**.`,
-                    `- Canonical test files: **0 removed**.`, "- Test cases: **0 removed / 0 newly failing / 0 newly skipped**.");
+                    `- Test cases: ${tests.baseCaseCount} baseline → ${tests.targetCaseCount} merged; **net reduction ${tests.netRemovedCaseCount}/${maxRemovedTestCases} allowed**.`,
+                    `- Canonical test files removed: **${tests.removedFiles.length}** (informational; case-count budget is authoritative).`,
+                    "- Newly failing / newly skipped test cases: **0 / 0**."
+                );
+                if (tests.removedCases.length > 0) {
+                    const grossRemovedCases = tests.removedCases.reduce((total, item) => total + item.count, 0);
+                    lines.push("", `ℹ️ Gross removed/renamed test-case identities: **${grossRemovedCases}**; new passing cases offset these when calculating net reduction.`);
+                }
             } else {
                 reason = "quality-regression";
                 lines.push("", "❌ The exact synthetic merge weakens the trusted quality baseline.");
                 if (lint.added.length > 0) lines.push("", `**New/upgraded lint findings (${lint.added.length})**`, ...lint.added.slice(0, 8).map((item) => `- ${item.file}: ${item.ruleId || "eslint"}: ${item.message}`));
-                if (tests.removedFiles.length > 0) lines.push("", `**Removed canonical test files (${tests.removedFiles.length})**`, ...tests.removedFiles.slice(0, 8).map((file) => `- ${file}`));
-                if (tests.removedCases.length > 0) lines.push("", `**Removed test cases (${tests.removedCases.reduce((total, item) => total + item.count, 0)})**`, ...formatSamples(tests.removedCases));
+                if (exceedsRemovalBudget) {
+                    lines.push(
+                        "",
+                        `**Net test-case reduction exceeds policy (${tests.netRemovedCaseCount} removed; maximum ${maxRemovedTestCases})**`,
+                        `- Test cases: ${tests.baseCaseCount} baseline → ${tests.targetCaseCount} merged.`
+                    );
+                    if (tests.removedFiles.length > 0) lines.push(`- Removed canonical test files: ${tests.removedFiles.length}.`);
+                    if (tests.removedCases.length > 0) lines.push(...formatSamples(tests.removedCases));
+                }
                 if (tests.newFailures.length > 0) lines.push("", `**Newly failing test cases (${tests.newFailures.reduce((total, item) => total + item.count, 0)})**`, ...formatSamples(tests.newFailures));
                 if (tests.newSkips.length > 0) lines.push("", `**Newly skipped test cases (${tests.newSkips.reduce((total, item) => total + item.count, 0)})**`, ...formatSamples(tests.newSkips));
             }
         }
     }
-    writeJson(requireOption(args, "output"), { schemaVersion: 1, green, reason, baselineKind, baseSha, mergeSha });
+    writeJson(requireOption(args, "output"), {
+        schemaVersion: 1,
+        green,
+        reason,
+        baselineKind,
+        baseSha,
+        mergeSha,
+        maxRemovedTestCases,
+        netRemovedTestCases
+    });
     fs.writeFileSync(requireOption(args, "summary"), `${lines.join("\n")}\n`, "utf8");
     appendOutputs(args.options["github-output"], { green, reason, baseline_kind: baselineKind });
     return 0;
@@ -258,6 +305,31 @@ function selfTest(): void {
     assert.equal(compareTests(manifest, manifest, passing, []).removedCases.length, 1);
     assert.equal(compareTests(manifest, { tests: [] }, passing, []).removedFiles.length, 1);
     assert.equal(compareTests(manifest, manifest, [], [{ file: "a.test.js", name: "new", status: "failed" }]).newFailures.length, 1);
+
+    const baselineCases = ["one", "two", "three", "four", "five"].map((name) => ({ file: "a.test.js", name, status: "passed" as const }));
+    const threeRemoved = compareTests(manifest, manifest, baselineCases, baselineCases.slice(0, 2));
+    assert.equal(threeRemoved.netRemovedCaseCount, 3);
+    assert.equal(threeRemoved.netRemovedCaseCount > 3, false);
+    const fourRemoved = compareTests(manifest, manifest, baselineCases, baselineCases.slice(0, 1));
+    assert.equal(fourRemoved.netRemovedCaseCount, 4);
+    assert.equal(fourRemoved.netRemovedCaseCount > 3, true);
+
+    const deduplicatedWithReplacement = compareTests(
+        manifest,
+        manifest,
+        baselineCases,
+        [
+            { file: "a.test.js", name: "replacement-one", status: "passed" },
+            { file: "a.test.js", name: "replacement-two", status: "passed" },
+            { file: "a.test.js", name: "replacement-three", status: "passed" },
+            { file: "a.test.js", name: "replacement-four", status: "passed" }
+        ]
+    );
+    assert.equal(deduplicatedWithReplacement.removedCases.reduce((total, item) => total + item.count, 0), 5);
+    assert.equal(deduplicatedWithReplacement.netRemovedCaseCount, 1);
+    assert.equal(deduplicatedWithReplacement.newFailures.length, 0);
+    assert.equal(deduplicatedWithReplacement.newSkips.length, 0);
+
     process.stdout.write("ci-automerge gate self-test passed\n");
 }
 

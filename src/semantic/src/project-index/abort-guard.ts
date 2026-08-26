@@ -16,6 +16,20 @@ export type ProjectIndexAbortGuard = {
     ensureNotAborted(this: void): void;
 };
 
+/**
+ * Create a reusable cancellation checkpoint for project-index work.
+ *
+ * The guard reads `options.signal` unless `config.key` selects another
+ * property. Construction throws for an already-aborted signal; cancellation
+ * after construction is observed when callers invoke `ensureNotAborted()`.
+ *
+ * @param {unknown} options Candidate options bag containing the abort signal.
+ * @param {ProjectIndexAbortGuardConfig} [config] Signal property and fallback
+ *        message overrides. A non-null `fallbackMessage` takes precedence over
+ *        `message`; otherwise the project-index build message is used.
+ * @returns {ProjectIndexAbortGuard} The normalized signal, or `null` when no
+ *          usable signal exists, together with its checkpoint.
+ */
 export function createProjectIndexAbortGuard(
     options: unknown,
     config: ProjectIndexAbortGuardConfig = {}

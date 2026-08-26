@@ -13,7 +13,6 @@ void test("buildNoMatchingFilesMessage reports ignored directory matches", () =>
         targetPath: ".",
         targetIsDirectory: true,
         targetPathProvided: false,
-        extensions: [".gml"],
         ignoredFilesSkipped: true,
         gmlExtension: ".gml",
         cliExample: "pnpm dlx gmloop format --path path/to/project",

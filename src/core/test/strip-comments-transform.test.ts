@@ -84,8 +84,9 @@ void test("stripCommentsTransform returns the ast unchanged when given a non-obj
     assert.equal(result, null);
 });
 
-void test("stripCommentsTransform has expected name and defaultOptions", () => {
+void test("stripCommentsTransform has expected name and frozen defaultOptions", () => {
     assert.equal(stripCommentsTransform.name, "strip-comments");
+    assert.ok(Object.isFrozen(stripCommentsTransform.defaultOptions));
     assert.equal(stripCommentsTransform.defaultOptions.stripComments, true);
     assert.equal(stripCommentsTransform.defaultOptions.stripJsDoc, true);
     assert.equal(stripCommentsTransform.defaultOptions.dropCommentedOutCode, false);

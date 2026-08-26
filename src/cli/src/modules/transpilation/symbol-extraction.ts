@@ -453,7 +453,7 @@ function walkNodeForReferences(node: unknown, references: Set<string>, locallyBo
 export function extractReferencesFromAst(ast: AstNode): Array<string> {
     const references = new Set<string>();
 
-    if (ast.type === "Program" && Array.isArray(ast.body)) {
+    if (Core.isProgramNode(ast)) {
         const topLevelNodes = ast.body.filter((node): node is AstNode => typeof node === "object" && node !== null);
         const topLevelBindings = new Set<string>();
 

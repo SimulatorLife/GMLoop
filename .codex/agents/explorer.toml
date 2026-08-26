@@ -1,10 +1,9 @@
 name = "explorer"
-description = "MiniMax-M3 read-only explorer for locating code, tracing symbols and modules, answering codebase questions, and returning concise evidence-backed summaries."
-nickname_candidates = ["MiniScout", "MiniFinder", "MiniSurveyor"]
+description = "OpenAI-backed read-only explorer for locating code, tracing symbols and modules, answering codebase questions, and returning concise evidence-backed summaries."
+nickname_candidates = ["OpenAIScout", "OpenAIFinder", "OpenAISurveyor"]
 
-model_provider = "minimax"
-model = "MiniMax-M3"
-model_reasoning_effort = "high"
+model = "gpt-5.6-luna"
+model_reasoning_effort = "medium"
 model_reasoning_summary = "none"
 sandbox_mode = "read-only"
 

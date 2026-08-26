@@ -9,6 +9,7 @@ export {
     buildGraphEdgeBatches,
     createGraphRenderBounds,
     cullGraphLayoutToViewport,
+    getEdgeIntersection,
     type GraphRenderLabelMode,
     type GraphViewportBounds,
     isGraphViewportCovered,
