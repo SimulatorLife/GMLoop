@@ -1,13 +1,36 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import path from "node:path";
 import { describe, it } from "node:test";
+import { fileURLToPath } from "node:url";
 
 import { createEnumeratedOptionHelpers, normalizeEnumeratedOption } from "../src/utils/enumerated-options.js";
+
+const REPOSITORY_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../..");
+const ENUMERATED_OPTIONS_SOURCE_PATH = path.resolve(REPOSITORY_ROOT, "src/core/src/utils/enumerated-options.ts");
 
 void describe("createEnumeratedOptionHelpers", () => {
     void it("normalizes to lowercase by default", () => {
         const helpers = createEnumeratedOptionHelpers(["json", "yaml"]);
         assert.equal(helpers.normalize("JSON"), "json");
         assert.equal(helpers.normalize("YaML"), "yaml");
+    });
+
+    void it("only accepts the options object shape; the legacy positional-formatter branch is not reintroduced", async () => {
+        // The second argument was a positional `formatError` function in an
+        // older revision of this API. Callers now pass `{ formatError }`
+        // instead, so the object shape below is the only supported form.
+        const helpers = createEnumeratedOptionHelpers(["json"], {
+            formatError: (list, received) => `Expected: ${list}. Got: ${received}.`
+        });
+        assert.equal(helpers.normalize("json"), "json");
+
+        const source = await readFile(ENUMERATED_OPTIONS_SOURCE_PATH, "utf8");
+        assert.doesNotMatch(
+            source,
+            /typeof options === ["']function["']/u,
+            "the deprecated positional-formatter detection branch must not be reintroduced"
+        );
     });
 
     void it("performs case-sensitive matching when caseSensitive is true", () => {
