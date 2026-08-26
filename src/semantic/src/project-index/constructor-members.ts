@@ -35,12 +35,24 @@ function isAstNodeRecord(value: unknown): value is AstNodeRecord {
     return Core.isObjectLike(value) && typeof (value as { type?: unknown }).type === "string";
 }
 
-function readIdentifierName(node: unknown): string | null {
-    if (!isAstNodeRecord(node) || node.type !== "Identifier" || typeof node.name !== "string") {
+/**
+ * Read the identifier text from a loosely-typed node-like value.
+ *
+ * Wraps `Core.resolveNodeName` so callers can pass `unknown` (e.g.
+ * `AstNodeRecord` property accessors) without each site re-checking for the
+ * raw-string shape that some pre-parse data carries. The local string
+ * passthrough keeps the previous semantic for sites that historically
+ * accepted strings and matches the divergent `readIdentifierName` in
+ * `transpiler/src/macro-expansion.ts`.
+ */
+function readIdentifierName(value: unknown): string | null {
+    if (typeof value === "string") {
+        return value;
+    }
+    if (!Core.isObjectLike(value)) {
         return null;
     }
-
-    return node.name;
+    return Core.resolveNodeName(value);
 }
 
 function readBindingIdentifierName(node: unknown): string | null {
@@ -61,7 +73,7 @@ function readConstructorName(node: AstNodeRecord): string | null {
         return node.id;
     }
 
-    return readIdentifierName(node.id);
+    return Core.resolveNodeName(node.id);
 }
 
 function traverseConstructorOwnedBodyNode(root: unknown, visit: (node: AstNodeRecord) => void): void {
