@@ -96,7 +96,6 @@ const {
     mergeUniqueValues,
     readTextFile,
     toArray,
-    toNormalizedLowerCaseSet,
     uniqueArray,
     walkAncestorDirectories,
     withObjectLike
@@ -152,7 +151,6 @@ const FORMAT_COMMAND_WORKSPACE_EXAMPLE = "pnpm run format:gml -- path/to/project
 const FORMAT_COMMAND_FIX_EXAMPLE = `pnpm dlx gmloop format --write --path path/to/script${GML_EXTENSION}`;
 
 const PRETTIER_MODULE_ID = process.env.PRETTIER_PLUGIN_GML_PRETTIER_MODULE ?? "prettier";
-const TARGET_EXTENSIONS = Object.freeze([GML_EXTENSION]);
 
 type ModuleWithDefault<TValue> = TValue & {
     default?: unknown;
@@ -446,7 +444,7 @@ configureConsoleMethods(
 
 export function createFormatCommand({ name = "gmloop" } = {}) {
     const { option: skippedDirectorySampleLimitOption } = createConfiguredSampleLimitOption({
-        flag: "--ignored-directory-sample-limit <count>",
+        flag: "--skipped-directory-sample-limit <count>",
         description: (defaultLimit) =>
             `Max ignored directories shown in summary. Default: ${defaultLimit}, use 0 to hide`,
         getDefaultLimit: getDefaultSkippedDirectorySampleLimit,
@@ -506,22 +504,8 @@ export function createFormatCommand({ name = "gmloop" } = {}) {
         );
 }
 
-/**
- * Create a lookup set for extension comparisons while formatting.
- *
- * @param {readonly string[]} extensions
- * @returns {Set<string>}
- */
-function createTargetExtensionSet(extensions) {
-    return toNormalizedLowerCaseSet(extensions);
-}
-
-const targetExtensionSet = createTargetExtensionSet(TARGET_EXTENSIONS);
-const placeholderExtension = TARGET_EXTENSIONS[0] ?? GML_EXTENSION;
-
 function shouldFormatFile(filePath) {
-    const fileExtension = path.extname(filePath).toLowerCase();
-    return targetExtensionSet.has(fileExtension);
+    return path.extname(filePath).toLowerCase() === GML_EXTENSION;
 }
 
 /**
@@ -1142,7 +1126,7 @@ async function shouldSkipDirectory(directory, activeIgnorePaths = []) {
         return false;
     }
 
-    const placeholderPath = path.join(directory, `__prettier_plugin_gml_ignore_test__${placeholderExtension}`);
+    const placeholderPath = path.join(directory, `__prettier_plugin_gml_ignore_test__${GML_EXTENSION}`);
 
     const prettier = await resolvePrettier();
 
@@ -1711,8 +1695,7 @@ function finalizeFormattingRun({ targetPath, targetIsDirectory, targetPathProvid
         logNoMatchingFiles({
             targetPath,
             targetIsDirectory,
-            targetPathProvided,
-            extensions: TARGET_EXTENSIONS
+            targetPathProvided
         });
     }
 
@@ -1855,13 +1838,12 @@ export async function runFormatCommand(command) {
     }
 }
 
-function logNoMatchingFiles({ targetPath, targetIsDirectory, targetPathProvided, extensions }) {
+function logNoMatchingFiles({ targetPath, targetIsDirectory, targetPathProvided }) {
     const ignoredFilesSkipped = skippedFileSummary.ignored > 0;
     const message = buildNoMatchingFilesMessage({
         targetPath,
         targetIsDirectory,
         targetPathProvided,
-        extensions,
         ignoredFilesSkipped,
         gmlExtension: GML_EXTENSION,
         cliExample: FORMAT_COMMAND_CLI_EXAMPLE,

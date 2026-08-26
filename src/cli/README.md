@@ -101,6 +101,7 @@ Normal format runs now keep output focused on results and diagnostics. Use `--li
 
 - `PRETTIER_PLUGIN_GML_LOG_LEVEL` - Default log level
 - `PRETTIER_PLUGIN_GML_ON_PARSE_ERROR` - Default parse error strategy
+- `PRETTIER_PLUGIN_GML_MAX_IN_MEMORY_SNAPSHOTS` - Upper bound for in-memory revert snapshots retained for `--on-parse-error=revert` (default: 50; set to `0` to disable enforcement and retain every snapshot until disk writes succeed again)
 
 ### `parse` - Parse GML Files to AST JSON
 
@@ -316,7 +317,7 @@ pnpm run cli -- watch /path/to/project --auto-inject
 - `--quiet` - Suppress non-essential output (only show errors and server URLs); useful for CI/CD or background processes
 - `--debounce-delay <ms>` - Delay in milliseconds before transpiling after file changes (default: 100, set to 0 to disable debouncing)
 - `--max-concurrent-dirs <count>` - Maximum number of directories to scan concurrently during initial file discovery (default: 4); increase for faster scans on systems with more resources, or decrease to avoid file handle exhaustion on resource-constrained systems
-- `--max-patch-history <count>` - Maximum number of patches to retain in memory (default: 100; must be a positive integer)
+- `--max-patch-history <count>` - Maximum number of patches to retain in memory (default: 100; set to 0 for unbounded)
 - `--websocket-port <port>` - WebSocket server port for streaming patches (default: 17890)
 - `--websocket-host <host>` - WebSocket server host for streaming patches (default: 127.0.0.1)
 - `--no-websocket-server` - Disable WebSocket server for patch streaming

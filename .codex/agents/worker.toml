@@ -1,9 +1,8 @@
 name = "worker"
-description = "MiniMax-M3 implementation worker for bounded coding tasks, fixes, tests, refactors, and documentation changes assigned by the parent agent."
-nickname_candidates = ["MiniBuilder", "MiniCoder", "MiniMaker"]
+description = "OpenAI-backed implementation worker for bounded coding tasks, fixes, tests, refactors, and documentation changes assigned by the parent agent."
+nickname_candidates = ["OpenAIBuilder", "OpenAICoder", "OpenAIDev"]
 
-model_provider = "minimax"
-model = "MiniMax-M3"
+model = "gpt-5.6-terra"
 model_reasoning_effort = "high"
 model_reasoning_summary = "none"
 sandbox_mode = "workspace-write"

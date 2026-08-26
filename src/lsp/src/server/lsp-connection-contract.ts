@@ -58,7 +58,8 @@ export interface LspConnectionLogger {
  * capability detection so the server never branches on `typeof x === "function"`
  * at the call site.
  */
-export type LspConnectionOptionalCapability = "onShutdown" | "console.error" | "console.info" | "console.warn";
+export type LspConnectionOptionalCapability =
+    "onShutdown" | "onDidChangeWatchedFiles" | "console.error" | "console.info" | "console.warn";
 
 /**
  * Disposable handle returned by connection-level event registrations.
@@ -169,7 +170,16 @@ export interface GmlLanguageServerConnectionContract {
         ) => Location[] | LocationLink[] | null | Promise<Location[] | LocationLink[] | null>
     ): void;
     onDidChangeTextDocument(handler: (params: DidChangeTextDocumentParams) => void): void;
-    onDidChangeWatchedFiles(handler: (params: DidChangeWatchedFilesParams) => void): void;
+    /**
+     * Optional workspace watcher registration surface.
+     *
+     * Marked optional because lightweight test transports and in-process
+     * mocks frequently omit the watcher API — the server gracefully degrades
+     * via {@link hasLspConnectionWatchedFilesCapability} when the surface is
+     * absent rather than forcing every mock to fabricate a no-op
+     * implementation just to satisfy the contract.
+     */
+    onDidChangeWatchedFiles?(handler: (params: DidChangeWatchedFilesParams) => void): void;
     onDidCloseTextDocument(handler: (params: DidCloseTextDocumentParams) => void): void;
     onDidOpenTextDocument(handler: (params: DidOpenTextDocumentParams) => void): void;
     onDidSaveTextDocument(handler: (params: DidSaveTextDocumentParams) => void): void;
@@ -314,6 +324,31 @@ export function hasLspConnectionShutdownHandler(connection: unknown): boolean {
 }
 
 /**
+ * Determine whether the candidate connection exposes a workspace-file watcher
+ * registration surface.
+ *
+ * The real `vscode-languageserver` `Connection` advertises
+ * `onDidChangeWatchedFiles`, but in-memory mocks and lightweight transports
+ * commonly omit it because the watcher API is rarely exercised in unit tests.
+ * The server previously gated the handler on a `"onDidChangeWatchedFiles" in
+ * connection` runtime check, which conflated structural presence with
+ * "method-shaped" capability — replacing it with a probe keeps the contract
+ * honest and lets call sites share a single authoritative answer rather than
+ * re-doing the type discrimination at each invocation.
+ *
+ * @param connection Candidate LSP connection to introspect.
+ * @returns `true` when the connection implements a callable
+ *   `onDidChangeWatchedFiles` registrar.
+ */
+export function hasLspConnectionWatchedFilesCapability(connection: unknown): boolean {
+    if (!connection || typeof connection !== "object") {
+        return false;
+    }
+    const registrar = (connection as { onDidChangeWatchedFiles?: unknown }).onDidChangeWatchedFiles;
+    return typeof registrar === "function";
+}
+
+/**
  * Send a `workspace/semanticTokens/refresh` request to the client.
  *
  * Encapsulates the previous `connection.sendRequest(SemanticTokensRefreshRequest.type)`
@@ -394,7 +429,6 @@ export function isGmlLanguageServerConnectionContract(value: unknown): value is 
         "onCompletion",
         "onDefinition",
         "onDidChangeTextDocument",
-        "onDidChangeWatchedFiles",
         "onDidCloseTextDocument",
         "onDidOpenTextDocument",
         "onDidSaveTextDocument",
