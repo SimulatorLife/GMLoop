@@ -25,7 +25,7 @@ import {
     normalizeCommandLineArguments,
     resolveDefaultAction
 } from "./cli-core/cli-argument-normalization.js";
-import { type CliCatalogEntry, createCliCommandCatalog } from "./cli-core/command-catalog.js";
+import { createCliCommandCatalogRuntime, registerCliCommandCatalogRuntime } from "./cli-core/cli-catalog-runtime.js";
 import { createCliCommandManager } from "./cli-core/command-manager.js";
 import { applyStandardCommandOptions } from "./cli-core/command-standard-options.js";
 import { handleCliError } from "./cli-core/errors.js";
@@ -34,7 +34,6 @@ import {
     isNodeTestRunnerProcess,
     shouldAutoRunCliProcess
 } from "./cli-core/main-module-runner.js";
-import { createMcpToolCatalogEntries, type McpToolCatalogEntry } from "./cli-core/mcp-tool-catalog.js";
 import { resolveCliVersion } from "./cli-core/version.js";
 import { __formatTest__ } from "./commands/format.js";
 import { __refactorTest__ } from "./commands/refactor.js";
@@ -262,20 +261,17 @@ export function runCliTestCommand(options: RunCliTestCommandOptions = {}) {
     return runCliCommandCapture(options);
 }
 
-export function getCliCommandCatalog(): ReadonlyArray<CliCatalogEntry> {
-    return Object.freeze(createCliCommandCatalog(program));
-}
+const cliCommandCatalogRuntime = createCliCommandCatalogRuntime(program);
+registerCliCommandCatalogRuntime(cliCommandCatalogRuntime);
 
-export function getMcpToolCatalogEntries(options?: { includeInternal?: boolean }): ReadonlyArray<McpToolCatalogEntry> {
-    return createMcpToolCatalogEntries(getCliCommandCatalog(), options);
-}
+export { getCliCommandCatalog, getMcpToolCatalogEntries } from "./cli-core/cli-catalog-runtime.js";
 
 export const __test__ = Object.freeze({
     ...__formatTest__,
     ...__refactorTest__,
     ...__runtimeTest__,
-    getMcpToolCatalogEntries,
-    getCliCommandCatalog,
+    getMcpToolCatalogEntries: cliCommandCatalogRuntime.getMcpToolCatalogEntries,
+    getCliCommandCatalog: cliCommandCatalogRuntime.getCliCommandCatalog,
     isCliEntrypointModule,
     isNodeTestRunnerProcess,
     normalizeCommandLineArguments,
@@ -286,8 +282,8 @@ export const __test__ = Object.freeze({
 registerCliCommands({
     defaultCommandName: FORMAT_ACTION,
     env: process.env,
-    getCliCommandCatalog,
-    getMcpToolCatalogEntries,
+    getCliCommandCatalog: cliCommandCatalogRuntime.getCliCommandCatalog,
+    getMcpToolCatalogEntries: cliCommandCatalogRuntime.getMcpToolCatalogEntries,
     registry: cliCommandRegistry
 });
 
