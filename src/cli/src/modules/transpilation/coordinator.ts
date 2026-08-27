@@ -389,7 +389,7 @@ export interface ProjectMacroRegistry {
  * Metrics snapshot for display purposes.
  *
  * Provides a read-only view of transpilation metrics without coupling to
- * patch history, error tracking, or broadcasting operations.
+ * patch history, error tracking, or broadcasting.
  */
 export interface MetricsSnapshot {
     readonly metrics: ReadonlyArray<TranspilationMetrics>;
@@ -399,7 +399,7 @@ export interface MetricsSnapshot {
  * Errors snapshot for display purposes.
  *
  * Provides a read-only view of transpilation errors without coupling to
- * metrics, patch history, or broadcasting operations.
+ * metrics, patch history, or broadcasting.
  */
 export interface ErrorsSnapshot {
     readonly errors: ReadonlyArray<TranspilationError>;
@@ -840,14 +840,11 @@ function commitMacroTranspilation(
     candidateDefinitionsBySourcePath: TranspilerTypes.MacroDefinitionsBySourcePath | null,
     macroDefinitions: Map<string, TranspilerTypes.MacroDefinition>
 ): void {
-    // The candidate index already contains the merged state (a fresh copy of
-    // `context.macroDefinitionsBySourcePath` with the current file's definitions
-    // installed). Reassigning the reference avoids an O(n) `clear()` + per-entry
-    // `set()` rebuild and keeps the prepared map out of the transpilation hot
-    // path. The runtime context is the only owner of this reference, so the
-    // swap is safe.
-    if (candidateDefinitionsBySourcePath !== null) {
-        context.macroDefinitionsBySourcePath = candidateDefinitionsBySourcePath;
+    if (candidateDefinitionsBySourcePath && context.macroDefinitionsBySourcePath) {
+        context.macroDefinitionsBySourcePath.clear();
+        for (const [source, definitions] of candidateDefinitionsBySourcePath) {
+            context.macroDefinitionsBySourcePath.set(source, definitions);
+        }
     }
 
     if (context.macroDefinitions === undefined && candidateDefinitionsBySourcePath === null) {
