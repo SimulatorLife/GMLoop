@@ -87,7 +87,7 @@ function wrapUnaryArgument(node) {
  *   the bare argument.
  */
 function createNegationExpression(argument, { wrapBinaryArguments = false } = {}) {
-    const inner = wrapBinaryArguments ? wrapUnaryArgument(argument) : argument;
+    const inner: unknown = wrapBinaryArguments ? wrapUnaryArgument(argument) : argument;
     return {
         type: "UnaryExpression",
         operator: "!",
