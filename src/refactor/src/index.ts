@@ -139,6 +139,7 @@ export type {
     ObjectEventInspectionResult,
     ObjectEventMutationResult,
     ObjectEventParseSummary,
+    ObjectPropertyMutationResult,
     ProjectResourceKindValue,
     ProjectResourceMutationResult,
     RemoveProjectResourceRequest,
@@ -156,6 +157,7 @@ export type {
     RoomRepairDiagnostic,
     RoomRepairResult,
     UpdateObjectEventRequest,
+    UpdateObjectPropertiesRequest,
     UpdateRoomCameraRequest,
     UpdateRoomInstanceRequest,
     UpdateRoomLayerRequest
@@ -187,6 +189,7 @@ export {
     reorderRoomLayer,
     repairRoom,
     updateObjectEvent,
+    updateObjectProperties,
     updateRoomCamera,
     updateRoomInstance,
     updateRoomLayer
