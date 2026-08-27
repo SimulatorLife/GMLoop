@@ -299,7 +299,8 @@ export function buildCallLikeArgumentDocs(
         maxElementsPerLine: effectiveElementsPerLineLimit,
         includeInlineVariant: shouldIncludeInlineVariant,
         hasCallbackArguments,
-        forceInline
+        forceInline,
+        simplePrefixLength
     });
 
     if (!shouldUseCallbackLayout) {

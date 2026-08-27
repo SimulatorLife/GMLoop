@@ -2284,10 +2284,10 @@ function parseProjectGmlSource({ contents, file, parseProjectSource, metrics, pr
                 typeof parseProjectSource === "function"
                     ? parseProjectSource(contents, context)
                     : Parser.GMLParser.parse(contents, PROJECT_INDEX_PARSE_OPTIONS);
-            if (!Core.isObjectLike(parsed) || (parsed as { type?: unknown }).type !== "Program") {
+            if (!Core.isProgramNode(parsed)) {
                 throw new TypeError(`Project parser did not return a GML Program for ${file.relativePath}.`);
             }
-            return parsed as GameMakerAstNode;
+            return parsed;
         } catch (error) {
             if (Core.isSyntaxErrorWithLocation(error)) {
                 throw formatProjectIndexSyntaxError(error, contents, context);

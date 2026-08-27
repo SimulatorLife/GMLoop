@@ -48,7 +48,7 @@ Lint (`lint --write`) does single-file-scoped semantic/content rewrites (rule-ow
 
 ### 1) Prerequisites
 
-- Node.js `25.0.0` for repository development (the version pinned in `.nvmrc`; run `nvm install` and `nvm use`)
+- Node.js `>=22.5.0` (the minimum supported version; the repository pins `25.0.0` in `.nvmrc` for development — run `nvm install` and `nvm use`)
 - pnpm (`corepack enable pnpm`)
 
 ### 2) Clone and install

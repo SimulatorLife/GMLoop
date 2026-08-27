@@ -180,22 +180,21 @@ export class GmlTranspiler {
             );
         }
 
-        const astRecord = request.ast as Record<string, unknown>;
-        if (astRecord.type !== "Program") {
+        if (!Core.isProgramNode(request.ast)) {
             throw this.createTranspileError(
                 "request",
-                new TypeError("transpile request requires ast.type to be 'Program' when ast is provided"),
-                TranspilerErrorCode.REQUEST_ERROR
-            );
-        }
-        if (!Array.isArray(astRecord.body)) {
-            throw this.createTranspileError(
-                "request",
-                new TypeError("transpile request requires ast.body to be an array when ast is provided"),
+                new TypeError(
+                    "transpile request requires ast to satisfy the ProgramNode contract (type: 'Program' and an array body) when ast is provided"
+                ),
                 TranspilerErrorCode.REQUEST_ERROR
             );
         }
 
+        // The transpiler's local `ProgramNode` narrows the body to a
+        // `ReadonlyArray<GmlNode>` for downstream consumers. The structural
+        // contract is established by `Core.isProgramNode`; the local cast
+        // only re-asserts the transpiler-specific body element type without
+        // re-running the discriminator and `Array.isArray` checks.
         return request.ast as ProgramNode;
     }
 
@@ -209,11 +208,12 @@ export class GmlTranspiler {
         }
 
         const expandedAst = expandProjectMacros(ast, macroDefinitions, request.sourcePath ?? "<inline>");
-        const expandedRecord = Core.isObjectLike(expandedAst) ? (expandedAst as Record<string, unknown>) : null;
-        if (expandedRecord?.type !== "Program" || !Array.isArray(expandedRecord.body)) {
+        if (!Core.isProgramNode(expandedAst)) {
             throw new TypeError("macro expansion must return a Program AST");
         }
 
+        // See `resolveProgramAst` for why the local cast is necessary after
+        // the contract has already been validated by `Core.isProgramNode`.
         return expandedAst as ProgramNode;
     }
 

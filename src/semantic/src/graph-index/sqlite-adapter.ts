@@ -114,8 +114,13 @@ const INCREMENTAL_VACUUM_PAGE_LIMIT = 1024;
 export function optimizeGraphDatabase(database: GraphDatabase): void {
     database.exec("ANALYZE;");
     database.exec("PRAGMA optimize;");
-    // Only reclaims space when auto_vacuum is already INCREMENTAL (see
-    // configureGraphDatabase); a no-op otherwise, so this is always safe to call.
+    // Reclaims at most INCREMENTAL_VACUUM_PAGE_LIMIT freelist pages when the
+    // database was created with incremental auto-vacuum. On older databases
+    // this pragma is a no-op, so routine indexing cannot unexpectedly rewrite
+    // the whole file or require an exclusive VACUUM lock. Keep this bounded
+    // maintenance step separate from the explicit full rewrite documented in
+    // docs/gml-graph-index-plan.md; changing it would make every graph write
+    // pay the cost and locking risk of full-file compaction.
     database.exec(`PRAGMA incremental_vacuum(${String(INCREMENTAL_VACUUM_PAGE_LIMIT)});`);
 }
 

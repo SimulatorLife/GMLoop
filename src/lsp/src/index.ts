@@ -31,6 +31,7 @@ export type {
 export {
     getLspConnectionLogger,
     hasLspConnectionShutdownHandler,
+    hasLspConnectionWatchedFilesCapability,
     isGmlLanguageServerConnectionContract,
     trySendSemanticTokenRefreshRequest
 } from "./server/lsp-connection-contract.js";

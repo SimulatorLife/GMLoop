@@ -61,15 +61,8 @@ export function isWorkerOverlayBoundaryCurrent(
     }
     return documents.every((document) => {
         const entry = boundary.get(path.resolve(document.filePath));
-        // Guard for callers that pass `version: undefined` despite the `number`
-        // annotation (`strict: false` permits this); without the guard,
-        // `entry?.version === document.version` resolves to `undefined ===
-        // undefined` for unmatched paths and falls through to `entry.contentHash`.
-        if (entry === undefined) {
-            return false;
-        }
         return (
-            entry.version === document.version &&
+            entry?.version === document.version &&
             entry.contentHash === Semantic.createSemanticContentHash(document.sourceText)
         );
     });

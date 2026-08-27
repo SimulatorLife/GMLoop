@@ -16,6 +16,9 @@ const LARGE_GRAPH_REPULSION_CELL_SIZE = 320;
 const MIN_FORCE_ITERATIONS = 20;
 const SETTLED_MOVEMENT_THRESHOLD = 0.05;
 const OVERLAP_RESOLUTION_PASSES = 90;
+// Treat sub-nanopixel separation as coincident so accumulated simulation noise does not choose
+// an arbitrary overlap-resolution direction.
+const OVERLAP_RESOLUTION_DISTANCE_EPSILON = 1e-9;
 // Pushing exactly the measured overlap converges asymptotically for densely-coupled clusters
 // (each pass only fixes one constraint at a time, re-creating tiny overlaps elsewhere).
 // Overshooting the correction converges in a bounded number of passes instead.
@@ -265,7 +268,7 @@ function separateOverlappingNodePair(nodeA: SimulationNode, nodeB: SimulationNod
         return false;
     }
 
-    const angle = dist > 0 ? Math.atan2(dy, dx) : 0;
+    const angle = dist > OVERLAP_RESOLUTION_DISTANCE_EPSILON ? Math.atan2(dy, dx) : 0;
     const push = ((minDist - dist) / 2) * OVERLAP_RESOLUTION_OVERSHOOT;
     const pushX = Math.cos(angle) * push;
     const pushY = Math.sin(angle) * push;
