@@ -14,8 +14,8 @@ import { executeRegisteredCodemods } from "./codemod-registry.js";
 import {
     applyGlobalvarToGlobalCodemod,
     collectGlobalvarDeclaredNames
-} from "./codemods/globalvar-to-global/globalvar-to-global-codemod.js";
-import { planNamingConventionCodemod } from "./codemods/naming-convention/naming-convention-codemod.js";
+} from "./codemods/globalvar-to-global-codemod.js";
+import { planNamingConventionCodemod } from "./codemods/naming-convention-codemod.js";
 import * as HotReload from "./hot-reload.js";
 import { DEFAULT_PROJECT_ANALYSIS_PROVIDER } from "./project-analysis-provider.js";
 import {

@@ -10,6 +10,7 @@ export type {
     EmptyTransformOptions,
     FeatherDiagnostic,
     FeatherMetadata,
+    ForStatementHoistContext,
     FsFacade,
     GameMakerAstLocation,
     GameMakerAstNode,

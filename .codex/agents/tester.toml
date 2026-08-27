@@ -1,12 +1,9 @@
 name = "tester"
 description = "Read-only GameMaker runtime and browser tester agent; drives GMLoop live reload, HTML5 runtime / runtime-wrapper, gm-cli reads, and Playwright interactions through allowlisted MCP tools."
-nickname_candidates = ["GptTester", "GptQA", "GptPlayer"]
+nickname_candidates = ["MiniTester", "MiniQA", "MiniPlayer"]
 
-# model = "gpt-5.6-luna"
-# model_provider = "openai"
-model_provider = "minimax"
-model = "MiniMax-M3"
-model_reasoning_effort = "high"
+model = "gpt-5.6-luna"
+model_reasoning_effort = "medium"
 sandbox_mode = "read-only"
 
 developer_instructions = """

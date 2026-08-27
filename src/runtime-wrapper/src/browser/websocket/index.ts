@@ -16,5 +16,6 @@ export type {
     WebSocketInstanceProvider,
     WebSocketMessageSender,
     WebSocketMetricsCollector,
-    WebSocketPatchQueueManager
+    WebSocketPatchQueueFlusher,
+    WebSocketPatchQueueMetricsReader
 } from "./types.js";
