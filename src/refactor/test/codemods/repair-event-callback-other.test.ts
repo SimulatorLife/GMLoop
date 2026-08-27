@@ -3,7 +3,7 @@ import { describe, it } from "node:test";
 
 import { Parser } from "@gmloop/parser";
 
-import { applyRepairEventCallbackOtherCodemod } from "../../src/codemods/repair-event-callback-other/repair-event-callback-other-codemod.js";
+import { applyRepairEventCallbackOtherCodemod } from "../../src/codemods/repair-event-callback-other-codemod.js";
 
 interface ProgramLike {
     type: string;

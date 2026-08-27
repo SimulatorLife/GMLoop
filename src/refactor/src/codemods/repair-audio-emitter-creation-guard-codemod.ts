@@ -1,7 +1,7 @@
 import { Core } from "@gmloop/core";
 
-import { defaultGmlProgramParser } from "../../parser-adapter.js";
-import type { RepairAudioEmitterCreationGuardResult } from "../../types.js";
+import { defaultGmlProgramParser } from "../parser-adapter.js";
+import type { RepairAudioEmitterCreationGuardResult } from "../types.js";
 import {
     type CodemodAstRecord,
     containsBuiltinNameDeclaration,
@@ -9,7 +9,7 @@ import {
     hasBuiltinNameMacro,
     isAstRecord,
     isNamedCall
-} from "../codemod-helpers.js";
+} from "./codemod-helpers.js";
 
 const AUDIO_BUILTIN_NAMES: ReadonlySet<string> = new Set(["audio_emitter_create", "audio_system_is_initialised"]);
 
