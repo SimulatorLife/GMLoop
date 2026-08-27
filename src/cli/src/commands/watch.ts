@@ -1350,42 +1350,67 @@ export async function runWatchCommand(targetPath: string, options: WatchCommandO
     // The servers are intentionally live before this project-wide walk. The
     // collection uses lexer and source-directive passes, but a large project
     // still consumes enough CPU to starve an otherwise-ready status endpoint.
-    const startupScan = await collectScriptNames(
-        normalizedPath,
-        gmlExtensionMatcher,
-        maxConcurrentDirs,
-        roomExtensionMatcher
-    );
-    for (const scriptName of startupScan.scriptNames) {
-        scriptNames.add(scriptName);
-    }
-    fileDataCache = startupScan.fileDataCache;
-    const roomFilePaths: Array<string> = startupScan.secondaryFilePaths;
-    for (const [sourcePath, definitions] of startupScan.macroDefinitionsBySourcePath) {
-        macroDefinitionsBySourcePath.set(sourcePath, definitions);
-    }
-    // runtimeContext already escaped to the watch servers started above, so eslint's
-    // require-atomic-updates rule conservatively flags this write after the preceding
-    // await. Nothing else writes runtimeContext.macroDefinitions while collectScriptNames()
-    // is pending, so this is the deliberate "compute macros once at startup" design, not a race.
-    // eslint-disable-next-line require-atomic-updates -- no concurrent writer exists; see comment above
-    runtimeContext.macroDefinitions = Transpiler.createProjectMacroDefinitions(macroDefinitionsBySourcePath);
+    //
+    // All three servers are already listening at this point, so anything that
+    // throws between here and the watcher's own cleanup() (below) must stop
+    // them itself. Without this try/catch, a failure in the startup scan, the
+    // room-resource priming pass, or the live-reload session-registry write
+    // (e.g. ENOSPC/EACCES) would leave the WebSocket, status, and runtime
+    // servers listening indefinitely: `runWatchCommand` never reaches the
+    // `cleanup()` defined inside the `Promise` executor below, so nothing
+    // ever calls `.stop()` on them.
+    try {
+        const startupScan = await collectScriptNames(
+            normalizedPath,
+            gmlExtensionMatcher,
+            maxConcurrentDirs,
+            roomExtensionMatcher
+        );
+        for (const scriptName of startupScan.scriptNames) {
+            scriptNames.add(scriptName);
+        }
+        fileDataCache = startupScan.fileDataCache;
+        const roomFilePaths: Array<string> = startupScan.secondaryFilePaths;
+        for (const [sourcePath, definitions] of startupScan.macroDefinitionsBySourcePath) {
+            macroDefinitionsBySourcePath.set(sourcePath, definitions);
+        }
+        // runtimeContext already escaped to the watch servers started above, so eslint's
+        // require-atomic-updates rule conservatively flags this write after the preceding
+        // await. Nothing else writes runtimeContext.macroDefinitions while collectScriptNames()
+        // is pending, so this is the deliberate "compute macros once at startup" design, not a race.
+        // eslint-disable-next-line require-atomic-updates -- no concurrent writer exists; see comment above
+        runtimeContext.macroDefinitions = Transpiler.createProjectMacroDefinitions(macroDefinitionsBySourcePath);
 
-    // Reuse the .yy file paths collected during the startup tree walk instead of
-    // doing a second full traversal just to discover room resources.
-    await Core.runInParallelWithLimit(
-        roomFilePaths,
-        (filePath) => primeRoomResource(filePath, runtimeContext, runtimeContext.roomResources),
-        maxConcurrentDirs
-    );
+        // Reuse the .yy file paths collected during the startup tree walk instead of
+        // doing a second full traversal just to discover room resources.
+        await Core.runInParallelWithLimit(
+            roomFilePaths,
+            (filePath) => primeRoomResource(filePath, runtimeContext, runtimeContext.roomResources),
+            maxConcurrentDirs
+        );
 
-    await writeLiveReloadSessionAfterStartup({
-        liveReloadSession,
-        normalizedPath,
-        runtimeServerController,
-        statusServerController,
-        websocketServerController
-    });
+        await writeLiveReloadSessionAfterStartup({
+            liveReloadSession,
+            normalizedPath,
+            runtimeServerController,
+            statusServerController,
+            websocketServerController
+        });
+    } catch (error) {
+        const message = getErrorMessage(error, {
+            fallback: "Unknown watch startup error"
+        });
+
+        await stopServerAfterStartupFailure("runtime server", runtimeServerController, unknownServerStopErrorMessage);
+        await stopServerAfterStartupFailure("status server", statusServerController, unknownServerStopErrorMessage);
+        await stopServerAfterStartupFailure(
+            "WebSocket server",
+            websocketServerController,
+            unknownServerStopErrorMessage
+        );
+
+        handleCliError(new Error(`Failed to complete watch startup: ${message}`));
+    }
 
     logWatchStartup(normalizedPath, extensionSet, polling, pollingInterval, verbose, quiet);
 
