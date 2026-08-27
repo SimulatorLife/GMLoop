@@ -229,12 +229,20 @@ export function loadGameMakerCliCompanionCatalog(
         if (cacheFilePath && version !== null) {
             try {
                 const cacheContent = await readFile(cacheFilePath, "utf8");
-                const cacheData = JSON.parse(cacheContent);
-                if (cacheData && cacheData.version === version && Array.isArray(cacheData.commands)) {
-                    cliCommands = cacheData.commands;
+                const parsedCache = parseCachedCompanionCatalogCommands(cacheContent, version, cacheFilePath);
+                if (parsedCache !== null) {
+                    cliCommands = parsedCache;
                 }
-            } catch {
-                // Ignore cache read failures and re-query
+            } catch (error) {
+                // Re-query gm-cli when the cache cannot be read or parsed at all.
+                // The structural-validation failures handled inside
+                // `parseCachedCompanionCatalogCommands` already log a warning and
+                // return `null`, so we only reach this branch for I/O errors
+                // such as `ENOENT` (no cache yet) or `EACCES` (read denied).
+                const reason = Core.getErrorMessage(error, { fallback: "unknown read failure" });
+                console.warn(
+                    `gm-cli companion catalog cache read failed at ${cacheFilePath}; re-querying gm-cli (${reason}).`
+                );
             }
         }
 
@@ -393,6 +401,165 @@ async function collectGameMakerCliLeafCommands(
             .flat()
             .toSorted((leftEntry, rightEntry) => leftEntry.displayName.localeCompare(rightEntry.displayName))
     );
+}
+
+function isValidCachedCompanionCatalogParameter(value: unknown): value is GameMakerCliTextParameter {
+    if (!isObjectRecord(value)) {
+        return false;
+    }
+    if (value.kind !== "argument" && value.kind !== "flag") {
+        return false;
+    }
+    if (value.valueType !== "boolean" && value.valueType !== "string") {
+        return false;
+    }
+    if (typeof value.description !== "string") {
+        return false;
+    }
+    if (typeof value.name !== "string") {
+        return false;
+    }
+    if (typeof value.syntax !== "string") {
+        return false;
+    }
+    if (typeof value.multiple !== "boolean") {
+        return false;
+    }
+    if (typeof value.required !== "boolean") {
+        return false;
+    }
+    if (!Array.isArray(value.choices)) {
+        return false;
+    }
+    return value.choices.every((entry) => typeof entry === "string");
+}
+
+function isValidCachedCompanionCatalogEntry(value: unknown): value is GameMakerCliCommandCatalogEntry {
+    if (!isObjectRecord(value)) {
+        return false;
+    }
+    if (typeof value.description !== "string") {
+        return false;
+    }
+    if (typeof value.displayName !== "string" || value.displayName.length === 0) {
+        return false;
+    }
+    if (!Array.isArray(value.commandPath) || !value.commandPath.every((segment) => typeof segment === "string")) {
+        return false;
+    }
+    if (!Array.isArray(value.usageLines) || !value.usageLines.every((line) => typeof line === "string")) {
+        return false;
+    }
+    if (
+        !Array.isArray(value.parameters) ||
+        !value.parameters.every((parameter) => isValidCachedCompanionCatalogParameter(parameter))
+    ) {
+        return false;
+    }
+    return true;
+}
+
+/**
+ * Parse and validate the persisted `.gmloop/gm-cli-commands-cache.json`
+ * payload before the catalog loader trusts it as the canonical command list.
+ *
+ * The cache file is hand-editable on disk and is written by older and newer
+ * gm-cli / GMLoop builds alike, so its contents are intentionally untrusted.
+ * The previous loader only checked `cacheData.version === version` and
+ * `Array.isArray(cacheData.commands)` before passing `cacheData.commands`
+ * downstream as a typed `GameMakerCliCommandCatalogEntry[]`. That shallow
+ * validation let a single malformed entry (missing `displayName`,
+ * `parameters` containing a non-object, wrong `kind` literal, etc.) leak
+ * through and crash consumers the first time they read a nested property.
+ *
+ * This helper turns every failure mode — truncated JSON, non-object
+ * top-level value, missing or wrong-type `version`, mismatched version,
+ * missing `commands`, non-array `commands`, malformed command entry,
+ * malformed parameter entry — into a `null` return after a structured
+ * warning that names the offending cache path. The caller falls back to
+ * re-querying gm-cli so the next cache write produces a well-formed file.
+ *
+ * @param cacheContent Raw cache file contents, exactly as read from disk.
+ * @param expectedVersion The gm-cli `--version` string the cache must match.
+ * @param cacheFilePath Absolute path used to localize error messages.
+ * @returns A frozen array of valid catalog entries, or `null` when any
+ *          validation step fails.
+ */
+function parseCachedCompanionCatalogCommands(
+    cacheContent: string,
+    expectedVersion: string,
+    cacheFilePath: string
+): ReadonlyArray<GameMakerCliCommandCatalogEntry> | null {
+    let parsed: unknown;
+    try {
+        parsed = JSON.parse(cacheContent);
+    } catch (error) {
+        const reason = Core.getErrorMessage(error, { fallback: "unknown parse failure" });
+        console.warn(
+            `gm-cli companion catalog cache at ${cacheFilePath} is not valid JSON (${reason}); re-querying gm-cli.`
+        );
+        return null;
+    }
+
+    if (!isObjectRecord(parsed)) {
+        console.warn(`gm-cli companion catalog cache at ${cacheFilePath} must be a JSON object; re-querying gm-cli.`);
+        return null;
+    }
+
+    if (typeof parsed.version !== "string") {
+        console.warn(
+            `gm-cli companion catalog cache at ${cacheFilePath} is missing a string "version" field; re-querying gm-cli.`
+        );
+        return null;
+    }
+
+    if (parsed.version !== expectedVersion) {
+        console.warn(
+            `gm-cli companion catalog cache at ${cacheFilePath} has version ${JSON.stringify(parsed.version)} but gm-cli reports ${JSON.stringify(expectedVersion)}; re-querying gm-cli.`
+        );
+        return null;
+    }
+
+    if (!Array.isArray(parsed.commands)) {
+        console.warn(
+            `gm-cli companion catalog cache at ${cacheFilePath} is missing an array "commands" field; re-querying gm-cli.`
+        );
+        return null;
+    }
+
+    const validatedEntries: Array<GameMakerCliCommandCatalogEntry> = [];
+    for (const [index, rawEntry] of parsed.commands.entries()) {
+        if (!isValidCachedCompanionCatalogEntry(rawEntry)) {
+            console.warn(
+                `gm-cli companion catalog cache at ${cacheFilePath} has a malformed entry at index ${index}; re-querying gm-cli.`
+            );
+            return null;
+        }
+        validatedEntries.push(
+            Object.freeze({
+                commandPath: Object.freeze([...rawEntry.commandPath]),
+                description: rawEntry.description,
+                displayName: rawEntry.displayName,
+                parameters: Object.freeze(
+                    rawEntry.parameters.map((parameter) =>
+                        Object.freeze({
+                            choices: Object.freeze([...parameter.choices]),
+                            description: parameter.description,
+                            kind: parameter.kind,
+                            multiple: parameter.multiple,
+                            name: parameter.name,
+                            required: parameter.required,
+                            syntax: parameter.syntax,
+                            valueType: parameter.valueType
+                        })
+                    )
+                ),
+                usageLines: Object.freeze([...rawEntry.usageLines])
+            })
+        );
+    }
+
+    return Object.freeze(validatedEntries);
 }
 
 function parseGameMakerCliHelp(helpText: string): ParsedGameMakerCliHelp {
@@ -809,3 +976,10 @@ function isMissingCommandError(error: unknown): error is NodeJS.ErrnoException {
 function isObjectRecord(value: unknown): value is Record<string, unknown> {
     return value !== null && typeof value === "object" && !Array.isArray(value);
 }
+
+/** Test-only access to the cache validation primitives. */
+export const __gameMakerCliCatalogTest__ = Object.freeze({
+    isValidCachedCompanionCatalogEntry,
+    isValidCachedCompanionCatalogParameter,
+    parseCachedCompanionCatalogCommands
+});
