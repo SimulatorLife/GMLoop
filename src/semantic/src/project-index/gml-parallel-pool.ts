@@ -345,11 +345,7 @@ export async function runProjectGmlFilesWithWorkerPool({
         1,
         Math.floor(gmlFiles.length / PROJECT_INDEX_GML_WORKER_POOL_MIN_FILES_PER_WORKER)
     );
-    const effectiveWorkerCount = Core.clamp(
-        workerConcurrency,
-        1,
-        Math.min(Math.max(1, cpuCount), maxWorkersForFileCount)
-    );
+    const effectiveWorkerCount = Core.clamp(workerConcurrency, 1, Core.clamp(cpuCount, 1, maxWorkersForFileCount));
     const batches = partitionGmlFiles(gmlFiles, effectiveWorkerCount);
     metrics.metadata.setMetadata("gmlWorkerPool.batchCount", batches.length);
 

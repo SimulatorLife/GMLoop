@@ -596,8 +596,11 @@ function createLiveReloadWorkerSubcommand(): Command {
                 .default(DEFAULT_WATCH_MAX_CONCURRENT_DIRS)
         )
         .addOption(
-            new Option("--max-patch-history <count>", "Maximum number of patches to retain in memory")
-                .argParser(createMinimumValueValidator(1, "Max patch history must be a positive integer"))
+            new Option(
+                "--max-patch-history <count>",
+                "Maximum number of patches to retain in memory (set to 0 for unbounded)"
+            )
+                .argParser(createMinimumValueValidator(0, "Max patch history must be a non-negative integer"))
                 .default(DEFAULT_WATCH_MAX_PATCH_HISTORY)
         )
         .addOption(

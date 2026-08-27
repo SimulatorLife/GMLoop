@@ -1,20 +1,13 @@
 import { Core } from "@gmloop/core";
 
-import { defaultGmlProgramParser } from "../../parser-adapter.js";
-import type { LoopLengthHoistingEdit, LoopLengthHoistingResult } from "../../types.js";
-import { applySourceTextEdits } from "../codemod-helpers.js";
+import { defaultGmlProgramParser } from "../parser-adapter.js";
+import type { LoopLengthHoistingEdit, LoopLengthHoistingResult } from "../types.js";
+import { applySourceTextEdits } from "./codemod-helpers.js";
 
 const ARRAY_LENGTH_CALL_TEXT = "array_length(";
 const DEFAULT_HOIST_IDENTIFIER = "len";
 const ARRAY_LENGTH_FUNCTION_NAMES = new Set(["array_length"]);
 const IDENTIFIER_PATTERN = /[A-Za-z_][A-Za-z0-9_]*/gu;
-
-type AstRecord = Record<string, unknown>;
-
-type ForStatementContext = Readonly<{
-    forNode: AstRecord;
-    canInsertHoistBeforeLoop: boolean;
-}>;
 
 function createUnchangedResult(sourceText: string): LoopLengthHoistingResult {
     return Object.freeze({
@@ -22,49 +15,6 @@ function createUnchangedResult(sourceText: string): LoopLengthHoistingResult {
         outputText: sourceText,
         appliedEdits: Object.freeze([])
     });
-}
-
-function isAstRecord(value: unknown): value is AstRecord {
-    return Core.isObjectLike(value);
-}
-
-function collectForStatementContexts(programNode: unknown): ReadonlyArray<ForStatementContext> {
-    const contexts: Array<ForStatementContext> = [];
-
-    const visit = (node: unknown, parent: AstRecord | null, parentKey: string | null): void => {
-        if (Array.isArray(node)) {
-            for (const element of node) {
-                visit(element, parent, parentKey);
-            }
-            return;
-        }
-
-        if (!isAstRecord(node)) {
-            return;
-        }
-
-        if (node.type === "ForStatement") {
-            contexts.push(
-                Object.freeze({
-                    forNode: node,
-                    canInsertHoistBeforeLoop:
-                        parent !== null &&
-                        parentKey === "body" &&
-                        (parent.type === "Program" || parent.type === "BlockStatement")
-                })
-            );
-            return;
-        }
-
-        for (const [key, child] of Object.entries(node)) {
-            if (child && typeof child === "object") {
-                visit(child, node, key);
-            }
-        }
-    };
-
-    visit(programNode, null, null);
-    return contexts;
 }
 
 function resolveLineIndent(sourceText: string, offset: number): string {
@@ -109,7 +59,7 @@ function buildLoopLengthHoistEdits(sourceText: string, ast: unknown): ReadonlyAr
     const edits: Array<LoopLengthHoistingEdit> = [];
     const usedIdentifierNames = collectSourceIdentifierNames(sourceText);
 
-    for (const context of collectForStatementContexts(ast)) {
+    for (const context of Core.collectForStatementHoistContexts(ast)) {
         if (!context.canInsertHoistBeforeLoop) {
             continue;
         }
@@ -119,7 +69,7 @@ function buildLoopLengthHoistEdits(sourceText: string, ast: unknown): ReadonlyAr
             continue;
         }
 
-        const testExpression = context.forNode.test;
+        const testExpression = (context.forNode as { test?: unknown }).test;
         const calls = Core.collectLoopLengthAccessorCallsFromAstNode({
             sourceText,
             rootNode: testExpression,

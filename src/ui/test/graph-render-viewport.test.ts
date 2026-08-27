@@ -129,3 +129,17 @@ void test("edge batching groups relationships by visual type without degrading s
     assert.equal(shouldBatchGraphEdges(2, 100), false);
     assert.equal(shouldBatchGraphEdges(2, 1000), true);
 });
+
+void test("edge batching treats layout-simulation-jittered coincident nodes as touching, not directional", () => {
+    // Force-directed layout can settle a self-referencing edge's source and
+    // target at coordinates that differ by a sub-pixel floating-point residual
+    // instead of landing on exactly the same value. A strict `distance === 0`
+    // check would miss this near-zero case and normalize a direction vector
+    // from that residual noise, so the fallback path (raw node coordinates,
+    // no direction-dependent radius offset) must still be used here.
+    const source = createNode("self", 12.000_000_000_000_002, 4.999_999_999_999_998);
+    const target = createNode("self", 12, 5);
+    const [batch] = buildGraphEdgeBatches([createEdge(source, target, "calls")]);
+
+    assert.equal(batch.pathData, `M${String(source.x)},${String(source.y)}L${String(target.x)},${String(target.y)}`);
+});

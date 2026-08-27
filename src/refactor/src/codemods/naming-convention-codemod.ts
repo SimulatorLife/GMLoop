@@ -4,14 +4,14 @@ import {
     evaluateNamingConvention,
     NAMING_CATEGORY_PARENTS,
     resolveNamingConventionRules
-} from "../../naming-convention-policy.js";
+} from "../naming-convention-policy.js";
 import {
     detectCircularRenames,
     detectCrossRenameNameConfusion,
     detectDuplicateSourceSymbolIds,
     detectDuplicateTargetNames,
     loadRefactorReservedIdentifierNames
-} from "../../rename/index.js";
+} from "../rename/index.js";
 import type {
     ApplyWorkspaceEditOptions,
     BatchRenamePlanSummary,
@@ -30,8 +30,8 @@ import type {
     RenameRequest,
     SemanticGap,
     ValidationSummary
-} from "../../types.js";
-import { type WorkspaceEdit, WorkspaceEdit as WorkspaceEditClass } from "../../workspace-edit.js";
+} from "../types.js";
+import { type WorkspaceEdit, WorkspaceEdit as WorkspaceEditClass } from "../workspace-edit.js";
 
 const DEFINITELY_LOCAL_NAMING_CATEGORIES = new Set<NamingCategory>([
     "localVariable",
