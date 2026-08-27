@@ -262,6 +262,32 @@ void test("MCP tool catalog exposes object event delete from the CLI command cat
     assert.equal(writeField.valueType, "boolean");
 });
 
+void test("MCP tool catalog exposes object update from the CLI command catalog", () => {
+    const catalog = listGmloopMcpToolCatalogEntries();
+    const updateTool = catalog.find((entry) => entry.toolName === "gmloop_object_update");
+    assert.ok(updateTool, "gmloop_object_update must appear in the MCP tool catalog");
+    assert.equal(updateTool.commandDisplayName, "object update");
+
+    const fieldNames = new Set(updateTool.fields.map((field) => field.name));
+    assert.ok(fieldNames.has("cwd"), "object update must include cwd field");
+    assert.ok(fieldNames.has("object"), "object update must include object argument");
+    assert.ok(fieldNames.has("--sprite"), "object update must include --sprite option");
+    assert.ok(fieldNames.has("--clear-sprite"), "object update must include --clear-sprite option");
+    assert.ok(fieldNames.has("--parent"), "object update must include --parent option");
+    assert.ok(fieldNames.has("--clear-parent"), "object update must include --clear-parent option");
+    assert.ok(fieldNames.has("--visible"), "object update must include --visible option");
+    assert.ok(fieldNames.has("--solid"), "object update must include --solid option");
+    assert.ok(fieldNames.has("--persistent"), "object update must include --persistent option");
+    assert.ok(fieldNames.has("--write"), "object update must include --write option");
+    assert.ok(fieldNames.has("--path"), "object update must include --path option");
+    assert.ok(fieldNames.has("--json"), "object update must include --json option");
+
+    const writeField = updateTool.fields.find((field) => field.name === "--write");
+    assert.ok(writeField);
+    assert.equal(writeField.kind, "option");
+    assert.equal(writeField.valueType, "boolean");
+});
+
 void test("MCP tool catalog excludes internal test command namespace", () => {
     const catalog = listGmloopMcpToolCatalogEntries();
     const toolNames = new Set(catalog.map((entry) => entry.toolName));
