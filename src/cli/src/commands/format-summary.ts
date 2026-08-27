@@ -38,7 +38,6 @@ export function buildNoMatchingFilesMessage({
     targetPath,
     targetIsDirectory,
     targetPathProvided,
-    extensions,
     ignoredFilesSkipped,
     gmlExtension,
     cliExample,
@@ -47,13 +46,12 @@ export function buildNoMatchingFilesMessage({
     targetPath: string;
     targetIsDirectory: boolean;
     targetPathProvided: boolean | undefined;
-    extensions: ReadonlyArray<string>;
     ignoredFilesSkipped: boolean;
     gmlExtension: string;
     cliExample: string;
     workspaceExample: string;
 }): string {
-    const formattedExtensions = formatExtensionListForDisplay(extensions);
+    const formattedExtensions = `"${gmlExtension}"`;
     const formattedTarget = formatPathForDisplay(targetPath);
     const locationDescription = targetIsDirectory
         ? describeDirectoryWithoutMatches({
@@ -198,10 +196,6 @@ export function buildSkippedDirectorySummaryMessage({
 
     const exampleSuffix = formatExampleSuffix(formattedSamples, ignored);
     return `Skipped ${ignored} ${label} ignored by .prettierignore${exampleSuffix}.`;
-}
-
-function formatExtensionListForDisplay(extensions: ReadonlyArray<string>): string {
-    return extensions.map((extension) => `"${extension}"`).join(", ");
 }
 
 function describeDirectoryWithoutMatches({

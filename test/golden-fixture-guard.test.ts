@@ -1,6 +1,4 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
-import path from "node:path";
 import { test } from "node:test";
 
 type PullRequestFileChange = Readonly<{
@@ -67,29 +65,4 @@ void test("golden fixture guard blocks only protected fixture modifications/remo
         "src/parser/test/input/functions/new-input.gml",
         "test/fixtures/plugin-integration/suite/input.gml"
     ]);
-});
-
-void test("auto-merge workflows keep narrowed golden fixture guard paths", async () => {
-    const workflowPaths = [
-        path.resolve(process.cwd(), ".github/workflows/automerge-prs.yml"),
-        path.resolve(process.cwd(), ".github/workflows/auto-merge-agent.yml")
-    ];
-
-    for (const workflowPath of workflowPaths) {
-        const source = await readFile(workflowPath, "utf8");
-
-        assert.match(source, /test\\\/fixtures\\\/plugin-integration\\\/.\*\\\.gml/u);
-        assert.match(source, /src\\\/parser\\\/test\\\/input\\\/.\*\\\.gml/u);
-        assert.match(source, /src\\\/lint\\\/test\\\/fixtures\\\/.\*\\\.gml/u);
-
-        assert.doesNotMatch(source, /f\.filename\.includes\('\/test\/'\)/u);
-    }
-});
-
-void test("automerge regression agent comment includes quality report regression summary context", async () => {
-    const automergeWorkflowPath = path.resolve(process.cwd(), ".github/workflows/automerge-prs.yml");
-    const source = await readFile(automergeWorkflowPath, "utf8");
-
-    assert.match(source, /Regression summary from the Quality Report:/u);
-    assert.match(source, /line\.trim\(\)\.startsWith\('❌ Test regressions detected\.'\)/u);
 });

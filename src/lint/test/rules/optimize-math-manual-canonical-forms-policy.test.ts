@@ -183,6 +183,33 @@ void test("zero-check-to-epsilon-comparison replaces the bare-zero guard idiom",
     assert.strictEqual(rule.pattern.test("if (delta != 1)"), false);
 });
 
+void test("zero-check-to-epsilon-comparison accepts the GML alternative not-equal operator", () => {
+    // GML supports `<>` as an alternative spelling of `!=`. The earlier
+    // pattern hard-coded `!=` only, so a buffer written with `<>` slipped
+    // past the rewrite even though it has the same floating-point hazard
+    // the rule is designed to guard against. The broadened pattern now
+    // accepts both forms; this test pins that down so a future regression
+    // back to the `!=`-only form is caught.
+    const rule = findManualMathCanonicalFormRuleById("zero-check-to-epsilon-comparison");
+    assert.ok(rule);
+
+    const input = "if (delta <> 0)";
+    const replaced = input.replaceAll(rule.pattern, rule.replacement);
+    assert.strictEqual(replaced, "if (abs(delta) > math_get_epsilon())");
+
+    // Integration through the policy applier: end-to-end rewrite of the
+    // GML-specific not-equal spelling should reach the same canonical form
+    // as the C-style spelling.
+    assert.strictEqual(
+        applyManualMathCanonicalForms("if (delta <> 0) { apply(); }"),
+        "if (abs(delta) > math_get_epsilon()) { apply(); }"
+    );
+
+    // The same non-matches that hold for `!= 0` must still hold for `<> 0`.
+    assert.strictEqual(rule.pattern.test("if (delta <> 1)"), false);
+    assert.strictEqual(rule.pattern.test("if (delta == 0)"), false);
+});
+
 void test("applyManualMathCanonicalForms returns the source unchanged when no rule fires", () => {
     const sourceText = ["var foo = bar;", "if (foo) {", "    return baz;", "}", ""].join("\n");
     assert.strictEqual(applyManualMathCanonicalForms(sourceText), sourceText);

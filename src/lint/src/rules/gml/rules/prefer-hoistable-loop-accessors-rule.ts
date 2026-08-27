@@ -1,4 +1,4 @@
-import { Core } from "@gmloop/core";
+import { Core, type ForStatementHoistContext } from "@gmloop/core";
 import type { Rule } from "eslint";
 
 import type { GmlRuleDefinition } from "../index.js";
@@ -9,18 +9,12 @@ import {
     readObjectOption,
     resolveLocFromIndex,
     shouldReportUnsafe,
-    walkAstNodes,
-    walkAstNodesWithParent
+    walkAstNodes
 } from "../rule-base-helpers.js";
 
 const DEFAULT_HOIST_ACCESSORS = Object.freeze({
     array_length: "len"
 });
-
-type ForStatementContainerContext = Readonly<{
-    forNode: AstNodeWithType;
-    canInsertHoistBeforeLoop: boolean;
-}>;
 
 function collectLoopLengthAccessorCallsFromTestExpression(parameters: {
     sourceText: string;
@@ -32,29 +26,6 @@ function collectLoopLengthAccessorCallsFromTestExpression(parameters: {
         rootNode: parameters.testNode,
         enabledFunctionNames: parameters.enabledFunctionNames
     });
-}
-
-function collectForStatementContainerContexts(programNode: unknown): ReadonlyArray<ForStatementContainerContext> {
-    const contexts: Array<ForStatementContainerContext> = [];
-
-    walkAstNodesWithParent(programNode, (visitContext) => {
-        const { node, parent, parentKey } = visitContext;
-        if (node.type !== "ForStatement") {
-            return;
-        }
-
-        const canInsertHoistBeforeLoop =
-            parent !== null && parentKey === "body" && (parent.type === "Program" || parent.type === "BlockStatement");
-
-        contexts.push(
-            Object.freeze({
-                forNode: node,
-                canInsertHoistBeforeLoop
-            })
-        );
-    });
-
-    return contexts;
 }
 
 export function createPreferHoistableLoopAccessorsRule(definition: GmlRuleDefinition): Rule.RuleModule {
@@ -85,9 +56,9 @@ export function createPreferHoistableLoopAccessorsRule(definition: GmlRuleDefini
                             loopNodes.push(node);
                         }
                     });
-                    const forStatementContexts = collectForStatementContainerContexts(programNode);
-                    const forStatementContextByNode = new Map<AstNodeWithType, ForStatementContainerContext>(
-                        forStatementContexts.map((loopContext) => [loopContext.forNode, loopContext])
+                    const forStatementContexts = Core.collectForStatementHoistContexts(programNode);
+                    const forStatementContextByNode = new Map<AstNodeWithType, ForStatementHoistContext>(
+                        forStatementContexts.map((loopContext) => [loopContext.forNode as AstNodeWithType, loopContext])
                     );
                     const enabledHoistFunctionNames = new Set(suffixMap.keys());
 

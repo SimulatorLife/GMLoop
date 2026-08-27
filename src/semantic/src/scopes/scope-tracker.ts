@@ -56,7 +56,6 @@ import type {
 
 const DEFAULT_DECLARATION_ROLE: ScopeRole = Object.freeze({ type: "declaration" });
 const DEFAULT_REFERENCE_ROLE: ScopeRole = Object.freeze({ type: "reference" });
-const EMPTY_INVALIDATION_SET: ScopeInvalidationEntry[] = [];
 
 /**
  * Manages lexical and structural scopes, symbol declarations, and references.
@@ -1513,7 +1512,10 @@ export class ScopeTracker implements ScipExportView {
 
             const scope = this.scopesById.get(scopeId);
             if (!scope) {
-                results.set(scopeId, EMPTY_INVALIDATION_SET);
+                // Each missing scope gets its own array: the return type is a mutable
+                // ScopeInvalidationEntry[], so sharing one instance across calls would let a
+                // caller that mutates its "empty" result silently corrupt unrelated results.
+                results.set(scopeId, []);
                 continue;
             }
 
@@ -1610,8 +1612,13 @@ export class ScopeTracker implements ScipExportView {
 
             const scopeIds = this.pathToScopesIndex.get(trackedPath);
             if (!scopeIds || scopeIds.size === 0) {
-                normalizedPathResultsCache.set(trackedPath, EMPTY_INVALIDATION_SET);
-                results.set(path, EMPTY_INVALIDATION_SET);
+                // Allocate a fresh array per normalized path rather than reusing a shared
+                // "empty" instance: normalizedPathResultsCache intentionally shares one array
+                // across raw paths that normalize to the same trackedPath within this call, but
+                // that array must not also be shared with other trackedPaths or other calls.
+                const emptyInvalidationSet: ScopeInvalidationEntry[] = [];
+                normalizedPathResultsCache.set(trackedPath, emptyInvalidationSet);
+                results.set(path, emptyInvalidationSet);
                 continue;
             }
 

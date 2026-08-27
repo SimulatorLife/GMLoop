@@ -1,9 +1,8 @@
 name = "validator"
-description = "MiniMax-M3 validation agent for checking assigned changes, running required verification, and reporting failures, regressions, risks, and test gaps to the parent agent."
-nickname_candidates = ["MiniVerifier", "MiniChecker", "MiniAuditor"]
+description = "OpenAI-backed validation agent for checking assigned changes, running required verification, and reporting failures, regressions, risks, and test gaps to the parent agent."
+nickname_candidates = ["OpenAIVerifier", "OpenAIChecker", "OpenAIAuditor"]
 
-model_provider = "minimax"
-model = "MiniMax-M3"
+model = "gpt-5.6-luna"
 model_reasoning_effort = "high"
 model_reasoning_summary = "none"
 sandbox_mode = "workspace-write"

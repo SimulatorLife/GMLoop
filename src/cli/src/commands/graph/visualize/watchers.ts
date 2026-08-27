@@ -92,6 +92,10 @@ function startGraphVisualizationFeatherMetadataWatcher({
             });
             watcher.on("error", (error) => {
                 onError(error);
+                // fs.watch does not reliably self-close after an error on every platform;
+                // close explicitly so the underlying file descriptor/inotify watch is released.
+                watcher?.close();
+                watcher = null;
             });
         } catch (error) {
             onError(error);
