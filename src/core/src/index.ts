@@ -57,6 +57,7 @@ export const Core = Object.freeze({
 // Publicly export key AST types at the package root for other packages to
 // import without deep imports. This is the preferred path for type imports
 // across the monorepo.
+export type { ForStatementHoistContext } from "./ast/node-helpers/loop-length-accessor.js";
 export type {
     GameMakerAstLocation,
     GameMakerAstNode,
