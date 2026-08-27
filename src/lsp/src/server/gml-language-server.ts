@@ -51,6 +51,7 @@ import {
     getLspConnectionLogger,
     type GmlLanguageServerConnectionContract,
     hasLspConnectionShutdownHandler,
+    hasLspConnectionWatchedFilesCapability,
     trySendSemanticTokenRefreshRequest
 } from "./lsp-connection-contract.js";
 
@@ -576,8 +577,14 @@ export function createGmlLanguageServer(
         }
     });
 
-    if ("onDidChangeWatchedFiles" in connection) {
-        connection.onDidChangeWatchedFiles(({ changes }) => {
+    // Capability probe replaces the previous `"onDidChangeWatchedFiles" in
+    // connection` runtime check. In-process mocks and lightweight test
+    // transports routinely omit the watcher API; the contract declares the
+    // member as optional and the probe classifies it structurally so any
+    // substitute (real `Connection`, in-memory mock, or cross-realm facade)
+    // is dispatched through the same call shape.
+    if (hasLspConnectionWatchedFilesCapability(connection)) {
+        connection.onDidChangeWatchedFiles?.(({ changes }) => {
             for (const change of changes) {
                 const filePath = uriToFilePath(change.uri);
                 const kind =

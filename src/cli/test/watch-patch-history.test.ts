@@ -3,6 +3,7 @@ import type { WatchListener } from "node:fs";
 import { writeFile } from "node:fs/promises";
 import { after, before, describe, it } from "node:test";
 
+import { createMinimumValueValidator } from "../src/cli-core/command-parsing.js";
 import { createWatchCommand, runWatchCommand } from "../src/commands/watch.js";
 import { findAvailablePort } from "./test-helpers/free-port.js";
 import { fetchStatusPayload, waitForPatchCount, waitForStatusReady } from "./test-helpers/status-polling.js";
@@ -13,11 +14,27 @@ import {
     type WatchTestFixture
 } from "./test-helpers/watch-fixtures.js";
 
-void it("documents that max patch history requires a positive integer", () => {
+void it("documents that max patch history is non-negative and zero is unbounded", () => {
     const option = createWatchCommand().options.find((candidate) => candidate.long === "--max-patch-history");
 
     assert.ok(option);
-    assert.match(option.description, /must be a positive integer/iu);
+    assert.match(option.description, /set to 0 for unbounded/iu);
+    assert.match(option.description, /Maximum number of patches to retain in memory/iu);
+});
+
+void it("accepts zero as an unbounded max-patch-history value", () => {
+    // Recreate the validator with the exact arguments the watch command now uses for
+    // --max-patch-history, so the regression asserts the documented contract directly
+    // rather than poking at commander's frozen option snapshot.
+    const parse = createMinimumValueValidator(0, "Max patch history must be a non-negative integer");
+
+    assert.strictEqual(parse("0"), 0, "0 should be accepted as an explicit unbounded cap and round-trip unchanged");
+});
+
+void it("rejects negative max-patch-history values", () => {
+    const parse = createMinimumValueValidator(0, "Max patch history must be a non-negative integer");
+
+    assert.throws(() => parse("-1"), /Max patch history must be a non-negative integer/u);
 });
 
 void describe("Watch command patch history limit", () => {

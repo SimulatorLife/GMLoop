@@ -17,5 +17,6 @@ export type {
     GameMakerAstLocation,
     GameMakerAstNode,
     LiteralNode,
-    MutableGameMakerAstNode
+    MutableGameMakerAstNode,
+    ProgramNode
 } from "./types.js";

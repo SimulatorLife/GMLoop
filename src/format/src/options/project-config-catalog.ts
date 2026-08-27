@@ -49,7 +49,8 @@ export function createProjectFormatOptionCatalog(
         }),
         Object.freeze({
             defaultValue: false,
-            description: "Insert spaces inside struct literal braces.",
+            description:
+                "Insert spaces inside struct literal braces and array literal brackets. When `true`, both struct literals and array literals render with inner whitespace (for example, `{ x: 1 }` and `[ x, y ]`); when `false`, both render without inner whitespace (for example, `{x: 1}` and `[x, y]`).",
             name: "bracketSpacing"
         }),
         Object.freeze({
