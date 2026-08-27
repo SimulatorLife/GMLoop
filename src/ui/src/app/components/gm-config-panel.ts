@@ -21,12 +21,12 @@ import { LifecycleParticipantsController } from "./lifecycle-participants-contro
 import { LightDomLitElement } from "./light-dom-lit-element.js";
 import {
     getLintFixableBadgeLabel,
-    isLintLevel,
-    isLintLevelFilter,
     LINT_LEVEL_LABELS,
     LINT_LEVELS,
     type LintLevel,
-    type LintLevelFilter
+    type LintLevelFilter,
+    parseLintLevel,
+    parseLintLevelFilter
 } from "./lint-rule-levels.js";
 import type { GmBadgeTone } from "./primitives/gm-badge.js";
 import { renderProcessButtonContent } from "./primitives/gm-button.js";
@@ -123,8 +123,7 @@ function readRawLintRuleLevel(config: ConfigJsonObject, ruleId: string): LintLev
     if (!isConfigJsonObject(lintRules)) {
         return null;
     }
-    const rawLevel = lintRules[ruleId];
-    return isLintLevel(rawLevel) ? rawLevel : null;
+    return parseLintLevel(lintRules[ruleId]);
 }
 
 function readRawCodemodConfig(config: ConfigJsonObject, codemodId: string): unknown {
@@ -346,8 +345,8 @@ export class GmConfigPanel extends LightDomLitElement {
         if (!(target instanceof HTMLSelectElement)) {
             return;
         }
-        const nextValue = target.value;
-        if (!isLintLevelFilter(nextValue)) {
+        const nextValue = parseLintLevelFilter(target.value);
+        if (nextValue === null) {
             return;
         }
         this.#lintLevelFilter = nextValue;
@@ -622,8 +621,7 @@ export class GmConfigPanel extends LightDomLitElement {
             if (selectedRulesetName !== null) {
                 const ruleset = catalog.lint.rulesets.find((rs) => rs.name === selectedRulesetName);
                 if (ruleset) {
-                    const level = ruleset.ruleLevels[entry.ruleId];
-                    rulesetLevel = level !== undefined && isLintLevel(level) ? level : null;
+                    rulesetLevel = parseLintLevel(ruleset.ruleLevels[entry.ruleId]);
                 }
             }
         }
