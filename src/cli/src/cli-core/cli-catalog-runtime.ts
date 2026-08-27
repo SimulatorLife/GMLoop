@@ -34,7 +34,8 @@ export function createCliCommandCatalogRuntime(program: Command): CliCommandCata
 
     return Object.freeze({
         getCliCommandCatalog: () => readLeafCatalog(),
-        getMcpToolCatalogEntries: (options) => createMcpToolCatalogEntries(readLeafCatalog(), options)
+        getMcpToolCatalogEntries: (options?: { includeInternal?: boolean }) =>
+            createMcpToolCatalogEntries(readLeafCatalog(), options)
     });
 }
 
