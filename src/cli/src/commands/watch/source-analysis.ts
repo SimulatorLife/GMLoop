@@ -304,6 +304,19 @@ export function clearInitialFileDataCache(fileDataCache: Map<string, InitialFile
     fileDataCache.clear();
 }
 
+/**
+ * Determines whether two finite filesystem modification times are equivalent within
+ * the shared numeric tolerance. Filesystem precision can cause the same timestamp to
+ * round to adjacent floating-point values across reads.
+ */
+export function areFileMtimesApproximatelyEqual(cachedMtime: number, currentMtime: number): boolean {
+    if (!Number.isFinite(cachedMtime) || !Number.isFinite(currentMtime)) {
+        return false;
+    }
+
+    return Core.areNumbersApproximatelyEqual(cachedMtime, currentMtime);
+}
+
 // ---------------------------------------------------------------------------
 // Script-name registration
 // ---------------------------------------------------------------------------
