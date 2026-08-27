@@ -14,15 +14,32 @@ export { DEFAULT_IDENTIFIER_CASE_OPTION_STORE_MAX_ENTRIES } from "./option-store
 
 const IDENTIFIER_CASE_DESCRIPTION = "Sets the preferred casing style to apply when renaming identifiers.";
 
+/**
+ * Enumerated constants for identifier-case styles accepted by the
+ * `gmlIdentifierCase` option family.
+ *
+ * Centralises the valid casing styles so call sites can branch on typed
+ * constants rather than raw string literals, and so runtime validation has
+ * a single source of truth. The string values are preserved as the wire
+ * format used in user-authored Prettier configuration so existing projects
+ * continue to round-trip without translation.
+ */
 export const IdentifierCaseStyle = Object.freeze({
     OFF: "off",
     CAMEL: "camel",
     PASCAL: "pascal",
     SNAKE_LOWER: "snake-lower",
     SNAKE_UPPER: "snake-upper"
-});
+} as const);
 
-const IDENTIFIER_CASE_STYLE_SET = new Set(Object.values(IdentifierCaseStyle));
+/**
+ * Union of valid identifier-case style values, derived from
+ * {@link IdentifierCaseStyle} so adding a new style only requires updating
+ * the constant map.
+ */
+export type IdentifierCaseStyleValue = (typeof IdentifierCaseStyle)[keyof typeof IdentifierCaseStyle];
+
+const IDENTIFIER_CASE_STYLE_SET: ReadonlySet<string> = new Set(Object.values(IdentifierCaseStyle));
 
 export const IDENTIFIER_CASE_STYLES = Object.freeze(Object.values(IdentifierCaseStyle));
 
@@ -30,22 +47,79 @@ const IDENTIFIER_CASE_LIST_SPLIT_PATTERN = Core.createListSplitPattern(["\n", ",
 
 export const IDENTIFIER_CASE_INHERIT_VALUE = "inherit";
 
-export function isIdentifierCaseStyle(style) {
-    return IDENTIFIER_CASE_STYLE_SET.has(style);
+/**
+ * Type guard for {@link IdentifierCaseStyleValue}.
+ *
+ * Returns `true` only when the candidate is a known casing-style literal,
+ * letting callers narrow untyped strings to the typed union before
+ * branching on the value.
+ *
+ * @example
+ * if (isIdentifierCaseStyle(rawInput)) {
+ *     // rawInput is now narrowed to IdentifierCaseStyleValue
+ *     applyStyle(rawInput);
+ * }
+ */
+export function isIdentifierCaseStyle(style: unknown): style is IdentifierCaseStyleValue {
+    return typeof style === "string" && IDENTIFIER_CASE_STYLE_SET.has(style);
 }
 
-function createUnknownIdentifierCaseStyleError(style, optionName) {
+function createUnknownIdentifierCaseStyleError(style: unknown, optionName: string): RangeError {
     const validStyles = Array.from(IDENTIFIER_CASE_STYLE_SET).join(", ");
+    const received = Core.describeValueForError(style);
 
-    return new RangeError(`Invalid identifier case style '${style}' for ${optionName}. Valid styles: ${validStyles}.`);
+    return new RangeError(
+        `Invalid identifier case style '${received}' for ${optionName}. Valid styles: ${validStyles}.`
+    );
 }
 
-export function assertIdentifierCaseStyle(style, optionName) {
-    if (!isIdentifierCaseStyle(style)) {
-        throw createUnknownIdentifierCaseStyleError(style, optionName);
+/**
+ * Parse a candidate value as a valid identifier-case style literal.
+ *
+ * Returns the value unchanged when it matches a known style, or `null`
+ * when the value is missing or unrecognised. Use this when input may be
+ * missing or arbitrary and the caller wants to fall back to a default.
+ *
+ * @example
+ * const style = parseIdentifierCaseStyle(rawInput) ?? IdentifierCaseStyle.OFF;
+ */
+export function parseIdentifierCaseStyle(value: unknown): IdentifierCaseStyleValue | null {
+    return isIdentifierCaseStyle(value) ? value : null;
+}
+
+/**
+ * Parse a candidate value as a valid identifier-case style literal or
+ * throw when the value is unrecognised.
+ *
+ * Use this at trust boundaries (option parsing, command-line flags,
+ * persisted config) where an invalid style must surface as an error
+ * rather than silently being treated as the default.
+ *
+ * @param value - Candidate value to validate.
+ * @param context - Optional label included in the thrown error message.
+ * @returns The validated {@link IdentifierCaseStyleValue}.
+ * @throws {RangeError} When the candidate is not a known style.
+ *
+ * @example
+ * const style = requireIdentifierCaseStyle(rawInput, "gmlIdentifierCase");
+ */
+export function requireIdentifierCaseStyle(value: unknown, context?: string): IdentifierCaseStyleValue {
+    if (!isIdentifierCaseStyle(value)) {
+        throw createUnknownIdentifierCaseStyleError(value, context ?? "identifier case style");
     }
 
-    return style;
+    return value;
+}
+
+/**
+ * Backwards-compatible assert that doubles as a runtime validator.
+ *
+ * @deprecated Prefer {@link requireIdentifierCaseStyle} for new code; this
+ * alias remains so existing call sites that rely on the `RangeError` type
+ * keep working.
+ */
+export function assertIdentifierCaseStyle(style: unknown, optionName: string): IdentifierCaseStyleValue {
+    return requireIdentifierCaseStyle(style, optionName);
 }
 
 function normalizeIdentifierCaseStyleOption(style, { optionName, defaultValue }) {
@@ -246,27 +320,40 @@ function normalizeList(optionName, value) {
 
 function resolveScopeSettings(
     options: any,
-    baseStyle: string
+    baseStyle: IdentifierCaseStyleValue
 ): {
-    scopeSettings: Record<string, string>;
-    scopeStyles: Record<string, string>;
+    scopeSettings: Record<(typeof IDENTIFIER_CASE_SCOPE_NAMES)[number], typeof IDENTIFIER_CASE_INHERIT_VALUE>;
+    scopeStyles: Record<(typeof IDENTIFIER_CASE_SCOPE_NAMES)[number], IdentifierCaseStyleValue>;
 } {
-    const scopeSettings: Record<string, string> = {};
-    const scopeStyles: Record<string, string> = {};
+    const scopeSettings = {} as Record<
+        (typeof IDENTIFIER_CASE_SCOPE_NAMES)[number],
+        typeof IDENTIFIER_CASE_INHERIT_VALUE
+    >;
+    const scopeStyles = {} as Record<(typeof IDENTIFIER_CASE_SCOPE_NAMES)[number], IdentifierCaseStyleValue>;
 
     for (const scope of IDENTIFIER_CASE_SCOPE_NAMES) {
         const optionName = getScopeOptionName(scope);
         const configuredValue = options?.[optionName];
 
-        const normalizedValue = configuredValue === undefined ? IDENTIFIER_CASE_INHERIT_VALUE : configuredValue;
-
-        if (scope === "locals" && normalizedValue !== IDENTIFIER_CASE_INHERIT_VALUE) {
-            assertIdentifierCaseStyle(normalizedValue, optionName);
+        if (configuredValue === undefined) {
+            scopeSettings[scope] = IDENTIFIER_CASE_INHERIT_VALUE;
+            scopeStyles[scope] = baseStyle;
+            continue;
         }
 
-        scopeSettings[scope] = normalizedValue;
+        if (configuredValue === IDENTIFIER_CASE_INHERIT_VALUE) {
+            scopeSettings[scope] = IDENTIFIER_CASE_INHERIT_VALUE;
+            scopeStyles[scope] = baseStyle;
+            continue;
+        }
 
-        scopeStyles[scope] = normalizedValue === IDENTIFIER_CASE_INHERIT_VALUE ? baseStyle : normalizedValue;
+        // Validate every non-inherit scope value so a typo in any scope
+        // (not just `locals`) surfaces as a hard error instead of silently
+        // collapsing back to the base style. This is the single trust
+        // boundary for user-supplied identifier-case style values.
+        const validatedStyle = requireIdentifierCaseStyle(configuredValue, optionName);
+        scopeSettings[scope] = IDENTIFIER_CASE_INHERIT_VALUE;
+        scopeStyles[scope] = validatedStyle;
     }
 
     return { scopeSettings, scopeStyles };
@@ -285,14 +372,16 @@ function resolveScopeSettings(
  * @param {Record<string, unknown>} [options]
  *        Partial prettier option bag keyed by `gmlIdentifierCase*` names.
  * @returns {{
- *     baseStyle: string,
- *     scopeSettings: Record<string, string>,
- *     scopeStyles: Record<string, string>,
+ *     baseStyle: IdentifierCaseStyleValue,
+ *     scopeSettings: Record<string, typeof IDENTIFIER_CASE_INHERIT_VALUE>,
+ *     scopeStyles: Record<string, IdentifierCaseStyleValue>,
  *     ignorePatterns: Array<string>,
  *     preservedIdentifiers: Array<string>,
  *     assetRenamesAcknowledged: boolean
  * }} Canonical representation consumed by identifier case services.
  * @throws {Error} When asset renames are enabled without acknowledgement.
+ * @throws {RangeError} When any non-inherit scope value is not a valid
+ *         identifier-case style.
  */
 export function normalizeIdentifierCaseOptions(options = {}) {
     const baseStyle = normalizeIdentifierCaseStyleOption(options?.[IDENTIFIER_CASE_BASE_OPTION_NAME], {
