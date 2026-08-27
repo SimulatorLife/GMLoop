@@ -196,6 +196,6 @@ export function importFormatModule(options = {}) {
  * the return type is narrowed to the contract the CLI actually needs.
  */
 export async function resolveFormatModule(options = {}): Promise<FormatModuleContract> {
-    const moduleValue = await importFormatModule(options);
+    const moduleValue: unknown = await importFormatModule(options);
     return moduleValue as FormatModuleContract;
 }
