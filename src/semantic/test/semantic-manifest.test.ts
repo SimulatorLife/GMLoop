@@ -176,3 +176,123 @@ void test("buildSemanticFileManifest treats mismatched/dirty overlays as openBuf
     assert.equal(entry.sourceOrigin, "openBuffer", "Dirty overlay must resolve to openBuffer origin");
     assert.equal(entry.sourceVersion, 2, "Dirty overlay must preserve source version");
 });
+
+void test("buildSemanticFileManifest reuses previous entries when mtime drifts within floating-point tolerance", async () => {
+    // Regression coverage for the strict-equality `file.mtimeMs === previousEntry.mtimeMs`
+    // check that previously lived in `buildSemanticFileManifest`. Real-world `fs.stat`
+    // round trips — especially across filesystem precision boundaries (FAT rounding to
+    // whole seconds, SMB mounts truncating sub-millisecond ticks, snapshot
+    // deserialisation through JSON or SQLite) — can produce mtime values that differ
+    // by a few microseconds despite pointing at the same logical file. Strict `===`
+    // would mark those manifests as "changed" and force a redundant file read plus a
+    // SHA-256 rehash. This test feeds a `previousManifest` whose `mtimeMs` differs
+    // from the on-disk mtime by a sub-microsecond offset that is well within the
+    // `Core.areNumbersApproximatelyEqual` tolerance window (~4 × EPSILON × scale, which
+    // for an mtime of ~1.7e12 ms is on the order of 7 microseconds). Without the
+    // epsilon-aware fix, the spy facade would observe a read on the second build;
+    // with the fix, the cache hit path stays engaged and no read occurs.
+    const projectRoot = await mkdtemp(path.join(os.tmpdir(), "gmloop-semantic-manifest-mtime-drift-"));
+    const sourcePath = path.join(projectRoot, "main.gml");
+    await writeFile(sourcePath, "return 1;", "utf8");
+
+    const initialManifest = await buildSemanticFileManifest(projectRoot, Core.defaultFsFacade);
+    const initialEntry = initialManifest.entries.get("main.gml");
+    assert.ok(initialEntry);
+    const initialMtimeMs = initialEntry.mtimeMs;
+    assert.ok(typeof initialMtimeMs === "number");
+
+    // Construct a synthetic previousManifest whose mtimeMs drifts from the on-disk
+    // value by 1 microsecond. The drift is far below the tolerance window for an
+    // mtime in the 2024+ epoch range (~7 microseconds), but well above zero so a
+    // strict `===` comparison would (incorrectly) treat it as a change.
+    const MICROSECOND_DRIFT_MS = 1e-3;
+    const driftedMtimeMs = initialMtimeMs + MICROSECOND_DRIFT_MS;
+    assert.notEqual(
+        driftedMtimeMs,
+        initialMtimeMs,
+        "Drifted mtime must differ from the on-disk value for this regression to be meaningful"
+    );
+
+    const driftedPreviousManifest = {
+        entries: new Map([
+            [
+                "main.gml",
+                {
+                    ...initialEntry,
+                    mtimeMs: driftedMtimeMs
+                }
+            ]
+        ]),
+        sourceRevision: initialManifest.sourceRevision
+    };
+
+    let readCount = 0;
+    const spyFsFacade = {
+        ...Core.defaultFsFacade,
+        async readFile(filePath: string, encoding: any) {
+            readCount += 1;
+            return Core.defaultFsFacade.readFile(filePath, encoding);
+        }
+    };
+
+    const cachedManifest = await buildSemanticFileManifest(projectRoot, spyFsFacade, [], driftedPreviousManifest);
+
+    assert.equal(readCount, 0, "Sub-microsecond mtime drift must not force a redundant file read or rehash");
+    assert.equal(cachedManifest.entries.get("main.gml")?.contentHash, initialEntry.contentHash);
+});
+
+void test("buildSemanticFileManifest invalidates the cache when mtime shifts beyond the tolerance window", async () => {
+    // Companion to the mtime-drift regression above: when the gap between the cached
+    // mtime and the on-disk mtime exceeds the `Core.areNumbersApproximatelyEqual`
+    // tolerance window, the cache must still be invalidated so genuine content
+    // changes are not silently masked. A bare `===` would also catch this case; this
+    // test pins the behaviour so future tweaks to the tolerance window cannot
+    // accidentally widen it to swallow real edits.
+    const projectRoot = await mkdtemp(path.join(os.tmpdir(), "gmloop-semantic-manifest-mtime-shifted-"));
+    const sourcePath = path.join(projectRoot, "main.gml");
+    await writeFile(sourcePath, "return 1;", "utf8");
+
+    const initialManifest = await buildSemanticFileManifest(projectRoot, Core.defaultFsFacade);
+    const initialEntry = initialManifest.entries.get("main.gml");
+    assert.ok(initialEntry);
+    const initialMtimeMs = initialEntry.mtimeMs;
+    assert.ok(typeof initialMtimeMs === "number");
+
+    // Shift the cached mtime by 1 millisecond. For an mtime of ~1.7e12 the tolerance
+    // window is on the order of single-digit microseconds, so a 1ms shift is several
+    // orders of magnitude beyond the epsilon band and must force a rehash.
+    const MILLISECOND_SHIFT_MS = 1;
+    const shiftedMtimeMs = initialMtimeMs + MILLISECOND_SHIFT_MS;
+    assert.ok(Core.areNumbersApproximatelyEqual(initialMtimeMs, initialMtimeMs));
+    assert.equal(
+        Core.areNumbersApproximatelyEqual(initialMtimeMs, shiftedMtimeMs),
+        false,
+        "Sanity check: a 1ms shift must exceed the tolerance window used by the fix"
+    );
+
+    const shiftedPreviousManifest = {
+        entries: new Map([
+            [
+                "main.gml",
+                {
+                    ...initialEntry,
+                    mtimeMs: shiftedMtimeMs
+                }
+            ]
+        ]),
+        sourceRevision: initialManifest.sourceRevision
+    };
+
+    let readCount = 0;
+    const spyFsFacade = {
+        ...Core.defaultFsFacade,
+        async readFile(filePath: string, encoding: any) {
+            readCount += 1;
+            return Core.defaultFsFacade.readFile(filePath, encoding);
+        }
+    };
+
+    await buildSemanticFileManifest(projectRoot, spyFsFacade, [], shiftedPreviousManifest);
+
+    assert.equal(readCount, 1, "A genuine mtime shift beyond the tolerance window must force a rehash");
+});

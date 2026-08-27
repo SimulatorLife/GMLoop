@@ -98,7 +98,6 @@
       "Edit(AGENTS.md)",
       "Edit(GEMINI.md)",
       "Edit(.github/copilot-instructions.md)",
-      "Edit(.github/workflows/**)",
       "Edit(.gemini/**)",
       "Edit(.qwen/**)",
       "Edit(.codex/**)",

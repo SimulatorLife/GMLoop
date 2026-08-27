@@ -91,7 +91,7 @@ function parseRunnerArgsInput(value: string): Array<string> {
     try {
         parsed = JSON.parse(trimmed);
     } catch (error) {
-        const reason = error instanceof Error ? error.message : String(error);
+        const reason = Core.isErrorLike(error) ? error.message : String(error);
         throw new TypeError(`GMLOOP_RUNNER_ARGS JSON is malformed (${reason}): ${trimmed}`, {
             cause: error
         });

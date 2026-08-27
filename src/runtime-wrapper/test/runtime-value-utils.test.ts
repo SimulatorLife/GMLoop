@@ -367,6 +367,11 @@ void describe("runtime-value-utils — polymorphism guardrails", () => {
             assert.equal(readCxcDxStore({}), undefined);
             assert.equal(readCxcDxStore({ _cx: {} }), undefined);
         });
+
+        void it("returns undefined when _cx or _dx is a primitive", () => {
+            assert.equal(readCxcDxStore({ _cx: 42 }), undefined);
+            assert.equal(readCxcDxStore({ _cx: { _dx: "not-an-object" } }), undefined);
+        });
     });
 
     void describe("readRuntimeObjectPool", () => {
@@ -389,6 +394,11 @@ void describe("runtime-value-utils — polymorphism guardrails", () => {
                 }),
                 undefined
             );
+        });
+
+        void it("returns undefined when g_RunRoom or m_Active is a primitive", () => {
+            assert.equal(readRuntimeObjectPool({ g_RunRoom: 42 }), undefined);
+            assert.equal(readRuntimeObjectPool({ g_RunRoom: { m_Active: "not-an-object" } }), undefined);
         });
     });
 
