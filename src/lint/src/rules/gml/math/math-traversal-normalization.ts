@@ -3,27 +3,38 @@
  * This includes simplifications, constant conversions, and traversal-safe replacements so the printer emits consistent expressions.
  *
  * Implementation is split across several focused modules:
- *   - math-numeric-utils.ts    – pure numeric/literal evaluation helpers
- *   - math-ast-builders.ts     – AST node creation and mutation helpers
- *   - math-trig-conversions.ts – trigonometric and angle-conversion simplifiers
- *   - math-ast-mutation.ts     – AST tree-walking, node-lookup, and structural mutation helpers
- *                               (original-expression cloning, alias removal, blank-line preservation,
- *                               zero-division simplification)
+ *   - math-numeric-utils.ts       – pure numeric/literal evaluation helpers
+ *   - math-ast-builders.ts        – AST node creation and mutation helpers
+ *   - math-trig-conversions.ts    – trigonometric and angle-conversion simplifiers
+ *   - math-call-conversions.ts    – expression-pattern-to-built-in-call simplifiers
+ *                                  (sqr, power, sqrt, exp, mean, log2, dot_product, point_*)
+ *   - math-ast-mutation.ts        – AST tree-walking, node-lookup, and structural mutation helpers
+ *                                  (original-expression cloning, alias removal, blank-line preservation,
+ *                                  zero-division simplification)
  */
 
 import { Core } from "@gmloop/core";
 
 import {
-    createBinaryExpressionNode,
     createCallExpressionNode,
     createMultiplicationNode,
     createNumericLiteral,
-    mutateToCallExpression,
     replaceNode,
     replaceNodeWith as replaceNodeByMutation
 } from "./math-ast-builders.js";
 import type { ConvertManualMathTransformOptions } from "./math-ast-mutation.js";
 import * as AST from "./math-ast-mutation.js";
+import {
+    attemptConvertDotProducts,
+    attemptConvertLog2,
+    attemptConvertMean,
+    attemptConvertPointDirection,
+    attemptConvertPointDistanceCall,
+    attemptConvertPowerToExp,
+    attemptConvertPowerToSqrt,
+    attemptConvertRepeatedPower,
+    attemptConvertSquare
+} from "./math-call-conversions.js";
 import {
     attemptConvertLengthDir,
     isIdentityReplacementSafeExpression,
@@ -31,20 +42,14 @@ import {
 } from "./math-lengthdir-transforms.js";
 import { DEFAULT_MATH_NUMERIC_POLICY } from "./math-numeric-policy.js";
 import {
-    collectProductOperands,
     computeNumericTolerance,
     evaluateOneMinusNumeric,
-    isEulerLiteral,
-    isHalfExponentLiteral,
-    isLiteralNumber,
-    isLnCall,
     isNegativeOneFactor,
     isNumericZeroLiteral,
     normalizeNumericCoefficient,
     parseNumericFactor
 } from "./math-numeric-utils.js";
 import {
-    areNodesApproximatelyEquivalent,
     areNodesEquivalent,
     attemptCollectDistributedScalars,
     attemptCondenseNumericChainWithMultipleBases,
@@ -52,7 +57,6 @@ import {
     buildReciprocalRatioRemovalPlan,
     buildReciprocalRatioReplacement,
     buildRemainingRatioTerms,
-    collectAdditionTerms,
     collectMultiplicativeChain,
     collectReciprocalRatioTerms,
     combineLengthdirScalarAssignments
@@ -67,10 +71,7 @@ const {
     BINARY_EXPRESSION,
     CALL_EXPRESSION,
     EXPRESSION_STATEMENT,
-    IDENTIFIER,
     LITERAL,
-    MEMBER_DOT_EXPRESSION,
-    MEMBER_INDEX_EXPRESSION,
     PARENTHESIZED_EXPRESSION,
     isObjectLike
 } = Core;
@@ -776,452 +777,6 @@ function attemptSimplifyNegativeDivisionProduct(node, context) {
     }
 
     return false;
-}
-
-function attemptConvertSquare(node, context) {
-    if (!Core.isBinaryOperator(node, "*") || Core.hasComment(node)) {
-        return false;
-    }
-
-    const rawLeft = node.left;
-    const rawRight = node.right;
-
-    if (!rawLeft || !rawRight) {
-        return false;
-    }
-
-    if (Core.hasComment(rawLeft) || Core.hasComment(rawRight)) {
-        return false;
-    }
-
-    const left = Core.unwrapParenthesizedExpression(rawLeft);
-    const right = Core.unwrapParenthesizedExpression(rawRight);
-
-    if (!left || !right) {
-        return false;
-    }
-
-    if (Core.hasComment(left) || Core.hasComment(right)) {
-        return false;
-    }
-
-    if (Core.hasInlineCommentBetween(rawLeft, rawRight, context)) {
-        return false;
-    }
-
-    if (areNodesEquivalent(left, right) || areNodesApproximatelyEquivalent(left, right)) {
-        if (!AST.isSafeOperand(left)) {
-            return false;
-        }
-
-        mutateToCallExpression(node, "sqr", [Core.cloneAstNode(left)], node);
-        AST.unwrapEnclosingParentheses(node, context);
-        return true;
-    }
-
-    const factors = [];
-    if (collectProductOperands(node, factors)) {
-        for (let i = 0; i < factors.length; i++) {
-            for (let j = i + 1; j < factors.length; j++) {
-                const a = Core.unwrapParenthesizedExpression(factors[i]);
-                const b = Core.unwrapParenthesizedExpression(factors[j]);
-                if (a && b && areNodesEquivalent(a, b) && AST.isSafeOperand(a)) {
-                    const remainingFactors = factors.filter((_, idx) => idx !== i && idx !== j);
-                    const sqrNode = createCallExpressionNode("sqr", [Core.cloneAstNode(a)], node);
-
-                    if (remainingFactors.length === 0) {
-                        mutateToCallExpression(node, "sqr", [Core.cloneAstNode(a)], node);
-                        return true;
-                    }
-
-                    let product = Core.cloneAstNode(remainingFactors[0]);
-                    for (let k = 1; k < remainingFactors.length; k++) {
-                        product = createBinaryExpressionNode(
-                            "*",
-                            product,
-                            Core.cloneAstNode(remainingFactors[k]),
-                            node
-                        );
-                    }
-                    const result = createBinaryExpressionNode("*", product, sqrNode, node);
-
-                    replaceNode(node, result);
-                    return true;
-                }
-            }
-        }
-    }
-
-    return false;
-}
-
-function attemptConvertRepeatedPower(node, context) {
-    if (!Core.isBinaryOperator(node, "*") || Core.hasComment(node)) {
-        return false;
-    }
-
-    const factors = [];
-    if (!collectProductOperands(node, factors)) {
-        return false;
-    }
-
-    if (factors.length <= 2) {
-        return false;
-    }
-
-    const base = Core.unwrapParenthesizedExpression(factors[0]);
-    if (!base || !AST.isSafeOperand(base)) {
-        return false;
-    }
-
-    for (let index = 1; index < factors.length; index += 1) {
-        const operand = Core.unwrapParenthesizedExpression(factors[index]);
-        if (!areNodesEquivalent(base, operand)) {
-            return false;
-        }
-    }
-
-    const exponentLiteral = createNumericLiteral(factors.length, node);
-    mutateToCallExpression(node, "power", [Core.cloneAstNode(base), exponentLiteral], node);
-    AST.unwrapEnclosingParentheses(node, context);
-    return true;
-}
-
-function attemptConvertMean(node, context) {
-    if (Core.hasComment(node)) {
-        return false;
-    }
-
-    const expression = Core.unwrapParenthesizedExpression(node);
-
-    if (!expression || expression.type !== BINARY_EXPRESSION) {
-        return false;
-    }
-
-    let addition;
-    let divisor;
-
-    if (expression.operator === "/") {
-        addition = Core.unwrapParenthesizedExpression(expression.left);
-        divisor = Core.unwrapParenthesizedExpression(expression.right);
-
-        if (!isLiteralNumber(divisor, 2)) {
-            return false;
-        }
-    } else if (expression.operator === "*") {
-        const left = Core.unwrapParenthesizedExpression(expression.left);
-        const right = Core.unwrapParenthesizedExpression(expression.right);
-
-        if (isLiteralNumber(left, 0.5)) {
-            addition = right;
-        } else if (isLiteralNumber(right, 0.5)) {
-            addition = left;
-        } else {
-            return false;
-        }
-    } else {
-        return false;
-    }
-
-    if (!addition || addition.type !== BINARY_EXPRESSION) {
-        return false;
-    }
-
-    if (Core.hasComment(addition)) {
-        return false;
-    }
-
-    if (addition.operator !== "+") {
-        return false;
-    }
-
-    const leftTerm = Core.unwrapParenthesizedExpression(addition.left);
-    const rightTerm = Core.unwrapParenthesizedExpression(addition.right);
-
-    if (!leftTerm || !rightTerm) {
-        return false;
-    }
-
-    mutateToCallExpression(node, "mean", [Core.cloneAstNode(leftTerm), Core.cloneAstNode(rightTerm)], node);
-    AST.unwrapEnclosingParentheses(node, context);
-    return true;
-}
-
-function attemptConvertLog2(node, context) {
-    if (!Core.isBinaryOperator(node, "/") || Core.hasComment(node)) {
-        return false;
-    }
-
-    const numerator = Core.unwrapParenthesizedExpression(node.left);
-    const denominator = Core.unwrapParenthesizedExpression(node.right);
-
-    if (!isLnCall(numerator) || !isLnCall(denominator)) {
-        return false;
-    }
-
-    const [numeratorArg] = numerator.arguments;
-    const [denominatorArg] = denominator.arguments;
-
-    if (!numeratorArg || !denominatorArg) {
-        return false;
-    }
-
-    if (!isLiteralNumber(denominatorArg, 2)) {
-        return false;
-    }
-
-    mutateToCallExpression(node, "log2", [Core.cloneAstNode(numeratorArg)], node);
-    AST.unwrapEnclosingParentheses(node, context);
-    return true;
-}
-
-function attemptConvertDotProducts(node, context) {
-    if (!Core.isBinaryOperator(node, "+") || Core.hasComment(node)) {
-        return false;
-    }
-
-    const terms = [];
-    collectAdditionTerms(node, terms);
-
-    if (terms.length !== 2 && terms.length !== 3) {
-        return false;
-    }
-
-    const leftVector = [];
-    const rightVector = [];
-
-    for (const term of terms) {
-        const expr = Core.unwrapParenthesizedExpression(term);
-
-        if (!Core.isBinaryOperator(expr, "*") || Core.hasComment(expr)) {
-            return false;
-        }
-
-        const left = Core.unwrapParenthesizedExpression(expr.left);
-        const right = Core.unwrapParenthesizedExpression(expr.right);
-
-        if (!left || !right) {
-            return false;
-        }
-
-        if (!isDotProductOperandCandidate(left) || !isDotProductOperandCandidate(right)) {
-            return false;
-        }
-
-        leftVector.push(Core.cloneAstNode(left));
-        rightVector.push(Core.cloneAstNode(right));
-    }
-
-    const functionName = terms.length === 2 ? "dot_product" : "dot_product_3d";
-
-    mutateToCallExpression(node, functionName, [...leftVector, ...rightVector], node);
-    AST.unwrapEnclosingParentheses(node, context);
-    return true;
-}
-
-function isDotProductOperandCandidate(node) {
-    if (!node || Core.hasComment(node)) {
-        return false;
-    }
-
-    return node.type === IDENTIFIER || node.type === MEMBER_DOT_EXPRESSION || node.type === MEMBER_INDEX_EXPRESSION;
-}
-
-function attemptConvertPointDistanceCall(node, context) {
-    if (Core.hasComment(node)) {
-        return false;
-    }
-
-    const calleeName = Core.getUnwrappedIdentifierName(node.object);
-    const callArguments = Core.getCallExpressionArguments(node);
-
-    let distanceExpression;
-    if (calleeName === "sqrt") {
-        if (callArguments.length !== 1) {
-            return false;
-        }
-
-        distanceExpression = callArguments[0];
-    } else if (calleeName === "power") {
-        if (callArguments.length !== 2) {
-            return false;
-        }
-
-        const exponent = Core.unwrapParenthesizedExpression(callArguments[1]);
-        if (!isHalfExponentLiteral(exponent)) {
-            return false;
-        }
-
-        distanceExpression = callArguments[0];
-    } else {
-        return false;
-    }
-
-    const match = matchSquaredDifferences(distanceExpression);
-    if (!match) {
-        return false;
-    }
-
-    const args = [];
-    for (const difference of match) {
-        args.push(Core.cloneAstNode(difference.subtrahend));
-    }
-    for (const difference of match) {
-        args.push(Core.cloneAstNode(difference.minuend));
-    }
-
-    const functionName = match.length === 2 ? "point_distance" : "point_distance_3d";
-
-    mutateToCallExpression(node, functionName, args, node);
-    AST.unwrapEnclosingParentheses(node, context);
-    return true;
-}
-
-function attemptConvertPowerToSqrt(node, context) {
-    if (Core.hasComment(node)) {
-        return false;
-    }
-
-    const calleeName = Core.getUnwrappedIdentifierName(node.object);
-    if (calleeName !== "power") {
-        return false;
-    }
-
-    const args = Core.getCallExpressionArguments(node);
-    if (args.length !== 2) {
-        return false;
-    }
-
-    const exponent = Core.unwrapParenthesizedExpression(args[1]);
-    if (!isHalfExponentLiteral(exponent)) {
-        return false;
-    }
-
-    mutateToCallExpression(node, "sqrt", [Core.cloneAstNode(args[0])], node);
-    AST.unwrapEnclosingParentheses(node, context);
-    return true;
-}
-
-function attemptConvertPowerToExp(node, context) {
-    if (Core.hasComment(node)) {
-        return false;
-    }
-
-    const calleeName = Core.getUnwrappedIdentifierName(node.object);
-    if (calleeName !== "power") {
-        return false;
-    }
-
-    const args = Core.getCallExpressionArguments(node);
-    if (args.length !== 2) {
-        return false;
-    }
-
-    const base = Core.unwrapParenthesizedExpression(args[0]);
-    const exponent = args[1];
-
-    if (!isEulerLiteral(base)) {
-        return false;
-    }
-
-    mutateToCallExpression(node, "exp", [Core.cloneAstNode(exponent)], node);
-    AST.unwrapEnclosingParentheses(node, context);
-    return true;
-}
-
-function attemptConvertPointDirection(node, context) {
-    if (Core.hasComment(node)) {
-        return false;
-    }
-
-    const calleeName = Core.getUnwrappedIdentifierName(node.object);
-    if (calleeName !== "arctan2") {
-        return false;
-    }
-
-    const args = Core.getCallExpressionArguments(node);
-    if (args.length !== 2) {
-        return false;
-    }
-
-    const dy = Core.unwrapParenthesizedExpression(args[0]);
-    const dx = Core.unwrapParenthesizedExpression(args[1]);
-
-    const dyDiff = matchDifference(dy);
-    const dxDiff = matchDifference(dx);
-
-    if (!dyDiff || !dxDiff) {
-        return false;
-    }
-
-    mutateToCallExpression(
-        node,
-        "point_direction",
-        [
-            Core.cloneAstNode(dxDiff.subtrahend),
-            Core.cloneAstNode(dyDiff.subtrahend),
-            Core.cloneAstNode(dxDiff.minuend),
-            Core.cloneAstNode(dyDiff.minuend)
-        ],
-        node
-    );
-    AST.unwrapEnclosingParentheses(node, context);
-    return true;
-}
-
-function matchSquaredDifferences(expression) {
-    const terms = [];
-    collectAdditionTerms(expression, terms);
-
-    if (terms.length < 2 || terms.length > 3) {
-        return null;
-    }
-
-    const differences = [];
-
-    for (const term of terms) {
-        const product = Core.unwrapParenthesizedExpression(term);
-        if (!Core.isBinaryOperator(product, "*") || Core.hasComment(product)) {
-            return null;
-        }
-
-        const left = Core.unwrapParenthesizedExpression(product.left);
-        const right = Core.unwrapParenthesizedExpression(product.right);
-
-        if (!left || !right || (!areNodesEquivalent(left, right) && !areNodesApproximatelyEquivalent(left, right))) {
-            return null;
-        }
-
-        const difference = matchDifference(left);
-        if (!difference) {
-            return null;
-        }
-
-        differences.push(difference);
-    }
-
-    if (differences.length < 2) {
-        return null;
-    }
-
-    return differences;
-}
-
-function matchDifference(node) {
-    const expression = Core.unwrapParenthesizedExpression(node);
-
-    if (!Core.isBinaryOperator(expression, "-")) {
-        return null;
-    }
-
-    const minuend = Core.unwrapParenthesizedExpression(expression.left);
-    const subtrahend = Core.unwrapParenthesizedExpression(expression.right);
-
-    if (!minuend || !subtrahend) {
-        return null;
-    }
-
-    return { minuend, subtrahend };
 }
 
 function matchLengthdirScaledOperand(node, context) {
