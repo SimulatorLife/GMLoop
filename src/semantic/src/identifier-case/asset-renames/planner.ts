@@ -5,7 +5,7 @@ import { Core } from "@gmloop/core";
 import { ConflictSeverity } from "../conflict-severity.js";
 import type { defaultIdentifierCaseFsFacade } from "../identifier-case-helpers.js";
 import { formatIdentifierCase } from "../identifier-case-utils.js";
-import { IdentifierCaseStyle, type IdentifierCaseStyleValue, normalizeIdentifierCaseAssetStyle } from "../options.js";
+import { IdentifierCaseStyle, normalizeIdentifierCaseAssetStyle } from "../options.js";
 import {
     COLLISION_CONFLICT_CODE,
     createConflict,
@@ -104,6 +104,8 @@ type ProjectIndexWithAssets = {
 type IdentifierCaseLogger = {
     warn?: (message: string) => void;
 };
+
+type IdentifierCaseStyleValue = (typeof IdentifierCaseStyle)[keyof typeof IdentifierCaseStyle];
 
 const RENAMABLE_ASSET_DIRECTORIES = Object.freeze(
     new Set([
