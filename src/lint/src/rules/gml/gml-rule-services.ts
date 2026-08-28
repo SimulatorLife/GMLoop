@@ -4,6 +4,7 @@ import { printExpression, printNodeForAutofix, readNodeText } from "../../contra
 import {
     convertLegacyReturnsDescriptionLinesToMetadata,
     convertLegacyReturnsDescriptionLineToMetadata,
+    normalizeDocCommentTagAliasLine,
     normalizeDocParamName,
     promoteLeadingDocCommentTextToDescription,
     resolveParameterName
@@ -44,6 +45,7 @@ import {
 export const gmlRuleDocCommentServices = Object.freeze({
     convertLegacyReturnsDescriptionLineToMetadata,
     convertLegacyReturnsDescriptionLinesToMetadata,
+    normalizeDocCommentTagAliasLine,
     normalizeDocParamName,
     promoteLeadingDocCommentTextToDescription,
     resolveParameterName
