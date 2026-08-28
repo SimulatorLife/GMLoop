@@ -500,11 +500,13 @@ interface ParsedAstExtractionResult {
 
 /**
  * Adds an item to a bounded collection, removing the oldest item if the
- * collection exceeds its maximum size.
+ * collection exceeds its maximum size. A non-positive `maxSize` is treated as
+ * "unbounded" — items are appended without trimming — matching the
+ * documented contract for CLI options such as `--max-patch-history`.
  */
 function addToBoundedCollection<T>(collection: Array<T>, item: T, maxSize: number): void {
     collection.push(item);
-    if (collection.length > maxSize) {
+    if (maxSize > 0 && collection.length > maxSize) {
         collection.shift();
     }
 }

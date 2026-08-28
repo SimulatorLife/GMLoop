@@ -95,10 +95,7 @@ export {
     listSemanticProjectIndexDependentCodemodIds
 } from "./codemod-registry.js";
 export * as Codemods from "./codemods/index.js";
-export {
-    executeNamingConventionCodemod,
-    planNamingConventionCodemod
-} from "./codemods/naming-convention/naming-convention-codemod.js";
+export { executeNamingConventionCodemod, planNamingConventionCodemod } from "./codemods/naming-convention-codemod.js";
 export {
     checkHotReloadSafety,
     computeHotReloadCascade,
@@ -142,6 +139,7 @@ export type {
     ObjectEventInspectionResult,
     ObjectEventMutationResult,
     ObjectEventParseSummary,
+    ObjectPropertyMutationResult,
     ProjectResourceKindValue,
     ProjectResourceMutationResult,
     RemoveProjectResourceRequest,
@@ -159,6 +157,7 @@ export type {
     RoomRepairDiagnostic,
     RoomRepairResult,
     UpdateObjectEventRequest,
+    UpdateObjectPropertiesRequest,
     UpdateRoomCameraRequest,
     UpdateRoomInstanceRequest,
     UpdateRoomLayerRequest
@@ -190,6 +189,7 @@ export {
     reorderRoomLayer,
     repairRoom,
     updateObjectEvent,
+    updateObjectProperties,
     updateRoomCamera,
     updateRoomInstance,
     updateRoomLayer

@@ -24,7 +24,7 @@
  */
 import { Core } from "@gmloop/core";
 
-import { booleanExpressionToAst, wrapUnaryArgument } from "./logical-expression-condensation-ast.js";
+import { booleanExpressionToAst, createNegationExpression } from "./logical-expression-condensation-ast.js";
 import {
     createBooleanContext,
     isBooleanBranchExpression,
@@ -548,14 +548,7 @@ function resolveSimpleBooleanReturnArgument(
             start?: unknown;
             end?: unknown;
         };
-        return {
-            type: "UnaryExpression",
-            operator: "!",
-            prefix: true,
-            argument: wrapUnaryArgument(clone),
-            start: cloneLocation(clone.start),
-            end: cloneLocation(clone.end)
-        };
+        return createNegationExpression(clone, { wrapBinaryArguments: true });
     }
 
     return null;
@@ -590,14 +583,7 @@ function createNegatedTestExpression(testNode) {
         return cloneAstNode(normalized.argument);
     }
 
-    return {
-        type: "UnaryExpression",
-        operator: "!",
-        prefix: true,
-        argument: wrapUnaryArgument(normalized),
-        start: cloneLocation(normalized.start),
-        end: cloneLocation(normalized.end)
-    };
+    return createNegationExpression(normalized, { wrapBinaryArguments: true });
 }
 
 function buildGuardIfStatement(test, exitStatement, originalIfStatement) {

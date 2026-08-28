@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, it } from "node:test";
@@ -23,8 +23,14 @@ function createTranspilationContext(): TranspilationContext {
 }
 
 void describe("Transpilation error classification", () => {
-    void it("should classify syntax errors correctly", async (t) => {
-        const tempDir = await mkdir(path.join(tmpdir(), `transpile-test-${Date.now()}`), { recursive: true });
+    void it("should classify syntax errors correctly", { timeout: 5000 }, async (t) => {
+        // mkdtemp appends a random suffix, unlike the previous `Date.now()`-based
+        // naming which could collide when this suite runs concurrently with other
+        // files under `node --test` (millisecond resolution is coarse enough that
+        // two processes starting around the same moment can pick the same name).
+        // A collision let one test's `t.after` cleanup delete a directory another
+        // test was still using, producing intermittent ENOENT failures.
+        const tempDir = await mkdtemp(path.join(tmpdir(), "transpile-test-"));
         const testFile = path.join(tempDir, "syntax-error.gml");
 
         t.after(async () => {
@@ -43,8 +49,8 @@ void describe("Transpilation error classification", () => {
         assert.ok(result.error.line !== undefined || result.error.column !== undefined);
     });
 
-    void it("should classify validation errors correctly", async (t) => {
-        const tempDir = await mkdir(path.join(tmpdir(), `transpile-test-${Date.now()}`), { recursive: true });
+    void it("should classify validation errors correctly", { timeout: 5000 }, async (t) => {
+        const tempDir = await mkdtemp(path.join(tmpdir(), "transpile-test-"));
         const testFile = path.join(tempDir, "validation-error.gml");
 
         t.after(async () => {
@@ -60,8 +66,8 @@ void describe("Transpilation error classification", () => {
         assert.strictEqual(result.error.category, "validation");
     });
 
-    void it("should provide recovery hints for common errors", async (t) => {
-        const tempDir = await mkdir(path.join(tmpdir(), `transpile-test-${Date.now()}`), { recursive: true });
+    void it("should provide recovery hints for common errors", { timeout: 5000 }, async (t) => {
+        const tempDir = await mkdtemp(path.join(tmpdir(), "transpile-test-"));
         const testFile = path.join(tempDir, "missing-brace.gml");
 
         t.after(async () => {
@@ -85,8 +91,8 @@ void describe("Transpilation error classification", () => {
         }
     });
 
-    void it("should track error categories in statistics", async (t) => {
-        const tempDir = await mkdir(path.join(tmpdir(), `transpile-test-${Date.now()}`), { recursive: true });
+    void it("should track error categories in statistics", { timeout: 5000 }, async (t) => {
+        const tempDir = await mkdtemp(path.join(tmpdir(), "transpile-test-"));
 
         t.after(async () => {
             await rm(tempDir, { recursive: true, force: true });
@@ -106,36 +112,40 @@ void describe("Transpilation error classification", () => {
         assert.ok(categories.size > 0, "Should have at least one error category");
     });
 
-    void it("classifies unstructured transpiler errors as unknown without legacy string heuristics", async (t) => {
-        const tempDir = await mkdir(path.join(tmpdir(), `transpile-test-${Date.now()}`), { recursive: true });
-        const testFile = path.join(tempDir, "unknown-classification.gml");
+    void it(
+        "classifies unstructured transpiler errors as unknown without legacy string heuristics",
+        { timeout: 5000 },
+        async (t) => {
+            const tempDir = await mkdtemp(path.join(tmpdir(), "transpile-test-"));
+            const testFile = path.join(tempDir, "unknown-classification.gml");
 
-        t.after(async () => {
-            await rm(tempDir, { recursive: true, force: true });
-        });
+            t.after(async () => {
+                await rm(tempDir, { recursive: true, force: true });
+            });
 
-        const context = createTranspilationContext();
-        class ThrowingScriptTranspiler extends Transpiler.GmlTranspiler {
-            public override transpileScript(): never {
-                throw new Error("Generated patch failed validation");
+            const context = createTranspilationContext();
+            class ThrowingScriptTranspiler extends Transpiler.GmlTranspiler {
+                public override transpileScript(): never {
+                    throw new Error("Generated patch failed validation");
+                }
             }
+
+            context.transpiler = new ThrowingScriptTranspiler();
+
+            const result = transpileFile(context, testFile, "function test() { return 1; }", 1, {
+                verbose: false,
+                quiet: true
+            });
+
+            assert.strictEqual(result.success, false);
+            assert.ok(result.error);
+            assert.strictEqual(result.error.category, "unknown");
+            assert.strictEqual(result.error.error, "Generated patch failed validation");
         }
+    );
 
-        context.transpiler = new ThrowingScriptTranspiler();
-
-        const result = transpileFile(context, testFile, "function test() { return 1; }", 1, {
-            verbose: false,
-            quiet: true
-        });
-
-        assert.strictEqual(result.success, false);
-        assert.ok(result.error);
-        assert.strictEqual(result.error.category, "unknown");
-        assert.strictEqual(result.error.error, "Generated patch failed validation");
-    });
-
-    void it("should successfully transpile valid GML code", async (t) => {
-        const tempDir = await mkdir(path.join(tmpdir(), `transpile-test-${Date.now()}`), { recursive: true });
+    void it("should successfully transpile valid GML code", { timeout: 5000 }, async (t) => {
+        const tempDir = await mkdtemp(path.join(tmpdir(), "transpile-test-"));
         const testFile = path.join(tempDir, "valid.gml");
 
         t.after(async () => {
@@ -152,8 +162,8 @@ void describe("Transpilation error classification", () => {
         assert.strictEqual(context.errors.length, 0);
     });
 
-    void it("should store patch history without retaining full payloads", async (t) => {
-        const tempDir = await mkdir(path.join(tmpdir(), `transpile-test-${Date.now()}`), { recursive: true });
+    void it("should store patch history without retaining full payloads", { timeout: 5000 }, async (t) => {
+        const tempDir = await mkdtemp(path.join(tmpdir(), "transpile-test-"));
         const testFile = path.join(tempDir, "history.gml");
 
         t.after(async () => {
@@ -178,39 +188,43 @@ void describe("Transpilation error classification", () => {
         );
     });
 
-    void it("should skip emitting duplicate runtime patches when transpiled output is unchanged", async (t) => {
-        const tempDir = await mkdir(path.join(tmpdir(), `transpile-test-${Date.now()}`), { recursive: true });
-        const testFile = path.join(tempDir, "unchanged-runtime-patch.gml");
+    void it(
+        "should skip emitting duplicate runtime patches when transpiled output is unchanged",
+        { timeout: 5000 },
+        async (t) => {
+            const tempDir = await mkdtemp(path.join(tmpdir(), "transpile-test-"));
+            const testFile = path.join(tempDir, "unchanged-runtime-patch.gml");
 
-        t.after(async () => {
-            await rm(tempDir, { recursive: true, force: true });
-        });
+            t.after(async () => {
+                await rm(tempDir, { recursive: true, force: true });
+            });
 
-        const content = "function unchanged_patch() {\n    return 1;\n}";
-        await writeFile(testFile, content, "utf8");
+            const content = "function unchanged_patch() {\n    return 1;\n}";
+            await writeFile(testFile, content, "utf8");
 
-        let broadcastCount = 0;
-        const context = createTranspilationContext();
-        context.websocketServer = {
-            broadcast: () => {
-                broadcastCount += 1;
-                return {
-                    successCount: 1,
-                    failureCount: 0,
-                    totalClients: 1
-                };
-            },
-            getClientCount: () => 1
-        };
+            let broadcastCount = 0;
+            const context = createTranspilationContext();
+            context.websocketServer = {
+                broadcast: () => {
+                    broadcastCount += 1;
+                    return {
+                        successCount: 1,
+                        failureCount: 0,
+                        totalClients: 1
+                    };
+                },
+                getClientCount: () => 1
+            };
 
-        const firstResult = transpileFile(context, testFile, content, 3, { verbose: false, quiet: true });
-        const secondResult = transpileFile(context, testFile, content, 3, { verbose: false, quiet: true });
+            const firstResult = transpileFile(context, testFile, content, 3, { verbose: false, quiet: true });
+            const secondResult = transpileFile(context, testFile, content, 3, { verbose: false, quiet: true });
 
-        assert.strictEqual(firstResult.success, true);
-        assert.strictEqual(secondResult.success, true);
-        assert.strictEqual(broadcastCount, 1, "duplicate runtime patch should not be broadcast twice");
-        assert.strictEqual(context.totalPatchCount, 1, "duplicate runtime patch should not increase patch counter");
-        assert.strictEqual(context.patches.length, 1, "duplicate runtime patch should not add history entries");
-        assert.strictEqual(context.metrics.length, 2, "transpilation metrics should still capture both executions");
-    });
+            assert.strictEqual(firstResult.success, true);
+            assert.strictEqual(secondResult.success, true);
+            assert.strictEqual(broadcastCount, 1, "duplicate runtime patch should not be broadcast twice");
+            assert.strictEqual(context.totalPatchCount, 1, "duplicate runtime patch should not increase patch counter");
+            assert.strictEqual(context.patches.length, 1, "duplicate runtime patch should not add history entries");
+            assert.strictEqual(context.metrics.length, 2, "transpilation metrics should still capture both executions");
+        }
+    );
 });

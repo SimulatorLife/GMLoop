@@ -91,6 +91,7 @@ void test("capability audit keeps ordinary resource mutations on the official Re
 void test("capability audit reports implemented companion leaves separately from placeholders", () => {
     const audit = createGameMakerCapabilityBoundaryAudit({
         cliCatalog: [
+            createCliEntry("object update"),
             createCliEntry("object event list"),
             createCliEntry("object event update"),
             createCliEntry("room layer update"),
@@ -101,6 +102,7 @@ void test("capability audit reports implemented companion leaves separately from
         ],
         companionCatalog: createCompanionCatalog(),
         mcpCatalog: [
+            createMcpEntry("object update"),
             createMcpEntry("object event list"),
             createMcpEntry("object event update"),
             createMcpEntry("room layer update"),
@@ -110,6 +112,12 @@ void test("capability audit reports implemented companion leaves separately from
             createMcpEntry("room repair")
         ]
     });
+
+    const objectUpdate = audit.capabilities.find((entry) => entry.operation === "object update");
+    assert.ok(objectUpdate);
+    assert.equal(objectUpdate.classification, "gmloop_companion");
+    assert.equal(objectUpdate.status, "gmloop_available");
+    assert.equal(objectUpdate.gmloopMcpTool, "gmloop_object_update");
 
     const objectEventList = audit.capabilities.find((entry) => entry.operation === "object event list");
     assert.ok(objectEventList);

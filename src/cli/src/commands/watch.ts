@@ -504,9 +504,9 @@ export function createWatchCommand(): Command {
         .addOption(
             new Option(
                 "--max-patch-history <count>",
-                "Maximum number of patches to retain in memory (must be a positive integer)"
+                "Maximum number of patches to retain in memory (set to 0 for unbounded)"
             )
-                .argParser(createMinimumValueValidator(1, "Max patch history must be a positive integer"))
+                .argParser(createMinimumValueValidator(0, "Max patch history must be a non-negative integer"))
                 .default(DEFAULT_WATCH_MAX_PATCH_HISTORY)
         )
         .addOption(
@@ -793,6 +793,36 @@ async function stopServerAfterStartupFailure(
             fallback: unknownServerStopErrorMessage
         });
         console.error(`Failed to stop ${label} during cleanup: ${stopMessage}`);
+    }
+}
+
+/**
+ * Stop a watch command server controller, logging any failure without
+ * propagating it to the caller.
+ *
+ * Used by the watch command's shutdown path so the runtime, WebSocket, and
+ * status servers can all be stopped in parallel via {@link Promise.allSettled}.
+ * Each call returns a resolved promise regardless of whether the underlying
+ * `stop()` succeeded, which lets `Promise.allSettled` complete promptly while
+ * preserving the historical "log and continue" error policy that previous
+ * sequential `try`/`catch` blocks enforced for every server.
+ */
+async function stopWatchServerSafely(
+    server: { stop: () => Promise<void> } | null,
+    label: string,
+    unknownServerStopErrorMessage: string
+): Promise<void> {
+    if (server === null) {
+        return;
+    }
+
+    try {
+        await server.stop();
+    } catch (error) {
+        const message = getErrorMessage(error, {
+            fallback: unknownServerStopErrorMessage
+        });
+        console.error(`Failed to stop ${label}: ${message}`);
     }
 }
 
@@ -1320,42 +1350,67 @@ export async function runWatchCommand(targetPath: string, options: WatchCommandO
     // The servers are intentionally live before this project-wide walk. The
     // collection uses lexer and source-directive passes, but a large project
     // still consumes enough CPU to starve an otherwise-ready status endpoint.
-    const startupScan = await collectScriptNames(
-        normalizedPath,
-        gmlExtensionMatcher,
-        maxConcurrentDirs,
-        roomExtensionMatcher
-    );
-    for (const scriptName of startupScan.scriptNames) {
-        scriptNames.add(scriptName);
-    }
-    fileDataCache = startupScan.fileDataCache;
-    const roomFilePaths: Array<string> = startupScan.secondaryFilePaths;
-    for (const [sourcePath, definitions] of startupScan.macroDefinitionsBySourcePath) {
-        macroDefinitionsBySourcePath.set(sourcePath, definitions);
-    }
-    // runtimeContext already escaped to the watch servers started above, so eslint's
-    // require-atomic-updates rule conservatively flags this write after the preceding
-    // await. Nothing else writes runtimeContext.macroDefinitions while collectScriptNames()
-    // is pending, so this is the deliberate "compute macros once at startup" design, not a race.
-    // eslint-disable-next-line require-atomic-updates -- no concurrent writer exists; see comment above
-    runtimeContext.macroDefinitions = Transpiler.createProjectMacroDefinitions(macroDefinitionsBySourcePath);
+    //
+    // All three servers are already listening at this point, so anything that
+    // throws between here and the watcher's own cleanup() (below) must stop
+    // them itself. Without this try/catch, a failure in the startup scan, the
+    // room-resource priming pass, or the live-reload session-registry write
+    // (e.g. ENOSPC/EACCES) would leave the WebSocket, status, and runtime
+    // servers listening indefinitely: `runWatchCommand` never reaches the
+    // `cleanup()` defined inside the `Promise` executor below, so nothing
+    // ever calls `.stop()` on them.
+    try {
+        const startupScan = await collectScriptNames(
+            normalizedPath,
+            gmlExtensionMatcher,
+            maxConcurrentDirs,
+            roomExtensionMatcher
+        );
+        for (const scriptName of startupScan.scriptNames) {
+            scriptNames.add(scriptName);
+        }
+        fileDataCache = startupScan.fileDataCache;
+        const roomFilePaths: Array<string> = startupScan.secondaryFilePaths;
+        for (const [sourcePath, definitions] of startupScan.macroDefinitionsBySourcePath) {
+            macroDefinitionsBySourcePath.set(sourcePath, definitions);
+        }
+        // runtimeContext already escaped to the watch servers started above, so eslint's
+        // require-atomic-updates rule conservatively flags this write after the preceding
+        // await. Nothing else writes runtimeContext.macroDefinitions while collectScriptNames()
+        // is pending, so this is the deliberate "compute macros once at startup" design, not a race.
+        // eslint-disable-next-line require-atomic-updates -- no concurrent writer exists; see comment above
+        runtimeContext.macroDefinitions = Transpiler.createProjectMacroDefinitions(macroDefinitionsBySourcePath);
 
-    // Reuse the .yy file paths collected during the startup tree walk instead of
-    // doing a second full traversal just to discover room resources.
-    await Core.runInParallelWithLimit(
-        roomFilePaths,
-        (filePath) => primeRoomResource(filePath, runtimeContext, runtimeContext.roomResources),
-        maxConcurrentDirs
-    );
+        // Reuse the .yy file paths collected during the startup tree walk instead of
+        // doing a second full traversal just to discover room resources.
+        await Core.runInParallelWithLimit(
+            roomFilePaths,
+            (filePath) => primeRoomResource(filePath, runtimeContext, runtimeContext.roomResources),
+            maxConcurrentDirs
+        );
 
-    await writeLiveReloadSessionAfterStartup({
-        liveReloadSession,
-        normalizedPath,
-        runtimeServerController,
-        statusServerController,
-        websocketServerController
-    });
+        await writeLiveReloadSessionAfterStartup({
+            liveReloadSession,
+            normalizedPath,
+            runtimeServerController,
+            statusServerController,
+            websocketServerController
+        });
+    } catch (error) {
+        const message = getErrorMessage(error, {
+            fallback: "Unknown watch startup error"
+        });
+
+        await stopServerAfterStartupFailure("runtime server", runtimeServerController, unknownServerStopErrorMessage);
+        await stopServerAfterStartupFailure("status server", statusServerController, unknownServerStopErrorMessage);
+        await stopServerAfterStartupFailure(
+            "WebSocket server",
+            websocketServerController,
+            unknownServerStopErrorMessage
+        );
+
+        handleCliError(new Error(`Failed to complete watch startup: ${message}`));
+    }
 
     logWatchStartup(normalizedPath, extensionSet, polling, pollingInterval, verbose, quiet);
 
@@ -1427,38 +1482,16 @@ export async function runWatchCommand(targetPath: string, options: WatchCommandO
 
             displayTranspilationStatistics(runtimeContext, verbose, quiet);
 
-            if (runtimeServerController) {
-                try {
-                    await runtimeServerController.stop();
-                } catch (error) {
-                    const message = getErrorMessage(error, {
-                        fallback: unknownServerStopErrorMessage
-                    });
-                    console.error(`Failed to stop runtime static server: ${message}`);
-                }
-            }
-
-            if (websocketServerController) {
-                try {
-                    await websocketServerController.stop();
-                } catch (error) {
-                    const message = getErrorMessage(error, {
-                        fallback: unknownServerStopErrorMessage
-                    });
-                    console.error(`Failed to stop WebSocket server: ${message}`);
-                }
-            }
-
-            if (statusServerController) {
-                try {
-                    await statusServerController.stop();
-                } catch (error) {
-                    const message = getErrorMessage(error, {
-                        fallback: unknownServerStopErrorMessage
-                    });
-                    console.error(`Failed to stop status server: ${message}`);
-                }
-            }
+            // Stop the patch, status, and runtime servers in parallel so shutdown
+            // latency tracks the slowest single server rather than the sum of all
+            // three. Each stop is independent (different sockets, different server
+            // handles) so running them concurrently preserves the prior behaviour
+            // while shrinking wall-clock teardown time.
+            await Promise.allSettled([
+                stopWatchServerSafely(runtimeServerController, "runtime static server", unknownServerStopErrorMessage),
+                stopWatchServerSafely(websocketServerController, "WebSocket server", unknownServerStopErrorMessage),
+                stopWatchServerSafely(statusServerController, "status server", unknownServerStopErrorMessage)
+            ]);
 
             if (abortSignal) {
                 resolve();

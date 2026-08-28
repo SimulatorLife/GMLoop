@@ -24,8 +24,8 @@
  */
 import { Core } from "@gmloop/core";
 
-import type { CodemodEdit, CodemodResult } from "../../types.js";
-import { createCodemodResultFromEdits, createUnchangedCodemodResult } from "../codemod-helpers.js";
+import type { CodemodEdit, CodemodResult } from "../types.js";
+import { createCodemodResultFromEdits, createUnchangedCodemodResult } from "./codemod-helpers.js";
 
 /**
  * Stable identifier used in the codemod registry. The same string must be

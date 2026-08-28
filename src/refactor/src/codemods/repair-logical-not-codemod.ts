@@ -1,8 +1,8 @@
 import { Core } from "@gmloop/core";
 
-import { resolveSymbolId } from "../../symbol-queries.js";
-import type { PartialSemanticAnalyzer, RepairLogicalNotEdit, RepairLogicalNotResult } from "../../types.js";
-import { applySourceTextEdits } from "../codemod-helpers.js";
+import { resolveSymbolId } from "../symbol-queries.js";
+import type { PartialSemanticAnalyzer, RepairLogicalNotEdit, RepairLogicalNotResult } from "../types.js";
+import { applySourceTextEdits } from "./codemod-helpers.js";
 
 /**
  * Repairs invalid logical 'not' and 'NOT' operators in source code by replacing them with '!'.

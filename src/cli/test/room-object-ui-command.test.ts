@@ -145,27 +145,8 @@ void test("room list, summary, and validate share the graph-indexed room resolve
     }
 });
 
-void test("object planned leaves expose event inspection while keeping object update deferred", async () => {
+void test("object event list and inspect leaves expose graph-aware event context", async () => {
     const projectRoot = await createTemporaryObjectEventCliProject();
-    const updateResult = await runCliTestCommand({
-        argv: ["object", "update", "obj_player", "--json"]
-    });
-
-    assert.equal(updateResult.exitCode, 0);
-    const updatePayload = JSON.parse(updateResult.stdout) as {
-        command: string;
-        ok: boolean;
-        payload: {
-            capability: string;
-            details: { object: string };
-            state: string;
-        };
-    };
-
-    assert.equal(updatePayload.command, "object update");
-    assert.equal(updatePayload.ok, true);
-    assert.equal(updatePayload.payload.state, "not_available");
-    assert.equal(updatePayload.payload.details.object, "obj_player");
 
     try {
         const eventListResult = await runCliTestCommand({
@@ -202,6 +183,152 @@ void test("object planned leaves expose event inspection while keeping object up
         assert.equal(eventInspectPayload.payload.descriptor, "create:create");
         assert.equal(eventInspectPayload.payload.eventType, 0);
         assert.equal(eventInspectPayload.payload.eventNumber, 0);
+    } finally {
+        await rm(projectRoot, { recursive: true, force: true });
+    }
+});
+
+void test("object update mutates sprite, parent, visibility, solid, and persistent properties in dry-run and write modes", async () => {
+    const projectRoot = await createTemporaryObjectEventCliProject();
+    const objectMetadataPath = path.join(projectRoot, "objects/obj_player/obj_player.yy");
+
+    try {
+        await Refactor.addProjectResource({
+            dryRun: false,
+            projectRoot,
+            resourceKind: "object",
+            resourceName: "obj_actor"
+        });
+        await Refactor.addProjectResource({
+            dryRun: false,
+            projectRoot,
+            resourceKind: "sprite",
+            resourceName: "spr_player"
+        });
+
+        const updateArgs = [
+            "object",
+            "update",
+            "obj_player",
+            "--sprite",
+            "spr_player",
+            "--parent",
+            "obj_actor",
+            "--visible",
+            "false",
+            "--solid",
+            "true",
+            "--persistent",
+            "true",
+            "--path",
+            projectRoot,
+            "--json"
+        ];
+
+        const dryRunResult = await runCliTestCommand({ argv: updateArgs });
+        assert.equal(dryRunResult.exitCode, 0);
+        const dryRunPayload = JSON.parse(dryRunResult.stdout) as {
+            command: string;
+            payload: {
+                action: string;
+                changed: boolean;
+                dryRun: boolean;
+                objectName: string;
+                parentObjectName: string | null;
+                persistent: boolean;
+                solid: boolean;
+                spriteName: string | null;
+                visible: boolean;
+                writtenPaths: Array<string>;
+            };
+        };
+        assert.equal(dryRunPayload.command, "object update");
+        assert.equal(dryRunPayload.payload.action, "update");
+        assert.equal(dryRunPayload.payload.changed, true);
+        assert.equal(dryRunPayload.payload.dryRun, true);
+        assert.equal(dryRunPayload.payload.objectName, "obj_player");
+        assert.equal(dryRunPayload.payload.spriteName, "spr_player");
+        assert.equal(dryRunPayload.payload.parentObjectName, "obj_actor");
+        assert.equal(dryRunPayload.payload.visible, false);
+        assert.equal(dryRunPayload.payload.solid, true);
+        assert.equal(dryRunPayload.payload.persistent, true);
+        assert.deepEqual(dryRunPayload.payload.writtenPaths, ["objects/obj_player/obj_player.yy"]);
+
+        const dryRunObjectMetadata = Core.parseProjectMetadataDocument(
+            await readFile(objectMetadataPath, "utf8"),
+            objectMetadataPath
+        );
+        assert.equal(dryRunObjectMetadata.spriteId, null);
+        assert.equal(dryRunObjectMetadata.visible, true);
+
+        const writeResult = await runCliTestCommand({ argv: [...updateArgs, "--write"] });
+        assert.equal(writeResult.exitCode, 0);
+        const writePayload = JSON.parse(writeResult.stdout) as { payload: { dryRun: boolean } };
+        assert.equal(writePayload.payload.dryRun, false);
+
+        const updatedObjectMetadata = Core.parseProjectMetadataDocumentForMutation(
+            await readFile(objectMetadataPath, "utf8"),
+            objectMetadataPath
+        ).document;
+        const spriteId = updatedObjectMetadata.spriteId as Record<string, unknown> | null;
+        assert.equal(spriteId?.name, "spr_player");
+        const parentObjectId = updatedObjectMetadata.parentObjectId as Record<string, unknown> | null;
+        assert.equal(parentObjectId?.name, "obj_actor");
+        assert.equal(updatedObjectMetadata.visible, false);
+        assert.equal(updatedObjectMetadata.solid, true);
+        assert.equal(updatedObjectMetadata.persistent, true);
+
+        const clearResult = await runCliTestCommand({
+            argv: [
+                "object",
+                "update",
+                "obj_player",
+                "--clear-sprite",
+                "--clear-parent",
+                "--path",
+                projectRoot,
+                "--json",
+                "--write"
+            ]
+        });
+        assert.equal(clearResult.exitCode, 0);
+        const clearPayload = JSON.parse(clearResult.stdout) as {
+            payload: { changed: boolean; parentObjectName: string | null; spriteName: string | null };
+        };
+        assert.equal(clearPayload.payload.changed, true);
+        assert.equal(clearPayload.payload.spriteName, null);
+        assert.equal(clearPayload.payload.parentObjectName, null);
+
+        const clearedObjectMetadata = Core.parseProjectMetadataDocumentForMutation(
+            await readFile(objectMetadataPath, "utf8"),
+            objectMetadataPath
+        ).document;
+        assert.equal(clearedObjectMetadata.spriteId, null);
+        assert.equal(clearedObjectMetadata.parentObjectId, null);
+    } finally {
+        await rm(projectRoot, { recursive: true, force: true });
+    }
+});
+
+void test("object update rejects conflicting sprite and clear-sprite options", async () => {
+    const projectRoot = await createTemporaryObjectEventCliProject();
+
+    try {
+        const result = await runCliTestCommand({
+            argv: [
+                "object",
+                "update",
+                "obj_player",
+                "--sprite",
+                "spr_player",
+                "--clear-sprite",
+                "--path",
+                projectRoot,
+                "--json"
+            ]
+        });
+        assert.equal(result.exitCode, 1);
+        assert.match(result.stderr, /either --sprite or --clear-sprite/u);
     } finally {
         await rm(projectRoot, { recursive: true, force: true });
     }

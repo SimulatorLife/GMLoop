@@ -11,6 +11,16 @@
     min-width: 0;
 }
 
+.toolbar-docs-controls {
+    display: grid;
+    grid-template-columns: max-content minmax(220px, 360px);
+    gap: var(--gm-space-sm) var(--gm-space-md);
+    align-items: center;
+    justify-content: start;
+    width: 100%;
+    min-width: 0;
+}
+
 .toolbar-docs-search {
     display: grid;
     gap: var(--gm-space-sm);
@@ -60,6 +70,7 @@
 }
 
 .docs-search-summary {
+    grid-column: 1 / -1;
     min-height: var(--gm-space-md);
     margin: 0;
     color: var(--gm-text-subdued);
@@ -288,6 +299,7 @@
     }
 
     .toolbar-heading-row .toolbar-docs-controls {
+        grid-template-columns: minmax(0, 1fr);
         flex: 0 1 auto;
         width: 100%;
         max-width: none;

@@ -16,6 +16,8 @@ export {
     listObjectEvents,
     updateObjectEvent
 } from "./object-event-operations.js";
+export type { ObjectPropertyMutationResult, UpdateObjectPropertiesRequest } from "./object-property-operations.js";
+export { updateObjectProperties } from "./object-property-operations.js";
 export type { ProjectResourceKindValue } from "./project-resource-kinds.js";
 export {
     isProjectResourceKind,
