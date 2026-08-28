@@ -2,6 +2,14 @@ import * as Runtime from "./browser/runtime/index.js";
 import * as Timing from "./browser/timing.js";
 import * as Clients from "./browser/websocket/index.js";
 
+export {
+    coerceLiveReloadLogLevel,
+    isLiveReloadLogLevel,
+    LIVE_RELOAD_LOG_LEVEL_VALUES,
+    LIVE_RELOAD_LOG_LEVELS,
+    parseLiveReloadLogLevel
+} from "./browser/log-levels.js";
+
 // Export the RuntimeWrapper namespace as the primary public API
 export const RuntimeWrapper = Object.freeze({
     ...Runtime,
@@ -9,6 +17,7 @@ export const RuntimeWrapper = Object.freeze({
     Timing
 });
 
+export type { LiveReloadLogLevel } from "./browser/log-levels.js";
 export type {
     ApplyPatchResult,
     BatchApplyResult,
