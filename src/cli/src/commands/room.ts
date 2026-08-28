@@ -4,7 +4,8 @@ import {
     type RoomInstanceInspectionResult,
     type RoomInstanceMutationResult,
     type RoomLayerMutationResult,
-    type RoomRepairResult
+    type RoomRepairResult,
+    type RoomSettingsMutationResult
 } from "@gmloop/refactor";
 import { Semantic } from "@gmloop/semantic";
 import { Command } from "commander";
@@ -25,8 +26,12 @@ type RoomCommandSharedOptions = SharedProjectContextOptions;
 type RoomMutationOptions = SharedProjectContextOptions &
     Readonly<{
         depth?: string;
+        height?: string;
         name?: string;
         padding?: string;
+        persistent?: string;
+        volume?: string;
+        width?: string;
         write?: boolean;
     }>;
 
@@ -84,6 +89,25 @@ function parseNonNegativePaddingArgument(value: string): number {
         throw new TypeError(`Invalid room camera padding "${value}". Expected a non-negative finite numeric value.`);
     }
     return parsed;
+}
+
+function parseNonNegativeVolumeArgument(value: string): number {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed) || parsed < 0) {
+        throw new TypeError(`Invalid room volume "${value}". Expected a non-negative finite numeric value.`);
+    }
+    return parsed;
+}
+
+function parseBooleanArgument(value: string, argumentName: "persistent"): boolean {
+    const normalized = value.trim().toLowerCase();
+    if (normalized === "true") {
+        return true;
+    }
+    if (normalized === "false") {
+        return false;
+    }
+    throw new TypeError(`Invalid ${argumentName} value "${value}". Expected "true" or "false".`);
 }
 
 async function resolveGraphIndexRooms(
@@ -182,6 +206,23 @@ function toRoomRepairPayload(result: RoomRepairResult) {
         roomName: result.roomName,
         roomPath: result.roomPath,
         warnings: result.warnings,
+        writtenPaths: result.writtenPaths
+    };
+}
+
+function toRoomSettingsMutationPayload(result: RoomSettingsMutationResult) {
+    return {
+        action: result.action,
+        changed: result.changed,
+        deletedPaths: result.deletedPaths,
+        dryRun: result.dryRun,
+        height: result.height,
+        persistent: result.persistent,
+        roomName: result.roomName,
+        roomPath: result.roomPath,
+        volume: result.volume,
+        warnings: result.warnings,
+        width: result.width,
         writtenPaths: result.writtenPaths
     };
 }
@@ -339,6 +380,21 @@ async function runRoomRepairAction(roomName: string, options: RoomMutationOption
     });
 
     printRoomPayload({ command: "room repair", ok: true, payload: toRoomRepairPayload(result) });
+}
+
+async function runRoomUpdateAction(roomName: string, options: RoomMutationOptions): Promise<void> {
+    const context = await resolveCommandProjectContext(options);
+    const result = await Refactor.updateRoomSettings({
+        dryRun: options.write !== true,
+        height: options.height === undefined ? null : parsePositiveDimensionArgument(options.height, "height"),
+        persistent: options.persistent === undefined ? null : parseBooleanArgument(options.persistent, "persistent"),
+        projectRoot: context.projectRoot,
+        roomName,
+        volume: options.volume === undefined ? null : parseNonNegativeVolumeArgument(options.volume),
+        width: options.width === undefined ? null : parsePositiveDimensionArgument(options.width, "width")
+    });
+
+    printRoomPayload({ command: "room update", ok: true, payload: toRoomSettingsMutationPayload(result) });
 }
 
 async function runRoomInstanceAddAction(
@@ -652,11 +708,20 @@ export function createRoomCommand(): Command {
     });
 
     const update = addRoomSharedOptions(
-        applyStandardCommandOptions(new Command("update")).description("Update a room.").argument("<room>", "Room name")
-    );
-    update.action(function roomUpdateAction(roomName: string) {
-        const options = this.opts<RoomCommandSharedOptions>();
-        emitRoomUnavailableLeaf("room update", options, "room_property_mutation", { room: roomName });
+        applyStandardCommandOptions(new Command("update"))
+            .description("Update a room's width, height, persistent, and volume settings.")
+            .argument("<room>", "Room name")
+            .option("--width <value>", "Updated room width in pixels.")
+            .option("--height <value>", "Updated room height in pixels.")
+            .option("--persistent <value>", 'Updated persistent flag ("true" or "false").')
+            .option("--volume <value>", "Updated room audio volume (0 or greater).")
+    ).addOption(createWriteOption());
+    update.action(async function roomUpdateAction(roomName: string) {
+        try {
+            await runRoomUpdateAction(roomName, this.opts<RoomMutationOptions>());
+        } catch (error) {
+            handleCliError(error);
+        }
     });
 
     const repair = addRoomSharedOptions(
