@@ -3,6 +3,7 @@ import test from "node:test";
 
 import type { PropertyValues } from "lit";
 
+import { FixWorkflowReconnectParticipant } from "../src/app/components/fix-workflow-reconnect-participant.js";
 import { GmAppShell } from "../src/app/components/gm-app-shell.js";
 import type { GraphVisualizationUiModel } from "../src/app/contracts.js";
 
@@ -313,6 +314,73 @@ void test("GmAppShell cleans up the reconnect timer on disconnection", { timeout
         intervals.restore();
     }
 });
+
+void test(
+    "FixWorkflowReconnectParticipant ignores a malformed /api/fix/progress response instead of crashing",
+    { timeout: 5000 },
+    async () => {
+        // Regression test: `#pollProjectOperationProgress` used to cast the
+        // fetch response directly to `FixWorkflowProgressResponse` with no
+        // runtime validation. A server that briefly returns e.g. `{}` (a
+        // restarting dev server, an unrelated JSON error body, or a stale
+        // build) would pass `logLines: undefined` straight into `onProgress`,
+        // and real callers such as gm-fix-panel's `logLines.join("\n")` would
+        // throw `TypeError: Cannot read properties of undefined (reading
+        // 'join')`. This test's callbacks mimic that real usage, so it would
+        // have thrown before the `isFixWorkflowProgressResponse` guard was
+        // added and must stay silent (no callback invocation, no throw) now.
+        globalThis.fetch = async (input) => {
+            const url = String(input);
+            if (url.includes("/api/fix/progress")) {
+                return Response.json({});
+            }
+            return Response.json({ ok: true });
+        };
+        Object.defineProperty(globalThis, "location", {
+            configurable: true,
+            value: {
+                href: "http://127.0.0.1:3000/graph"
+            }
+        });
+
+        const pollErrors: unknown[] = [];
+        let progressCallCount = 0;
+
+        const participant = new FixWorkflowReconnectParticipant({
+            callbacks: {
+                canReconnect: () => true,
+                onFinished: (_workflow, _status) => {
+                    throw new Error("onFinished should not be called for a malformed response");
+                },
+                onPollError: (error) => {
+                    pollErrors.push(error);
+                },
+                onProgress: (logLines) => {
+                    progressCallCount++;
+                    // Mirrors gm-fix-panel's real usage; would throw a
+                    // TypeError if `logLines` were ever `undefined`.
+                    logLines.join("\n");
+                },
+                onReconnectError: (error) => {
+                    pollErrors.push(error);
+                },
+                onReconnectStarted: (_workflow, logLines) => {
+                    logLines.join("\n");
+                }
+            }
+        });
+
+        try {
+            participant.connect();
+            await waitForProgressPolls();
+
+            assert.deepEqual(pollErrors, []);
+            assert.equal(progressCallCount, 0, "malformed payloads must not reach onProgress");
+        } finally {
+            participant.disconnect();
+        }
+    }
+);
 
 void test(
     "GmAppShell skips fix workflow reconnect when no browser location is available",
