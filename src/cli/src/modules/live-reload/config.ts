@@ -1,5 +1,15 @@
 import path from "node:path";
 
+import type { LiveReloadLogLevel as RuntimeLiveReloadLogLevel } from "@gmloop/runtime-wrapper";
+
+/**
+ * Canonical live-reload bootstrap log level. Defined and centralised inside
+ * `@gmloop/runtime-wrapper` so the bootstrap config rendered by the CLI and the
+ * browser-side dispatcher that consumes it cannot drift out of sync. Re-exported
+ * here so internal CLI callers keep importing from the live-reload module.
+ */
+export type LiveReloadLogLevel = RuntimeLiveReloadLogLevel;
+
 export const DEFAULT_GM_TEMP_ROOT = "/private/tmp/GameMakerStudio2/GMS2TEMP";
 export const DEFAULT_LIVE_RELOAD_WEBSOCKET_HOST = "127.0.0.1";
 export const DEFAULT_LIVE_RELOAD_WEBSOCKET_PORT = 17_890;
@@ -48,8 +58,6 @@ export const LIVE_RELOAD_BOOTSTRAP_CONFIG_RELATIVE_PATH = path.posix.join(
     "config.js"
 );
 export const LIVE_RELOAD_ASSET_ROOT_RELATIVE_PATH = "runtime-wrapper";
-
-export type LiveReloadLogLevel = "quiet" | "normal" | "debug";
 
 /**
  * Canonical output format values accepted by the `live-reload session`
