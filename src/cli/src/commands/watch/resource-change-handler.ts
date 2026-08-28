@@ -9,6 +9,7 @@ import {
 } from "../../modules/transpilation/index.js";
 import type { PatchBroadcaster } from "../../modules/websocket/server.js";
 import { hashSourceContent, readSourceFileWithTransientEmptyRetry } from "./source-analysis.js";
+import { evaluateTranspilationSkipPolicy } from "./transpilation-skip-policy.js";
 
 type JsonObject = Record<string, unknown>;
 
@@ -107,6 +108,10 @@ export async function handleResourceFileChange(
     options: ResourceChangeOptions
 ): Promise<void> {
     const fileStats = options.fileStats ?? (await stat(filePath));
+
+    // Cheap pre-read mtime fast path: avoid reading the (potentially large)
+    // room JSON when the mtime has not advanced. Kept inline because the
+    // policy cannot evaluate a content hash without first reading the bytes.
     const previousMtime = context.fileSnapshots.get(filePath);
     if (previousMtime !== undefined && fileStats.mtimeMs <= previousMtime) {
         return;
@@ -121,15 +126,31 @@ export async function handleResourceFileChange(
     if (source === null) {
         return;
     }
-    const sourceHash = hashSourceContent(source);
-    if (context.fileContentHashes.get(filePath) === sourceHash) {
+
+    // Defer the post-read decision to the shared policy so the heuristic
+    // lives in one place (see ./transpilation-skip-policy.ts). The pre-read
+    // mtime guard above already proved the new mtime is strictly newer than
+    // the cached one, so the policy's mtime check is disabled by passing
+    // `previousMtimeMs: undefined`; only the content-hash guard is evaluated.
+    const skipDecision = evaluateTranspilationSkipPolicy({
+        currentMtimeMs: fileStats.mtimeMs,
+        previousMtimeMs: undefined,
+        currentContent: source,
+        previousContentHash: context.fileContentHashes.get(filePath)
+    });
+
+    if (skipDecision.action === "skip") {
+        // Content bytes did not change since the last observation. Refresh
+        // the cached mtime so a future duplicate event can short-circuit on
+        // the cheaper mtime guard; the content hash stays the same.
         context.fileSnapshots.set(filePath, fileStats.mtimeMs);
         return;
     }
 
-    const roomData = Core.parseProjectMetadataDocument(source, filePath);
     context.fileSnapshots.set(filePath, fileStats.mtimeMs);
-    context.fileContentHashes.set(filePath, sourceHash);
+    context.fileContentHashes.set(filePath, skipDecision.contentHash);
+
+    const roomData = Core.parseProjectMetadataDocument(source, filePath);
     if (roomData.resourceType !== "GMRoom") {
         if (options.verbose && !options.quiet) {
             console.log("  ↳ Ignored non-room GameMaker resource");
@@ -152,7 +173,7 @@ export async function handleResourceFileChange(
         return;
     }
 
-    const patch = createResourcePatch(filePath, resourceName, layerUpdates, sourceHash);
+    const patch = createResourcePatch(filePath, resourceName, layerUpdates, skipDecision.contentHash);
     context.resourcePatches.set(patch.id, patch);
     context.totalPatchCount += 1;
     context.websocketServer?.broadcast(patch);
