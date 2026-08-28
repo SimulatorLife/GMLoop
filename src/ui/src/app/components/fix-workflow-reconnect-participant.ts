@@ -1,4 +1,4 @@
-import type { GraphVisualizationProjectWorkflow } from "../../graph/index.js";
+import { type GraphVisualizationProjectWorkflow, PROJECT_WORKFLOWS } from "../../graph/index.js";
 import type { LifecycleParticipant } from "./lifecycle-participants-controller.js";
 
 const DEFAULT_FIX_RECONNECT_POLL_INTERVAL_MS = 1000;
@@ -9,6 +9,25 @@ interface FixWorkflowProgressResponse {
     logLines: string[];
     status?: string;
     workflow?: GraphVisualizationProjectWorkflow;
+}
+
+// The server response is untrusted network input: it may be malformed, come
+// from a stale/incompatible server build, or omit fields entirely. Callers
+// (e.g. gm-fix-panel's `logLines.join(...)`) assume `logLines` is always a
+// real array, so an unvalidated cast here would defer the crash downstream
+// where it is much harder to trace back to a bad poll response.
+function isFixWorkflowProgressResponse(value: unknown): value is FixWorkflowProgressResponse {
+    if (value === null || typeof value !== "object") {
+        return false;
+    }
+    const record = value as Record<string, unknown>;
+    return (
+        typeof record.isRunning === "boolean" &&
+        Array.isArray(record.logLines) &&
+        record.logLines.every((line) => typeof line === "string") &&
+        (record.status === undefined || typeof record.status === "string") &&
+        (record.workflow === undefined || (PROJECT_WORKFLOWS as ReadonlyArray<unknown>).includes(record.workflow))
+    );
 }
 
 /**
@@ -88,7 +107,11 @@ export class FixWorkflowReconnectParticipant implements LifecycleParticipant {
             if (!pollResponse.ok) {
                 return;
             }
-            const pollProgress = (await pollResponse.json()) as FixWorkflowProgressResponse;
+            const pollPayload: unknown = await pollResponse.json();
+            if (!isFixWorkflowProgressResponse(pollPayload)) {
+                return;
+            }
+            const pollProgress = pollPayload;
 
             if (pollProgress.isRunning && pollProgress.workflow) {
                 if (this.#observedWorkflow === null) {
