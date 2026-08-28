@@ -154,6 +154,21 @@ void test("parse accepts a .yyp target path and parses project .gml files", asyn
     });
 });
 
+void test("parse reports actionable guidance when the target path does not exist", async () => {
+    await withTemporaryDirectory(async (temporaryDirectory) => {
+        const missingPath = path.join(temporaryDirectory, "missing.gml");
+
+        const result = await runCliTestCommand({
+            argv: ["parse", "--path", missingPath]
+        });
+
+        assert.notEqual(result.exitCode, 0);
+        assert.match(result.stderr, /Unable to access .*missing\.gml/);
+        assert.match(result.stderr, /Verify the path exists relative to the current working directory/);
+        assert.match(result.stderr, /Run "pnpm run cli -- --help"/);
+    });
+});
+
 void test("parse skips project-wide excluded directories when scanning a tree", async () => {
     await withTemporaryDirectory(async (temporaryDirectory) => {
         await writeFile(path.join(temporaryDirectory, "script.gml"), "var root = 1;\n", "utf8");
