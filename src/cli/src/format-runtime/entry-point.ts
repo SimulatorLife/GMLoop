@@ -11,6 +11,34 @@ import { resolveFromRepoRoot } from "../shared/workspace-paths.js";
 const { compactArray, createListSplitPattern, getNonEmptyTrimmedString, normalizeStringList, toArray, uniqueArray } =
     Core;
 
+/**
+ * Abstract shape of the format workspace's module namespace.
+ *
+ * The high-level CLI orchestration in `commands/format.ts` previously
+ * reached into the dynamically imported format module with inline casts
+ * like `(moduleValue as { Format?: { normalizeFormattedOutput?: ... } })`,
+ * which coupled the CLI to the format workspace's internal namespace
+ * shape. Centralising that shape in one contract keeps the CLI
+ * dependent on a documented abstraction rather than on the concrete
+ * module layout, and lets the runtime expose a single typed entry point
+ * for the public surface the CLI actually consumes.
+ *
+ * Only the methods the CLI needs are declared on the contract — the
+ * parser, printer, and comment helpers stay encapsulated inside the
+ * format workspace's `Format` namespace, and consumers should reach the
+ * rest of the Prettier plugin surface through `@gmloop/format`'s
+ * static entry point.
+ *
+ * (target-state.md §2.3, §3.2 — orchestration depends on abstractions,
+ * not concrete adapter layouts.)
+ */
+export type FormatModuleContract = Readonly<{
+    Format?: Readonly<{
+        extractProjectFormatOptions?: (config: Record<string, unknown>) => Record<string, unknown>;
+        normalizeFormattedOutput?: (formatted: string) => string;
+    }>;
+}>;
+
 // Default format workspace entry points shipped within the workspace. Additional
 // candidates can be provided via environment variables or call-site overrides.
 const DEFAULT_CANDIDATE_FORMAT_PATHS = Object.freeze([
@@ -150,4 +178,24 @@ export function resolveFormatEntryPoint(options = {}) {
 export function importFormatModule(options = {}) {
     const formatPath = resolveFormatEntryPoint(options);
     return import(pathToFileURL(formatPath).href);
+}
+
+/**
+ * Resolve the format workspace's module as the documented
+ * {@link FormatModuleContract}.
+ *
+ * This is the dependency-inversion seam for the CLI's runtime
+ * dependency on the format workspace. High-level orchestration code in
+ * `commands/format.ts` should depend on this typed contract rather than
+ * reaching into the raw module namespace or repeating the inline casts
+ * that used to live at every call site.
+ *
+ * The implementation reuses {@link importFormatModule} so the runtime
+ * resolution behaviour (candidate ordering, environment overrides,
+ * tilde expansion, missing-file fallback) is preserved exactly; only
+ * the return type is narrowed to the contract the CLI actually needs.
+ */
+export async function resolveFormatModule(options = {}): Promise<FormatModuleContract> {
+    const moduleValue: unknown = await importFormatModule(options);
+    return moduleValue as FormatModuleContract;
 }

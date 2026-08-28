@@ -22,13 +22,32 @@ type FeatherRenamePlanEntry = {
 
 type PrepareRenamePlan = RefactorProjectAnalysisContext["prepareRenamePlan"];
 
-function enumerateRenameCandidates(preferredName: string): ReadonlyArray<string> {
+/**
+ * Default number of `_N` suffixed fallback names tried when the preferred
+ * Feather rename target collides with an existing identifier.
+ *
+ * This is the opinionated default for the built-in project analysis
+ * provider: it comfortably covers the collision counts seen in real Feather
+ * fixups (a handful of siblings sharing a base name) without letting a
+ * pathological batch of collisions spin through an unbounded search. The
+ * cap is intentionally not exposed as end-user configuration (CLI flag or
+ * env var) — the only anticipated consumers are internal callers, such as
+ * tests exercising retry-exhaustion behavior, that need to override it via
+ * {@link enumerateRenameCandidates}'s `maxAttempts` parameter without
+ * waiting through the full default search space.
+ */
+export const DEFAULT_MAX_RENAME_CANDIDATE_ATTEMPTS = 32;
+
+function enumerateRenameCandidates(
+    preferredName: string,
+    maxAttempts: number = DEFAULT_MAX_RENAME_CANDIDATE_ATTEMPTS
+): ReadonlyArray<string> {
     if (!Core.isNonEmptyString(preferredName)) {
         return ["__featherFix_reserved"];
     }
 
     const candidates = [preferredName];
-    for (let index = 1; index <= 32; index += 1) {
+    for (let index = 1; index <= maxAttempts; index += 1) {
         candidates.push(`${preferredName}_${index}`);
     }
 

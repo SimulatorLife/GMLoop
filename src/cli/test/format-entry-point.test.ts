@@ -5,7 +5,7 @@ import path from "node:path";
 import { afterEach, describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { importFormatModule, resolveFormatEntryPoint } from "../src/format-runtime/entry-point.js";
+import { importFormatModule, resolveFormatEntryPoint, resolveFormatModule } from "../src/format-runtime/entry-point.js";
 
 // Node deprecated the legacy assert.equal helper; rely on the strict
 // assertions to keep this suite locked to the modern API.
@@ -150,5 +150,41 @@ void describe("importFormatModule", () => {
         });
 
         assert.strictEqual(module?.sentinel, 1729);
+    });
+});
+
+void describe("resolveFormatModule", () => {
+    void it("returns the typed contract for the resolved format module", async () => {
+        const formatPath = createTemporaryFormatModuleFile();
+        const moduleContents = [
+            "export const Format = {",
+            "  normalizeFormattedOutput: (formatted) => `normalized:${formatted}`,",
+            "  extractProjectFormatOptions: (config) => ({ printWidth: config.printWidth })",
+            "};",
+            "export const sentinel = 1729;"
+        ].join("\n");
+        fs.writeFileSync(formatPath, `${moduleContents}\n`);
+
+        const formatModule = await resolveFormatModule({
+            env: { PRETTIER_PLUGIN_GML_FORMAT_PATH: formatPath }
+        });
+
+        assert.strictEqual(typeof formatModule.Format?.normalizeFormattedOutput, "function");
+        assert.strictEqual(typeof formatModule.Format?.extractProjectFormatOptions, "function");
+        assert.strictEqual(formatModule.Format?.normalizeFormattedOutput?.("hello"), "normalized:hello");
+        assert.deepStrictEqual(formatModule.Format?.extractProjectFormatOptions?.({ printWidth: 100, ignored: true }), {
+            printWidth: 100
+        });
+    });
+
+    void it("tolerates modules that omit the Format namespace", async () => {
+        const formatPath = createTemporaryFormatModuleFile();
+        fs.writeFileSync(formatPath, "export const sentinel = 42;\n");
+
+        const formatModule = await resolveFormatModule({
+            env: { PRETTIER_PLUGIN_GML_FORMAT_PATH: formatPath }
+        });
+
+        assert.strictEqual(formatModule.Format, undefined);
     });
 });

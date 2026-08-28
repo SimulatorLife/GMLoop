@@ -6,6 +6,7 @@ import type { ProjectManifestEntry } from "./project-resource-operations.js";
 
 export const OBJECT_RESOURCE_DIRECTORY = "objects";
 export const ROOM_RESOURCE_DIRECTORY = "rooms";
+export const SPRITE_RESOURCE_DIRECTORY = "sprites";
 
 export type ResourceReference = Readonly<{
     name: string;
@@ -60,6 +61,19 @@ export function locateRoomReference(
     roomName: string
 ): ResourceReference {
     return locateManifestEntry(manifestResources, ROOM_RESOURCE_DIRECTORY, roomName, "room resources", "room resource");
+}
+
+export function locateSpriteReference(
+    manifestResources: ReadonlyArray<ProjectManifestEntry>,
+    spriteName: string
+): ResourceReference {
+    return locateManifestEntry(
+        manifestResources,
+        SPRITE_RESOURCE_DIRECTORY,
+        spriteName,
+        "sprite resources",
+        "sprite resource"
+    );
 }
 
 export async function writeRoomDocumentIfApplying(

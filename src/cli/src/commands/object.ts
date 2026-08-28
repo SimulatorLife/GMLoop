@@ -40,6 +40,44 @@ type ObjectMutationOptions = SharedProjectContextOptions &
         write?: boolean;
     }>;
 
+type ObjectUpdateOptions = ObjectMutationOptions &
+    Readonly<{
+        clearParent?: boolean;
+        clearSprite?: boolean;
+        parent?: string;
+        persistent?: string;
+        solid?: string;
+        sprite?: string;
+        visible?: string;
+    }>;
+
+function parseObjectBooleanOption(value: string, optionName: string): boolean {
+    if (value === "true") {
+        return true;
+    }
+    if (value === "false") {
+        return false;
+    }
+    throw new TypeError(`Invalid ${optionName} value "${value}". Expected "true" or "false".`);
+}
+
+function toObjectPropertyMutationPayload(result: Awaited<ReturnType<typeof Refactor.updateObjectProperties>>) {
+    return {
+        action: result.action,
+        changed: result.changed,
+        dryRun: result.dryRun,
+        objectName: result.objectName,
+        objectPath: result.objectPath,
+        parentObjectName: result.parentObjectName,
+        persistent: result.persistent,
+        solid: result.solid,
+        spriteName: result.spriteName,
+        visible: result.visible,
+        warnings: result.warnings,
+        writtenPaths: result.writtenPaths
+    };
+}
+
 function toObjectEventMutationPayload(result: Awaited<ReturnType<typeof Refactor.addObjectEvent>>) {
     return {
         action: result.action,
@@ -132,22 +170,31 @@ async function runObjectEventDeleteAction(
     });
 }
 
-function emitObjectUnavailableLeaf(
-    commandName: string,
-    options: ObjectMutationOptions,
-    capability: string,
-    details: Record<string, unknown> = {}
-): void {
-    printObjectPayload({
-        command: commandName,
-        ok: true,
-        payload: {
-            capability,
-            details,
-            mode: options.write === true ? "apply" : "dry-run",
-            state: "not_available"
-        }
+async function runObjectUpdateAction(objectName: string, options: ObjectUpdateOptions): Promise<void> {
+    if (options.sprite !== undefined && options.clearSprite === true) {
+        throw new TypeError("Object update accepts either --sprite or --clear-sprite, not both.");
+    }
+    if (options.parent !== undefined && options.clearParent === true) {
+        throw new TypeError("Object update accepts either --parent or --clear-parent, not both.");
+    }
+
+    const spriteName = options.clearSprite === true ? null : options.sprite;
+    const parentObjectName = options.clearParent === true ? null : options.parent;
+
+    const context = await resolveCommandProjectContext(options);
+    const result = await Refactor.updateObjectProperties({
+        dryRun: options.write !== true,
+        objectName,
+        parentObjectName,
+        persistent:
+            options.persistent === undefined ? undefined : parseObjectBooleanOption(options.persistent, "--persistent"),
+        projectRoot: context.projectRoot,
+        solid: options.solid === undefined ? undefined : parseObjectBooleanOption(options.solid, "--solid"),
+        spriteName,
+        visible: options.visible === undefined ? undefined : parseObjectBooleanOption(options.visible, "--visible")
     });
+
+    printObjectPayload({ command: "object update", ok: true, payload: toObjectPropertyMutationPayload(result) });
 }
 
 async function runObjectEventListAction(objectName: string, options: ObjectMutationOptions): Promise<void> {
@@ -225,12 +272,22 @@ export function createObjectCommand(): Command {
 
     const update = addObjectSharedOptions(
         applyStandardCommandOptions(new Command("update"))
-            .description("Update object.")
+            .description("Update object properties such as sprite, parent, visibility, solidity, and persistence.")
             .argument("<object>", OBJECT_NAME_ARGUMENT_DESCRIPTION)
-    );
-    update.action(function objectUpdateAction(objectName: string) {
-        const options = this.opts<SharedProjectContextOptions>();
-        emitObjectUnavailableLeaf("object update", options, "object_property_mutation", { object: objectName });
+            .option("--sprite <name>", "Set the object's sprite resource by name.")
+            .option("--clear-sprite", "Clear the object's sprite reference.")
+            .option("--parent <name>", "Set the object's parent object resource by name.")
+            .option("--clear-parent", "Clear the object's parent object reference.")
+            .option("--visible <value>", "Set object visibility (true or false).")
+            .option("--solid <value>", "Set whether the object is solid (true or false).")
+            .option("--persistent <value>", "Set whether the object is persistent (true or false).")
+    ).addOption(createWriteOption());
+    update.action(async function objectUpdateAction(objectName: string) {
+        try {
+            await runObjectUpdateAction(objectName, this.opts<ObjectUpdateOptions>());
+        } catch (error) {
+            handleCliError(error);
+        }
     });
 
     const validate = addObjectSharedOptions(

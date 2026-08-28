@@ -1,6 +1,7 @@
 import { Core, type MutableGameMakerAstNode } from "@gmloop/core";
 
 import { replaceNode } from "../math/index.js";
+import { createNegationExpression } from "./logical-expression-condensation-ast.js";
 import {
     LOGICAL_NORMALIZATION_POLICY_BASELINE,
     type LogicalNormalizationPolicy
@@ -119,15 +120,19 @@ function simplifyNode(node: any, kind: LogicalNormalizationKind): boolean {
         (kind === "all" || kind === "logical-not-call" || kind === "de-morgan" || kind === "negation-parentheses") &&
         isLogicalNotCallExpression(node)
     ) {
-        replaceNode(node, {
-            type: "UnaryExpression",
-            operator: "!",
-            prefix: true,
-            argument: node.arguments[0],
-            start: node.start,
-            end: node.end,
-            parent: node.parent
-        });
+        const negation = createNegationExpression(node.arguments[0]) as {
+            type: string;
+            operator: string;
+            prefix: boolean;
+            argument: unknown;
+            start?: unknown;
+            end?: unknown;
+            parent?: unknown;
+        };
+        negation.start = node.start;
+        negation.end = node.end;
+        negation.parent = node.parent;
+        replaceNode(node, negation);
         return true;
     }
 
@@ -449,18 +454,14 @@ function nodesRecursiveEqual(a: any, b: any): boolean {
 }
 
 /**
- * Wraps `inner` in a `!` unary expression, preserving source location.
- * Used when constructing negations during De Morgan's law application.
+ * Build the negation `!inner` for De Morgan's-law rewrites and the
+ * `Boolean-return` collapse path. Thin wrapper over the shared
+ * `createNegationExpression` AST builder so the three call sites below stay
+ * readable and the negation shape stays in lock-step with the condensation
+ * pipeline that shares the same helper.
  */
 function negateNode(inner: any): any {
-    return {
-        type: "UnaryExpression",
-        operator: "!",
-        prefix: true,
-        argument: inner,
-        start: inner.start,
-        end: inner.end
-    };
+    return createNegationExpression(inner);
 }
 
 function simplifyNot(node: any, kind: LogicalNormalizationKind): boolean {
@@ -732,12 +733,7 @@ function simplifyLogical(node: any, kind: LogicalNormalizationKind): boolean {
                 right: rightOperand
             };
 
-            const notAndPart = {
-                type: "UnaryExpression",
-                operator: "!",
-                prefix: true,
-                argument: andPart
-            };
+            const notAndPart = createNegationExpression(andPart);
 
             const finalExpr = {
                 type: node.type,

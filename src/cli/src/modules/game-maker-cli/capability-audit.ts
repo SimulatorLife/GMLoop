@@ -113,13 +113,6 @@ const PLANNED_CAPABILITIES: ReadonlyArray<PlannedCapability> = Object.freeze([
         })
     ),
     createPlannedCapability({
-        commandPath: ["object", "update"],
-        classification: "gmloop_native_missing",
-        officialTerms: ["object update", "update object"],
-        placeholderCommand: true,
-        rationale: "Object updates need refactor-safe validation and hot-reload-aware evidence before writes."
-    }),
-    createPlannedCapability({
         commandPath: ["object", "event", "list"],
         classification: "gmloop_companion",
         officialTerms: ["object event list", "list object events"],
@@ -132,6 +125,7 @@ const PLANNED_CAPABILITIES: ReadonlyArray<PlannedCapability> = Object.freeze([
         rationale: "Object event inspection should connect handlers to graph and validation context."
     }),
     ...[
+        ["object", "update"],
         ["object", "event", "add"],
         ["object", "event", "update"],
         ["object", "event", "delete"],
