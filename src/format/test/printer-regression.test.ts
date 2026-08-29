@@ -107,9 +107,9 @@ void test("preserves every for-clause slot when init/test/update are missing", a
             expected: ["for (var i = 0;; i++) {", "    foo();", "}", ""].join("\n")
         },
         {
-            name: "init and update clauses are both missing",
-            source: "for (; cond;) { foo(); }\n",
-            expected: ["for (; cond;) {", "    foo();", "}", ""].join("\n")
+            name: "only init clause is present",
+            source: "for (var i = 0;;) { foo(); }\n",
+            expected: ["for (var i = 0;;) {", "    foo();", "}", ""].join("\n")
         },
         {
             name: "only update clause is present",
