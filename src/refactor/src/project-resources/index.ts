@@ -90,3 +90,5 @@ export type {
     RoomRepairResult
 } from "./room-repair-operations.js";
 export { repairRoom } from "./room-repair-operations.js";
+export type { RoomSettingsMutationResult, UpdateRoomSettingsRequest } from "./room-settings-operations.js";
+export { updateRoomSettings } from "./room-settings-operations.js";
