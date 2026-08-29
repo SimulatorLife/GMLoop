@@ -6,7 +6,7 @@ import { Format } from "@gmloop/format";
 import { listLintRuleCatalogEntries } from "@gmloop/lint";
 import { Refactor } from "@gmloop/refactor";
 
-import { getCliCommandCatalog, getMcpToolCatalogEntries } from "../../../cli.js";
+import { getCliCommandCatalog, getMcpToolCatalogEntries } from "../../../cli-core/cli-catalog-runtime.js";
 
 function loadLspToolsCatalogEntries(): ReadonlyArray<{
     description: string;
