@@ -744,16 +744,58 @@ function getBuiltInsMetadata(): Record<string, unknown> {
     return builtInsMetadata;
 }
 
+/**
+ * Ceiling on distinct file paths tracked by {@link projectRootCache}.
+ *
+ * This cache is process-wide (not scoped to a single semantic index
+ * instance) and every navigation, diagnostic, and file-watcher callback that
+ * resolves a project root feeds it. Left unbounded, a long-running LSP
+ * session accumulates one entry per unique file path ever queried for the
+ * lifetime of the process, even after the owning document closes — on a
+ * large project this becomes a steady memory leak that never shrinks.
+ */
+const PROJECT_ROOT_CACHE_MAX_ENTRIES = 2000;
 const projectRootCache = new Map<string, string | null>();
 
 async function getProjectRoot(filepath: string): Promise<string | null> {
     const resolvedPath = path.resolve(filepath);
-    let root = projectRootCache.get(resolvedPath);
-    if (root === undefined) {
-        root = await Semantic.findProjectRoot({ filepath: resolvedPath });
-        projectRootCache.set(resolvedPath, root);
+    const cached = projectRootCache.get(resolvedPath);
+    if (cached !== undefined) {
+        // Reinsert to mark as most-recently-used so eviction below drops the
+        // least-recently-used entry first (Map iterates in insertion order).
+        projectRootCache.delete(resolvedPath);
+        projectRootCache.set(resolvedPath, cached);
+        return cached;
+    }
+
+    const root = await Semantic.findProjectRoot({ filepath: resolvedPath });
+    projectRootCache.set(resolvedPath, root);
+    if (projectRootCache.size > PROJECT_ROOT_CACHE_MAX_ENTRIES) {
+        const oldestEntry: IteratorResult<string> = projectRootCache.keys().next();
+        const oldestKey: unknown = oldestEntry.value;
+        if (!oldestEntry.done && typeof oldestKey === "string") {
+            projectRootCache.delete(oldestKey);
+        }
     }
     return root;
+}
+
+/** @internal Test-only accessor for the module-wide project root cache. */
+export const getProjectRootForTests = getProjectRoot;
+
+/** @internal Test-only diagnostics for the module-wide project root cache. */
+export function getProjectRootCacheSizeForTests(): number {
+    return projectRootCache.size;
+}
+
+/** @internal Test-only reset for the module-wide project root cache. */
+export function resetProjectRootCacheForTests(): void {
+    projectRootCache.clear();
+}
+
+/** @internal Test-only membership check for the module-wide project root cache. */
+export function hasProjectRootCacheEntryForTests(filepath: string): boolean {
+    return projectRootCache.has(path.resolve(filepath));
 }
 
 interface SemanticIndexWorkerBuildOptions {
@@ -1554,9 +1596,7 @@ export function createGmlSemanticIndex(
             try {
                 currentState = await restorePersistentSemanticState(document, resolvedRoot);
             } catch (error) {
-                console.error(
-                    `Failed to restore semantic index for ${resolvedRoot}: ${Core.getErrorMessageOrFallback(error)}`
-                );
+                console.error(`Failed to restore semantic index for ${resolvedRoot}:`, error);
             }
         }
 
@@ -2098,17 +2138,13 @@ export function createGmlSemanticIndex(
                             return;
                         }
                         return void buildFullProjectIndex(document, resolvedRoot, reason).catch((error) => {
-                            console.error(
-                                `Background full index build failed: ${Core.getErrorMessageOrFallback(error)}`
-                            );
+                            console.error("Background full index build failed:", error);
                         });
                     }
                     return null;
                 })
                 .catch((error: unknown) => {
-                    console.error(
-                        `Failed to get project root for background indexing: ${Core.getErrorMessageOrFallback(error)}`
-                    );
+                    console.error("Failed to get project root for background indexing:", error);
                     return null;
                 });
         }, 1);
@@ -2135,7 +2171,7 @@ export function createGmlSemanticIndex(
                 return;
             }
             return void buildFullProjectIndexForRoot(resolvedRootPath, reason).catch((error) => {
-                console.error(`Background full index build failed for root: ${Core.getErrorMessageOrFallback(error)}`);
+                console.error("Background full index build failed for root:", error);
             });
         }, 1);
     }
@@ -2310,9 +2346,7 @@ export function createGmlSemanticIndex(
                     }
                 }
             } catch (error) {
-                console.error(
-                    `Failed to restore semantic index for ${resolvedRoot}: ${Core.getErrorMessageOrFallback(error)}`
-                );
+                console.error(`Failed to restore semantic index for ${resolvedRoot}:`, error);
             }
         }
 
@@ -2515,9 +2549,7 @@ export function createGmlSemanticIndex(
                     expandedChanges.map(async (change) => await invalidateKnownFileRoots(change.filePath))
                 );
                 void ensureProjectRootIndex(projectRoot).catch((error) => {
-                    console.error(
-                        `Background re-indexing failed after disk changes: ${Core.getErrorMessageOrFallback(error)}`
-                    );
+                    console.error("Background re-indexing failed after disk changes:", error);
                 });
                 return;
             }
