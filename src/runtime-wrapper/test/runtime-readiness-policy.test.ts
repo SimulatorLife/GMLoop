@@ -180,6 +180,21 @@ void test("evaluateRuntimeReadiness tolerates globals that throw on property acc
     assert.deepEqual(decision, { state: "not-ready", reason: "no-script-table" });
 });
 
+void test("evaluateRuntimeReadiness tolerates global properties whose getters throw", () => {
+    const globals: Record<string, unknown> = {};
+    Object.defineProperty(globals, "__cross_origin_window", {
+        get() {
+            throw new Error("Blocked a frame with origin from accessing a cross-origin frame.");
+        },
+        enumerable: true,
+        configurable: true
+    });
+
+    const decision = evaluateRuntimeReadiness(snapshot(globals));
+
+    assert.deepEqual(decision, { state: "not-ready", reason: "no-script-table" });
+});
+
 void test("findScriptTables locates the script array behind JSON_game", () => {
     const scripts = [callableScriptFunction()];
     const result = findScriptTables(
