@@ -264,6 +264,11 @@ void test("GmAutoGamePanel renders host-provided pipeline details", () => {
     assert.match(rendered, /<gm-badge[\s\S]*\.label=thought/u);
     assert.match(rendered, /<time[\s\S]*datetime=2026-01-01T00:00:01.000Z/u);
     assert.match(rendered, /Keep the first playable slice small\./u);
+    assert.match(
+        rendered,
+        /<gm-copy-button[\s\S]*class="auto-game-llm-item__copy"[\s\S]*\.value=Keep the first playable slice small\./u
+    );
+    assert.match(rendered, /accessibleLabel=Copy Scope note LLM output to clipboard/u);
     assert.match(rendered, /AGENTS\.md/u);
     assert.match(rendered, /templates\/project-agents\.md/u);
     assert.match(rendered, /AGENTS\.md packaged source preview/u);
@@ -772,4 +777,57 @@ void test("GmAutoGamePanel propagates gm-error-banner-dismiss via composition", 
         panel.disconnectedCallback();
         panel.removeEventListener(GRAPH_UI_EVENT_CLEAR_PAGE_ERROR, listener);
     }
+});
+
+void test("GmAutoGamePanel renders a copy button for each LLM output item with the output content", () => {
+    const panel = new TestableGmAutoGamePanel();
+    panel.model = createMockModel({
+        autoGamePipeline: {
+            actions: [],
+            agentPack: {
+                agentConfigs: [],
+                availableVersion: "0.0.1",
+                conflicts: [],
+                installedVersion: null,
+                resources: [],
+                status: "not-installed"
+            },
+            events: [],
+            llmOutputs: [
+                {
+                    content: "Plan the loop first.",
+                    id: "llm-1",
+                    role: "thought",
+                    timestamp: "2026-01-01T00:00:01.000Z",
+                    title: "Plan"
+                },
+                {
+                    content: "Verify the player verb.",
+                    id: "llm-2",
+                    role: "assistant",
+                    timestamp: "2026-01-01T00:00:02.000Z",
+                    title: "Verify"
+                }
+            ],
+            skills: [],
+            status: "idle",
+            statusText: "Idle"
+        }
+    });
+    panel.state = createMockState();
+
+    const rendered = renderTemplateValue(panel.renderForTest());
+
+    assert.match(
+        rendered,
+        /<gm-copy-button[\s\S]*class="auto-game-llm-item__copy"[\s\S]*\.value=Plan the loop first\./u
+    );
+    assert.match(
+        rendered,
+        /<gm-copy-button[\s\S]*class="auto-game-llm-item__copy"[\s\S]*\.value=Verify the player verb\./u
+    );
+    assert.match(rendered, /accessibleLabel=Copy Plan LLM output to clipboard/u);
+    assert.match(rendered, /accessibleLabel=Copy Verify LLM output to clipboard/u);
+    assert.match(rendered, /label="Copy"/u);
+    assert.match(rendered, /\?hideLabel=true/u);
 });

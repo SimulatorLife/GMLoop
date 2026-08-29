@@ -9,6 +9,12 @@ import { Core } from "@gmloop/core";
 
 import { SKIP_CLI_RUN_ENV_VAR } from "../../shared/skip-cli-run.js";
 import {
+    DEFAULT_LIVE_RELOAD_SESSION_LOCK_INITIALIZATION_GRACE_MS,
+    DEFAULT_LIVE_RELOAD_SESSION_POLL_INTERVAL_MS,
+    DEFAULT_LIVE_RELOAD_SESSION_STARTUP_TIMEOUT_MS,
+    DEFAULT_LIVE_RELOAD_SESSION_STOP_TIMEOUT_MS
+} from "./config.js";
+import {
     discoverLiveReloadSessionByPath,
     type LiveReloadRegisteredSession,
     resolveLiveReloadProjectIdentity
@@ -31,11 +37,6 @@ export type LiveReloadWorkerSpawnFn = (
     }
 ) => ChildProcess;
 
-const STARTUP_TIMEOUT_MS = 600_000;
-const STOP_TIMEOUT_MS = 5000;
-const POLL_INTERVAL_MS = 100;
-const SESSION_LOCK_INITIALIZATION_GRACE_MS = 1000;
-
 export type LiveReloadSessionMode = "attached" | "started" | "restarted" | "stopped" | "not-running";
 
 export type LiveReloadSessionResult = Readonly<{
@@ -48,6 +49,12 @@ export type EnsureLiveReloadSessionOptions = Readonly<{
     forceStart: boolean;
     startArguments: ReadonlyArray<string>;
     stop: boolean;
+    /**
+     * Maximum time (milliseconds) to wait for a registered worker to exit
+     * gracefully after `SIGTERM` before reporting a stop failure. Defaults to
+     * {@link DEFAULT_LIVE_RELOAD_SESSION_STOP_TIMEOUT_MS}.
+     */
+    stopTimeoutMs?: number;
     targetPath: string;
 }>;
 
@@ -91,7 +98,9 @@ async function isLiveReloadSessionLockActive(lockPath: string): Promise<boolean>
     }
 
     const lockStats = await fs.stat(lockPath).catch(() => null);
-    return lockStats !== null && Date.now() - lockStats.mtimeMs < SESSION_LOCK_INITIALIZATION_GRACE_MS;
+    return (
+        lockStats !== null && Date.now() - lockStats.mtimeMs < DEFAULT_LIVE_RELOAD_SESSION_LOCK_INITIALIZATION_GRACE_MS
+    );
 }
 
 async function tryAcquireLiveReloadSessionLock(lockPath: string, attempt: number): Promise<fs.FileHandle | null> {
@@ -144,7 +153,7 @@ export async function manageLiveReloadSession(
         if (!discovery.alive || discovery.session === null) {
             return Object.freeze({ mode: "not-running", session: null, status: null });
         }
-        await stopRegisteredLiveReloadSession(options.targetPath, discovery.session);
+        await stopRegisteredLiveReloadSession(options.targetPath, discovery.session, options.stopTimeoutMs);
         return Object.freeze({ mode: "stopped", session: null, status: null });
     }
     if (discovery.alive && discovery.session !== null && !options.forceStart) {
@@ -153,7 +162,7 @@ export async function manageLiveReloadSession(
 
     const restarted = discovery.alive && discovery.session !== null;
     if (restarted && discovery.session !== null) {
-        await stopRegisteredLiveReloadSession(options.targetPath, discovery.session);
+        await stopRegisteredLiveReloadSession(options.targetPath, discovery.session, options.stopTimeoutMs);
     }
     return await startManagedLiveReloadSession(options, restarted ? "restarted" : "started", spawnFn);
 }
@@ -246,7 +255,11 @@ export async function startManagedLiveReloadSession(
 }
 
 async function waitForConcurrentLiveReloadSession(targetPath: string): Promise<LiveReloadSessionResult> {
-    const result = await pollForSession(targetPath, Date.now() + STARTUP_TIMEOUT_MS, () => true);
+    const result = await pollForSession(
+        targetPath,
+        Date.now() + DEFAULT_LIVE_RELOAD_SESSION_STARTUP_TIMEOUT_MS,
+        () => true
+    );
     if (result !== null) {
         return Object.freeze({ mode: "attached", session: result.session, status: result.status });
     }
@@ -265,7 +278,9 @@ async function pollForSession(
     if (Date.now() >= deadline) {
         return null;
     }
-    return delay(POLL_INTERVAL_MS).then(() => pollForSession(targetPath, deadline, predicate));
+    return delay(DEFAULT_LIVE_RELOAD_SESSION_POLL_INTERVAL_MS).then(() =>
+        pollForSession(targetPath, deadline, predicate)
+    );
 }
 
 async function waitForSession(
@@ -275,7 +290,7 @@ async function waitForSession(
 ): Promise<LiveReloadSessionResult> {
     const result = await pollForSession(
         targetPath,
-        Date.now() + STARTUP_TIMEOUT_MS,
+        Date.now() + DEFAULT_LIVE_RELOAD_SESSION_STARTUP_TIMEOUT_MS,
         (session) => session.sessionId === sessionId
     );
     if (result !== null) {
@@ -286,7 +301,8 @@ async function waitForSession(
 
 async function stopRegisteredLiveReloadSession(
     targetPath: string,
-    session: LiveReloadRegisteredSession
+    session: LiveReloadRegisteredSession,
+    stopTimeoutMs = DEFAULT_LIVE_RELOAD_SESSION_STOP_TIMEOUT_MS
 ): Promise<void> {
     if (session.processId === null || session.sessionId === undefined) {
         throw new Error(
@@ -294,7 +310,7 @@ async function stopRegisteredLiveReloadSession(
         );
     }
     process.kill(session.processId, "SIGTERM");
-    const stopped = await waitForSessionToStop(targetPath, session.sessionId, Date.now() + STOP_TIMEOUT_MS);
+    const stopped = await waitForSessionToStop(targetPath, session.sessionId, Date.now() + stopTimeoutMs);
     if (stopped) {
         return;
     }
@@ -309,7 +325,9 @@ async function waitForSessionToStop(targetPath: string, sessionId: string, deadl
     if (Date.now() >= deadline) {
         return false;
     }
-    return delay(POLL_INTERVAL_MS).then(() => waitForSessionToStop(targetPath, sessionId, deadline));
+    return delay(DEFAULT_LIVE_RELOAD_SESSION_POLL_INTERVAL_MS).then(() =>
+        waitForSessionToStop(targetPath, sessionId, deadline)
+    );
 }
 
 function delay(milliseconds: number): Promise<void> {

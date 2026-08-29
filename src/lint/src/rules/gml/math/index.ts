@@ -2,9 +2,10 @@
  * Public surface for the `gml/math/` helper collection.
  *
  * Math expression normalisation in the lint workspace is split across several
- * implementation files (AST builders, AST mutation, traversal normalisation,
- * division→multiplication, parentheses cleanup, scalar condensing, trig
- * conversions, lengthdir transforms, numeric policy, numeric utilities).
+ * implementation files (AST builders, AST mutation, call-expression conversions,
+ * traversal normalisation, division→multiplication, parentheses cleanup, scalar
+ * condensing, trig conversions, lengthdir transforms, numeric policy, numeric
+ * utilities).
  *
  * Without a barrel, consumers reach deep relative paths such as
  * `../../math/math-traversal-normalization.js` from rule files, or
@@ -63,6 +64,20 @@ export {
     traverseZeroDivisionNumerators,
     unwrapEnclosingParentheses
 } from "./math-ast-mutation.js";
+export {
+    attemptConvertDotProducts,
+    attemptConvertLog2,
+    attemptConvertMean,
+    attemptConvertPointDirection,
+    attemptConvertPointDistanceCall,
+    attemptConvertPowerToExp,
+    attemptConvertPowerToSqrt,
+    attemptConvertRepeatedPower,
+    attemptConvertSquare,
+    isDotProductOperandCandidate,
+    matchDifference,
+    matchSquaredDifferences
+} from "./math-call-conversions.js";
 export { applyDivisionToMultiplication } from "./math-division-to-multiplication.js";
 export {
     areAllSafeOperands,

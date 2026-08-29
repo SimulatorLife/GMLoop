@@ -389,7 +389,7 @@ export interface ProjectMacroRegistry {
  * Metrics snapshot for display purposes.
  *
  * Provides a read-only view of transpilation metrics without coupling to
- * patch history, error tracking, or broadcasting operations.
+ * patch history, error tracking, or broadcasting.
  */
 export interface MetricsSnapshot {
     readonly metrics: ReadonlyArray<TranspilationMetrics>;
@@ -399,7 +399,7 @@ export interface MetricsSnapshot {
  * Errors snapshot for display purposes.
  *
  * Provides a read-only view of transpilation errors without coupling to
- * metrics, patch history, or broadcasting operations.
+ * metrics, patch history, or broadcasting.
  */
 export interface ErrorsSnapshot {
     readonly errors: ReadonlyArray<TranspilationError>;
@@ -500,11 +500,13 @@ interface ParsedAstExtractionResult {
 
 /**
  * Adds an item to a bounded collection, removing the oldest item if the
- * collection exceeds its maximum size.
+ * collection exceeds its maximum size. A non-positive `maxSize` is treated as
+ * "unbounded" — items are appended without trimming — matching the
+ * documented contract for CLI options such as `--max-patch-history`.
  */
 function addToBoundedCollection<T>(collection: Array<T>, item: T, maxSize: number): void {
     collection.push(item);
-    if (collection.length > maxSize) {
+    if (maxSize > 0 && collection.length > maxSize) {
         collection.shift();
     }
 }
@@ -785,16 +787,25 @@ function prepareMacroTranspilation(
         : new Map<string, TranspilerTypes.MacroDefinition>();
     const previousMacroDefinitions = context.macroDefinitions ?? new Map<string, TranspilerTypes.MacroDefinition>();
     let candidateDefinitionsBySourcePath: TranspilerTypes.MacroDefinitionsBySourcePath | null = null;
-    let macroDefinitions = new Map(previousMacroDefinitions);
+    let macroDefinitions: Map<string, TranspilerTypes.MacroDefinition>;
 
-    for (const [name, definition] of localMacroDefinitions) {
-        macroDefinitions.set(name, definition);
-    }
-
+    // Watch mode populates `macroDefinitionsBySourcePath` after the project-wide
+    // startup walk and transpiles each file through that index on every change.
+    // In that path the simpler copy + merge below would be thrown away: the
+    // `createProjectMacroDefinitions` call rebuilds the merged macro map from the
+    // candidate source-path index, so we skip the redundant allocation entirely.
+    // Standalone callers (e.g. the `transpile` command) without a source-path
+    // index fall back to merging the local definitions into a copy of the
+    // previous project map, preserving the original behavior.
     if (context.macroDefinitionsBySourcePath && Core.isObjectLike(ast)) {
         candidateDefinitionsBySourcePath = new Map(context.macroDefinitionsBySourcePath);
         candidateDefinitionsBySourcePath.set(filePath, localMacroDefinitions);
         macroDefinitions = Transpiler.createProjectMacroDefinitions(candidateDefinitionsBySourcePath);
+    } else {
+        macroDefinitions = new Map(previousMacroDefinitions);
+        for (const [name, definition] of localMacroDefinitions) {
+            macroDefinitions.set(name, definition);
+        }
     }
 
     const effectiveAst = Transpiler.expandProjectMacros(ast, macroDefinitions, filePath);

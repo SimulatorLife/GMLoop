@@ -317,7 +317,7 @@ pnpm run cli -- watch /path/to/project --auto-inject
 - `--quiet` - Suppress non-essential output (only show errors and server URLs); useful for CI/CD or background processes
 - `--debounce-delay <ms>` - Delay in milliseconds before transpiling after file changes (default: 100, set to 0 to disable debouncing)
 - `--max-concurrent-dirs <count>` - Maximum number of directories to scan concurrently during initial file discovery (default: 4); increase for faster scans on systems with more resources, or decrease to avoid file handle exhaustion on resource-constrained systems
-- `--max-patch-history <count>` - Maximum number of patches to retain in memory (default: 100; must be a positive integer)
+- `--max-patch-history <count>` - Maximum number of patches to retain in memory (default: 100; set to 0 for unbounded)
 - `--websocket-port <port>` - WebSocket server port for streaming patches (default: 17890)
 - `--websocket-host <host>` - WebSocket server host for streaming patches (default: 127.0.0.1)
 - `--no-websocket-server` - Disable WebSocket server for patch streaming
@@ -1075,6 +1075,33 @@ pnpm run cli -- resource create-image tmp/placeholder.png --width 64 --height 64
 - `--height <number>` - Height of the image in pixels (default: `64`)
 - `--color <color>` - Color of the image (supports CSS color names like `red`, `transparent`, or hex codes like `#FF0000` or `#FF000080` for alpha transparency) (default: `red`)
 - `--json` - Emit machine-readable JSON output describing the generated file
+
+### `collect-stats` - Collect Project Health Statistics
+
+Scans the workspace for coarse health signals (large source files, TODO markers,
+and combined `dist/` build size) and writes a JSON report. By default the same
+numbers are also printed to stdout as a human-readable summary so contributors
+can see the actual values without opening the report file.
+
+```bash
+# Default: print stats to stdout and write reports/project-health.json
+pnpm run cli -- collect-stats
+
+# Custom output path
+pnpm run cli -- collect-stats --output reports/health.json
+
+# Machine-readable stdout payload (file is still written)
+pnpm run cli -- collect-stats --json
+
+# Suppress stdout output when only the file matters
+pnpm run cli -- collect-stats --quiet
+```
+
+**Options:**
+
+- `--output <path>` - Path to write the JSON report (default: `reports/project-health.json`)
+- `--json` - Emit machine-readable JSON to stdout in addition to writing the report file
+- `--quiet` - Suppress stdout output and only write the report file
 
 ## Architecture
 

@@ -1,5 +1,15 @@
 import path from "node:path";
 
+import type { LiveReloadLogLevel as RuntimeLiveReloadLogLevel } from "@gmloop/runtime-wrapper";
+
+/**
+ * Canonical live-reload bootstrap log level. Defined and centralised inside
+ * `@gmloop/runtime-wrapper` so the bootstrap config rendered by the CLI and the
+ * browser-side dispatcher that consumes it cannot drift out of sync. Re-exported
+ * here so internal CLI callers keep importing from the live-reload module.
+ */
+export type LiveReloadLogLevel = RuntimeLiveReloadLogLevel;
+
 export const DEFAULT_GM_TEMP_ROOT = "/private/tmp/GameMakerStudio2/GMS2TEMP";
 export const DEFAULT_LIVE_RELOAD_WEBSOCKET_HOST = "127.0.0.1";
 export const DEFAULT_LIVE_RELOAD_WEBSOCKET_PORT = 17_890;
@@ -31,6 +41,39 @@ export const DEFAULT_LIVE_RELOAD_WAIT_FOR_PATCH_TIMEOUT_MS = 10_000;
  */
 export const DEFAULT_LIVE_RELOAD_WAIT_FOR_PATCH_POLL_INTERVAL_MS = 250;
 
+/**
+ * Default time (milliseconds) `live-reload session` waits for a newly spawned
+ * worker to register itself before treating startup as failed.
+ */
+export const DEFAULT_LIVE_RELOAD_SESSION_STARTUP_TIMEOUT_MS = 600_000;
+
+/**
+ * Default time (milliseconds) `live-reload session` waits for a registered
+ * worker to exit gracefully (after `SIGTERM`) before reporting a stop
+ * failure.
+ *
+ * Exposed as the `--stop-timeout-ms` option on `live-reload session` because
+ * a project's shutdown work (flushing save data, closing native handles,
+ * etc.) can legitimately take longer than the built-in default on some
+ * machines or projects, and force-restart must only proceed after a graceful
+ * shutdown actually completes or is confirmed to have timed out.
+ */
+export const DEFAULT_LIVE_RELOAD_SESSION_STOP_TIMEOUT_MS = 5000;
+
+/**
+ * Polling cadence (milliseconds) used while `live-reload session` waits for
+ * worker startup or shutdown to be reflected in the session registry.
+ */
+export const DEFAULT_LIVE_RELOAD_SESSION_POLL_INTERVAL_MS = 100;
+
+/**
+ * Grace period (milliseconds) during which a freshly created session lock
+ * file is treated as active even if it has not yet had its owning process id
+ * written to it, avoiding a race where a second `live-reload session`
+ * invocation deletes a lock that is still being initialized.
+ */
+export const DEFAULT_LIVE_RELOAD_SESSION_LOCK_INITIALIZATION_GRACE_MS = 1000;
+
 export const HOT_RELOAD_DIR_NAME = ".gml-hot-reload";
 export const HOT_RELOAD_MARKER_START = "<!-- gml-hot-reload:start -->";
 export const HOT_RELOAD_MARKER_END = "<!-- gml-hot-reload:end -->";
@@ -48,8 +91,6 @@ export const LIVE_RELOAD_BOOTSTRAP_CONFIG_RELATIVE_PATH = path.posix.join(
     "config.js"
 );
 export const LIVE_RELOAD_ASSET_ROOT_RELATIVE_PATH = "runtime-wrapper";
-
-export type LiveReloadLogLevel = "quiet" | "normal" | "debug";
 
 /**
  * Canonical output format values accepted by the `live-reload session`

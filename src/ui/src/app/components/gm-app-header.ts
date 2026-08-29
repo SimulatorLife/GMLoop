@@ -118,6 +118,8 @@ export class GmAppHeader extends LightDomLitElement {
                                     id="tab-graph"
                                     aria-pressed=${this.state.activePage === "graph"}
                                     aria-current=${this.#getAriaCurrentForPage("graph")}
+                                    aria-keyshortcuts="1"
+                                    title="Graph Index (1)"
                                     class=${
                                         this.state.activePage === "graph"
                                             ? `${GmAppHeader.#TOP_NAV_BUTTON_BASE_CLASS} active`
@@ -131,6 +133,8 @@ export class GmAppHeader extends LightDomLitElement {
                                     id="tab-docs"
                                     aria-pressed=${this.state.activePage === "docs"}
                                     aria-current=${this.#getAriaCurrentForPage("docs")}
+                                    aria-keyshortcuts="2"
+                                    title="Docs (2)"
                                     class=${
                                         this.state.activePage === "docs"
                                             ? `${GmAppHeader.#TOP_NAV_BUTTON_BASE_CLASS} active`
@@ -144,6 +148,8 @@ export class GmAppHeader extends LightDomLitElement {
                                     id="tab-config"
                                     aria-pressed=${this.state.activePage === "config"}
                                     aria-current=${this.#getAriaCurrentForPage("config")}
+                                    aria-keyshortcuts="3"
+                                    title="Config (3)"
                                     class=${
                                         this.state.activePage === "config"
                                             ? `${GmAppHeader.#TOP_NAV_BUTTON_BASE_CLASS} active`
@@ -157,6 +163,8 @@ export class GmAppHeader extends LightDomLitElement {
                                     id="tab-fix"
                                     aria-pressed=${this.state.activePage === "fix"}
                                     aria-current=${this.#getAriaCurrentForPage("fix")}
+                                    aria-keyshortcuts="4"
+                                    title="Fix (4)"
                                     class=${
                                         this.state.activePage === "fix"
                                             ? `${GmAppHeader.#TOP_NAV_BUTTON_BASE_CLASS} active`
@@ -170,6 +178,8 @@ export class GmAppHeader extends LightDomLitElement {
                                     id="tab-playground"
                                     aria-pressed=${this.state.activePage === "playground"}
                                     aria-current=${this.#getAriaCurrentForPage("playground")}
+                                    aria-keyshortcuts="5"
+                                    title="Playground (5)"
                                     class=${
                                         this.state.activePage === "playground"
                                             ? `${GmAppHeader.#TOP_NAV_BUTTON_BASE_CLASS} active`
@@ -183,6 +193,8 @@ export class GmAppHeader extends LightDomLitElement {
                                     id="tab-auto-game"
                                     aria-pressed=${this.state.activePage === "auto-game"}
                                     aria-current=${this.#getAriaCurrentForPage("auto-game")}
+                                    aria-keyshortcuts="6"
+                                    title="Auto-Game (6)"
                                     class=${
                                         this.state.activePage === "auto-game"
                                             ? `${GmAppHeader.#TOP_NAV_BUTTON_BASE_CLASS} active`
@@ -196,6 +208,8 @@ export class GmAppHeader extends LightDomLitElement {
                                     id="tab-live-reload"
                                     aria-pressed=${this.state.activePage === liveReloadPage}
                                     aria-current=${this.#getAriaCurrentForPage(liveReloadPage)}
+                                    aria-keyshortcuts="7"
+                                    title="Live Reload (7)"
                                     class=${
                                         this.state.activePage === liveReloadPage
                                             ? `${GmAppHeader.#TOP_NAV_BUTTON_BASE_CLASS} active`

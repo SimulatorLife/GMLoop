@@ -158,10 +158,12 @@ export type {
     RoomRepairAppliedRepair,
     RoomRepairDiagnostic,
     RoomRepairResult,
+    RoomSettingsMutationResult,
     UpdateObjectEventRequest,
     UpdateRoomCameraRequest,
     UpdateRoomInstanceRequest,
-    UpdateRoomLayerRequest
+    UpdateRoomLayerRequest,
+    UpdateRoomSettingsRequest
 } from "./project-resources/index.js";
 export * as ProjectResources from "./project-resources/index.js";
 export {
@@ -192,7 +194,8 @@ export {
     updateObjectEvent,
     updateRoomCamera,
     updateRoomInstance,
-    updateRoomLayer
+    updateRoomLayer,
+    updateRoomSettings
 } from "./project-resources/index.js";
 export {
     isProjectResourceKind,

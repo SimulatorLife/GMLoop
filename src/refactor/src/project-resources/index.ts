@@ -16,6 +16,8 @@ export {
     listObjectEvents,
     updateObjectEvent
 } from "./object-event-operations.js";
+export type { ObjectPropertyMutationResult, UpdateObjectPropertiesRequest } from "./object-property-operations.js";
+export { updateObjectProperties } from "./object-property-operations.js";
 export type { ProjectResourceKindValue } from "./project-resource-kinds.js";
 export {
     isProjectResourceKind,
@@ -88,3 +90,5 @@ export type {
     RoomRepairResult
 } from "./room-repair-operations.js";
 export { repairRoom } from "./room-repair-operations.js";
+export type { RoomSettingsMutationResult, UpdateRoomSettingsRequest } from "./room-settings-operations.js";
+export { updateRoomSettings } from "./room-settings-operations.js";

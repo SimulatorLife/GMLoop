@@ -4,6 +4,7 @@ export type {
     ErrorAnalytics,
     EventCollection,
     GeneralLogger,
+    LiveReloadLogLevel,
     Logger,
     LoggerConfiguration,
     LoggerOptions,

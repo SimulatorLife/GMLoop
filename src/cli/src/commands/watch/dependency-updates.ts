@@ -11,12 +11,14 @@ import type {
     DependencyGraphWriter
 } from "../../modules/transpilation/dependency-tracker.js";
 import {
+    type ResourcePatch,
     type RuntimeTranspilerPatch,
     type TranspilationContext,
     type TranspilationResult,
     transpileFile
 } from "../../modules/transpilation/index.js";
 import { pathExistsSync } from "../../shared/path-exists.js";
+import { getLayerName } from "./resource-change-handler.js";
 import { countSourceLines, ensureScriptNameRegistered, unregisterScriptName } from "./source-analysis.js";
 
 const { getErrorMessage, uniqueArray } = Core;
@@ -56,6 +58,8 @@ interface FileRemovalCleanupContext extends DependencyUpdateRuntimeContext {
     debouncedHandlers: Map<string, DebouncedFunction<[string, string, FileChangeOptions]>>;
     macroDefinitionsBySourcePath: TranspilerTypes.MacroDefinitionsBySourcePath;
     macroDefinitions: Map<string, TranspilerTypes.MacroDefinition>;
+    roomResources: Map<string, Record<string, unknown>>;
+    resourcePatches: Map<string, ResourcePatch>;
 }
 
 export interface TranspileFileRuntimeContext
@@ -322,6 +326,26 @@ export function removeCachedPatchesForFile(
     return removedCount;
 }
 
+/** Remove a deleted room's cached JSON and any corresponding resource patch. */
+export function removeRoomResourceForFile(
+    runtimeContext: Pick<FileRemovalCleanupContext, "roomResources" | "resourcePatches">,
+    filePath: string
+): number {
+    const roomData = runtimeContext.roomResources.get(filePath);
+    if (roomData === undefined) {
+        return 0;
+    }
+
+    runtimeContext.roomResources.delete(filePath);
+
+    const resourceName = typeof roomData.name === "string" ? roomData.name : getLayerName(roomData);
+    if (resourceName !== null && runtimeContext.resourcePatches.delete(`resource/room/${resourceName}`)) {
+        return 2;
+    }
+
+    return 1;
+}
+
 export function cleanupRemovedFile(runtimeContext: FileRemovalCleanupContext, filePath: string): Array<string> {
     unregisterScriptName(filePath, runtimeContext.scriptNames);
     const changedMacroDefinitions = replaceMacroDefinitionsForRemovedFile(runtimeContext, filePath);
@@ -331,7 +355,8 @@ export function cleanupRemovedFile(runtimeContext: FileRemovalCleanupContext, fi
     );
     runtimeContext.dependencyTracker.removeFile(filePath);
     clearFileStateCaches(runtimeContext, filePath);
-    const removedPatchCount = removeCachedPatchesForFile(runtimeContext, filePath);
+    const removedPatchCount =
+        removeCachedPatchesForFile(runtimeContext, filePath) + removeRoomResourceForFile(runtimeContext, filePath);
     cancelDebouncedHandlerForFile(runtimeContext, filePath);
     reportCleanupResult(runtimeContext, removedPatchCount);
 

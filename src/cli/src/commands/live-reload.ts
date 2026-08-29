@@ -16,6 +16,7 @@ import {
     createWebSocketUrl,
     DEFAULT_GM_TEMP_ROOT,
     DEFAULT_LIVE_RELOAD_SESSION_OUTPUT_FORMAT,
+    DEFAULT_LIVE_RELOAD_SESSION_STOP_TIMEOUT_MS,
     DEFAULT_LIVE_RELOAD_STATUS_HOST,
     DEFAULT_LIVE_RELOAD_STATUS_PORT,
     DEFAULT_LIVE_RELOAD_WAIT_FOR_PATCH_POLL_INTERVAL_MS,
@@ -106,6 +107,7 @@ interface LiveReloadSessionCommandOptions extends Omit<LiveReloadDevCommandOptio
     format?: LiveReloadSessionOutputFormat;
     path?: string;
     stop?: boolean;
+    stopTimeoutMs?: number;
 }
 
 interface LiveReloadPathCommandOptions {
@@ -273,6 +275,7 @@ export async function runLiveReloadSessionCommand(options: LiveReloadSessionComm
             forceStart: options.forceStart === true,
             startArguments: createLiveReloadWorkerArguments(options),
             stop: options.stop === true,
+            stopTimeoutMs: options.stopTimeoutMs,
             targetPath
         });
         const payload = { command: "live-reload session", ok: true, payload: result };
@@ -651,6 +654,14 @@ function createLiveReloadSessionSubcommand(): Command {
         .addOption(new Option("--gm-temp-root <path>", "Root directory for GameMaker HTML5 temporary outputs."))
         .addOption(new Option("--force-start", "Stop the active session before starting a replacement.").default(false))
         .addOption(new Option("--stop", "Stop the active session without starting another.").default(false))
+        .addOption(
+            new Option(
+                "--stop-timeout-ms <ms>",
+                "Maximum time to wait for the active session to shut down gracefully before reporting a stop failure."
+            )
+                .argParser(createMinimumValueValidator(1, "Stop timeout must be a positive integer."))
+                .default(DEFAULT_LIVE_RELOAD_SESSION_STOP_TIMEOUT_MS)
+        )
         .addOption(
             new Option("--format <format>", "Output format")
                 .argParser(wrapInvalidArgumentResolver(coerceLiveReloadSessionOutputFormat))

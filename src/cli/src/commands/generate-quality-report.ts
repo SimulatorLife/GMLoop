@@ -844,46 +844,23 @@ function isCheckstyleDocument(document) {
 }
 
 function documentContainsTestElements(document) {
-    const queue = [document];
-    let found = false;
+    if (Array.isArray(document)) {
+        return document.some((entry) => documentContainsTestElements(entry));
+    }
 
-    processTraversalQueue(queue, (current, queueRef) => {
-        if (Array.isArray(current)) {
-            enqueueTraversalValues(queueRef, current);
-            return;
-        }
+    if (!isObjectLike(document)) {
+        return false;
+    }
 
-        if (!isObjectLike(current)) {
-            return;
-        }
+    if (
+        Object.hasOwn(document, "testcase") ||
+        Object.hasOwn(document, "testsuite") ||
+        Object.hasOwn(document, "testsuites")
+    ) {
+        return true;
+    }
 
-        if (
-            Object.hasOwn(current, "testcase") ||
-            Object.hasOwn(current, "testsuite") ||
-            Object.hasOwn(current, "testsuites")
-        ) {
-            found = true;
-            return true; // Terminate early
-        }
-
-        enqueueObjectChildValues(queueRef, current);
-    });
-
-    return found;
-}
-
-/**
- * Appends traversal candidates to the queue.
- */
-function enqueueTraversalValues(queue, values) {
-    queue.push(...values);
-}
-
-/**
- * Appends all object child values to the traversal queue.
- */
-function enqueueObjectChildValues(queue, object) {
-    enqueueTraversalValues(queue, Object.values(object));
+    return Object.values(document).some((value) => documentContainsTestElements(value));
 }
 
 function recordTestCases(aggregates, testCases) {

@@ -4,6 +4,7 @@ import type { Rule } from "eslint";
 import { gmlRuleAutofixServices } from "../gml-rule-services.js";
 import type { GmlRuleDefinition } from "../index.js";
 import { createMeta, getNodeRange, resolveLocFromIndex, type SourceTextRange } from "../rule-base-helpers.js";
+import { createNegationExpression } from "../transforms/logical-expression-condensation-ast.js";
 import { applyLogicalNormalizationWithChangeMetadata } from "../transforms/logical-expression-traversal-normalization.js";
 import {
     evaluateCanDirectBooleanReturnBenefitFromNormalization,
@@ -111,13 +112,7 @@ function createReturnArgument(test: unknown, shouldNegate: boolean): MutableGame
         return clonedTest;
     }
 
-    const negatedArgument: MutableGameMakerAstNode = {
-        type: "UnaryExpression",
-        operator: "!",
-        prefix: true,
-        argument: clonedTest
-    };
-    return negatedArgument;
+    return createNegationExpression(clonedTest);
 }
 
 function createReturnStatementText(test: unknown, shouldNegate: boolean, fullSourceText: string): string {
