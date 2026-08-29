@@ -52,3 +52,16 @@ void test("worker overlay boundary rejects opened or closed buffers", () => {
         false
     );
 });
+
+void test("worker overlay boundary rejects an unmatched document with an undefined version instead of throwing", () => {
+    const boundary = createWorkerOverlayBoundary(initialDocuments);
+    const documents = [
+        initialDocuments[0],
+        {
+            filePath: "/project/never-snapshotted.gml",
+            sourceText: "function neverSnapshotted() {}",
+            version: undefined as unknown as number
+        }
+    ];
+    assert.equal(isWorkerOverlayBoundaryCurrent(boundary, documents), false);
+});

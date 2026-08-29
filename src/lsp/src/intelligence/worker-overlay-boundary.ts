@@ -61,8 +61,11 @@ export function isWorkerOverlayBoundaryCurrent(
     }
     return documents.every((document) => {
         const entry = boundary.get(path.resolve(document.filePath));
+        if (entry === undefined) {
+            return false;
+        }
         return (
-            entry?.version === document.version &&
+            entry.version === document.version &&
             entry.contentHash === Semantic.createSemanticContentHash(document.sourceText)
         );
     });
