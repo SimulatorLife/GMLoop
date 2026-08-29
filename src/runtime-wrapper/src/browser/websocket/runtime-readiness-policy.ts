@@ -50,6 +50,14 @@ type AuthoritativeScriptTables = Readonly<{
     Scripts: Array<unknown>;
 }>;
 
+function tryReadGlobalProperty(globals: Readonly<Record<string, unknown>>, propertyName: string): unknown {
+    try {
+        return globals[propertyName];
+    } catch {
+        return undefined;
+    }
+}
+
 function tryReadAuthoritativeScriptTables(
     candidate: unknown,
     namesField: "ScriptNames" | "_98",
@@ -70,12 +78,20 @@ function tryReadAuthoritativeScriptTables(
 }
 
 export function findScriptTables(snapshot: RuntimeReadinessSnapshot): ReadonlyArray<unknown> | null {
-    const fromJsonGame = tryReadAuthoritativeScriptTables(snapshot.globals.JSON_game, "ScriptNames", "Scripts");
+    const fromJsonGame = tryReadAuthoritativeScriptTables(
+        tryReadGlobalProperty(snapshot.globals, "JSON_game"),
+        "ScriptNames",
+        "Scripts"
+    );
     if (fromJsonGame !== null) {
         return fromJsonGame.Scripts;
     }
 
-    const fromMinified = tryReadAuthoritativeScriptTables(snapshot.globals._a1, "_98", "_a8");
+    const fromMinified = tryReadAuthoritativeScriptTables(
+        tryReadGlobalProperty(snapshot.globals, "_a1"),
+        "_98",
+        "_a8"
+    );
     if (fromMinified !== null) {
         return fromMinified.Scripts;
     }
@@ -107,7 +123,7 @@ function findScriptArrayInCandidate(candidate: Record<string, unknown>): Readonl
 
 export function findScriptTablesByShape(snapshot: RuntimeReadinessSnapshot): ReadonlyArray<unknown> | null {
     for (const propertyName of Object.keys(snapshot.globals)) {
-        const candidate = snapshot.globals[propertyName];
+        const candidate = tryReadGlobalProperty(snapshot.globals, propertyName);
         if (!isSafeRecord(candidate)) {
             continue;
         }
