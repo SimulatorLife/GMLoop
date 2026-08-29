@@ -1,119 +1,54 @@
-type RuntimeReadyGlobals = Record<string, unknown> & {
-    g_pBuiltIn?: Record<string, unknown>;
-    JSON_game?: {
-        ScriptNames?: Array<string>;
-        Scripts?: Array<unknown>;
-    };
-    _a1?: {
-        _98?: Array<string>;
-        _a8?: Array<unknown>;
-    };
-    _g8?: Record<string, unknown>;
-};
+/**
+ * @gmloop/runtime-wrapper — Runtime Readiness Mechanism
+ *
+ * ## Separation of concerns
+ *
+ * The policy that decides whether a GameMaker runtime snapshot is ready
+ * to accept websocket patches lives in
+ * {@link ./runtime-readiness-policy.ts}. This module owns the
+ * side effects the mechanism needs to drive that policy from the live
+ * websocket client:
+ *
+ *   - reading the `globalThis` snapshot to feed the policy evaluator,
+ *   - holding the cached readiness flag the caller already trusts, and
+ *   - defining the `application_surface` accessor on the global so the
+ *     runtime wrapper can read and write the builtin table without
+ *     touching the minified global directly.
+ *
+ * Keeping the policy in its own module (see
+ * `runtime-readiness-policy.ts`) lets the readiness contract be unit
+ * tested in isolation, while the mechanism stays a thin wrapper that
+ * composes the policy verdict with the surrounding client state.
+ */
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-    if (value === null || typeof value !== "object") {
-        return false;
-    }
-    try {
-        const self = (value as any).self;
-        if (self === value) {
-            return false;
-        }
-        return true;
-    } catch {
-        return false;
-    }
-}
-
-function isRuntimeScriptName(value: unknown): value is string {
-    return typeof value === "string" && (value.startsWith("gml_Script_") || value.startsWith("gml_GlobalScript_"));
-}
-
-function readGlobalProperty(globals: RuntimeReadyGlobals, propertyName: string): unknown {
-    try {
-        return globals[propertyName];
-    } catch {
-        return undefined;
-    }
-}
-
-function resolveRuntimeScripts(globals: RuntimeReadyGlobals): Array<unknown> | null {
-    const jsonGame = globals.JSON_game;
-    if (jsonGame !== null && typeof jsonGame === "object") {
-        const { ScriptNames, Scripts } = jsonGame;
-        if (Array.isArray(ScriptNames) && Array.isArray(Scripts)) {
-            return Scripts;
-        }
-    }
-
-    const minifiedGameData = globals._a1;
-    if (minifiedGameData !== null && typeof minifiedGameData === "object") {
-        const { _98: scriptNames, _a8: scripts } = minifiedGameData;
-        if (Array.isArray(scriptNames) && Array.isArray(scripts)) {
-            return scripts;
-        }
-    }
-
-    // Minified GameMaker HTML5 builds do not keep stable global or field names.
-    // The live-reload client treats the script-name array plus function array as
-    // the readiness signal because those tables are the patch binding target.
-    for (const propertyName of Object.keys(globals)) {
-        const candidate = readGlobalProperty(globals, propertyName);
-        if (!isRecord(candidate)) {
-            continue;
-        }
-
-        let hasScriptNames = false;
-        let scripts: Array<unknown> | null = null;
-        for (const propertyValue of Object.values(candidate)) {
-            if (Array.isArray(propertyValue) && propertyValue.some(isRuntimeScriptName)) {
-                hasScriptNames = true;
-                continue;
-            }
-
-            if (Array.isArray(propertyValue) && propertyValue.some((entry) => typeof entry === "function")) {
-                scripts = propertyValue;
-            }
-        }
-
-        if (hasScriptNames && scripts !== null) {
-            return scripts;
-        }
-    }
-
-    return null;
-}
+import { evaluateRuntimeReadiness } from "./runtime-readiness-policy.js";
 
 /**
- * Determine whether the GameMaker runtime is ready to accept websocket patches.
+ * Determine whether the GameMaker runtime is ready to accept websocket
+ * patches.
  *
- * Returns early if the cached `runtimeReady` flag is already true, otherwise
- * probes the global table for the canonical readiness signal: the runtime must
- * expose a script-name array and a script-function array, and the script table
- * must contain at least one function-typed entry. The GameMaker HTML5 minifier
- * changes object names between builds and may omit builtin globals, so readiness
- * is intentionally tied to the patch binding tables rather than fixed symbols.
+ * The mechanism applies the cached readiness short-circuit before
+ * asking the policy to probe the globals. When the cache says "ready"
+ * we never re-scan the global surface, which both avoids redundant
+ * work on the hot path and keeps the cached flag the single source of
+ * truth once the runtime has signalled readiness.
  *
  * @param runtimeReady The previously cached readiness state.
- * @returns True when the runtime is already known to be ready or is now detected as ready.
+ * @returns True when the runtime is already known to be ready or is now
+ *          detected as ready by the policy.
  */
 export function resolveRuntimeReadiness(runtimeReady: boolean): boolean {
     if (runtimeReady) {
         return true;
     }
 
-    const globals = globalThis as RuntimeReadyGlobals;
-    const scripts = resolveRuntimeScripts(globals);
-    if (scripts === null) {
-        return false;
-    }
-
-    return scripts.some((entry) => typeof entry === "function");
+    const decision = evaluateRuntimeReadiness({ globals: globalThis });
+    return decision.state === "ready";
 }
 
 /**
- * Ensure the global `application_surface` property forwards to the GameMaker builtin table.
+ * Ensure the global `application_surface` property forwards to the
+ * GameMaker builtin table.
  */
 export function ensureApplicationSurfaceAccessor(): void {
     const globals = globalThis as Record<string, unknown>;
