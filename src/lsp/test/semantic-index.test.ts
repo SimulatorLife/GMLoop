@@ -1354,6 +1354,39 @@ void test("semantic index exposes indexProjectRoot to perform background project
     }
 });
 
+void test("indexProjectRoot pre-warming reaches full tier and satisfies a references query without a second build", async () => {
+    const fixture = await createTwoScriptProject();
+    const store = Lsp.createGmlDocumentStore();
+    const semanticIndex = createTestSemanticIndex(store);
+
+    try {
+        // Pre-warm the project root the same way background/root-only callers do
+        // (no open document), so the definitions-tier cold start schedules a
+        // background full-tier build through the root-only build path.
+        await semanticIndex.indexProjectRoot(fixture.projectRoot);
+
+        const document = store.open({
+            uri: Lsp.filePathToUri(fixture.sourcePath),
+            languageId: "gml",
+            version: 1,
+            text: fixture.sourceText
+        });
+        const offset = fixture.sourceText.indexOf("target();");
+
+        // findReferences requires a full (Tier 2) snapshot. If the root-only
+        // pre-warm path silently stayed on the definitions tier instead of
+        // publishing full-tier facts, this would either time out or resolve
+        // against a stale/partial index instead of the cross-file target.
+        await waitForCondition(async () => {
+            const references = await semanticIndex.findReferences(document, offset, "target", true);
+            return references.some((reference) => reference.uri === Lsp.filePathToUri(fixture.targetPath));
+        });
+    } finally {
+        await semanticIndex.dispose();
+        await fixture.cleanup();
+    }
+});
+
 /**
  * Exercise the role-focused interfaces that compose {@link GmlSemanticIndex}.
  *
