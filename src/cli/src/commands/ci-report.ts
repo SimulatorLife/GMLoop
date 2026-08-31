@@ -8,6 +8,8 @@ import { pathToFileURL } from "node:url";
 import { Core } from "@gmloop/core";
 import { Command } from "commander";
 
+import { normalizePath } from "../shared/path-normalization.js";
+
 const MANIFEST_SCHEMA_VERSION = 1;
 const REPORT_SCHEMA_VERSION = 3;
 const TIMING_SCHEMA_VERSION = 1;
@@ -73,10 +75,6 @@ type FileDuration = Readonly<{
 
 function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function normalizePath(value: string): string {
-    return value.split(path.sep).join("/");
 }
 
 function digestText(value: string): string {
