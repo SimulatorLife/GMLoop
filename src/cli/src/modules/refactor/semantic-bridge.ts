@@ -2142,8 +2142,11 @@ export class GmlSemanticBridge {
         const fileRecord = this.projectIndex.files?.[filePath];
 
         if (fileRecord && Array.isArray(fileRecord.declarations)) {
-            // This is a bit complex as we need to map back to symbol IDs
-            // For now, we'll return what we can find
+            // Declarations are populated synchronously while SCIP symbol
+            // resolution can be deferred; the deterministic `gml/unknown/<name>`
+            // prefix is what `snapshot-refactor-queries.test.ts` (and the
+            // hot-reload consumers downstream) assert on, so the fallback id
+            // must not be replaced with a random placeholder.
             for (const decl of fileRecord.declarations) {
                 if (decl.name) {
                     symbols.push({

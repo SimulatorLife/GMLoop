@@ -2535,8 +2535,11 @@ export class RefactorEngine {
                 return;
             }
 
-            // Simple heuristic: check if the old name still appears as an identifier
-            // This is a basic check - full validation would require re-parsing
+            // Text-only scanner: keep rename latency bounded by avoiding a fresh
+            // parse + SCIP index for every post-edit tick. The semantic analyzer
+            // (see `docs/target-state.md` §2.4 vs §4) owns binding-scope cases;
+            // oldName-in-comments is reported as a warning so doc references
+            // can be cleaned up without blocking the transaction.
             const identifierPattern = new RegExp(String.raw`\b${Core.escapeRegExp(oldName)}\b`, "g");
             const oldNameMatches = content.match(identifierPattern);
 
