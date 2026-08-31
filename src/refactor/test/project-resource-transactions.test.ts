@@ -10,10 +10,12 @@ import {
     addObjectEvent,
     addProjectResource,
     addRoomInstance,
+    createRoomLayer,
     deleteObjectEvent,
     deleteRoomInstance,
     duplicateProjectResource,
     moveProjectResource,
+    moveRoomInstanceToLayer,
     ProjectResourceKind,
     readProjectMetadataDocument,
     removeProjectResource,
@@ -34,6 +36,19 @@ async function createTemporaryProjectRoot(): Promise<string> {
 
 async function fsMkdtemp(prefix: string): Promise<string> {
     return await mkdtemp(path.join(os.tmpdir(), prefix));
+}
+
+function findLayerByName(
+    document: Record<string, unknown>,
+    layerName: string
+): { instances: Array<{ name: string; objectId: { name: string } }>; name: string } {
+    const layers = document.layers as Array<{
+        instances: Array<{ name: string; objectId: { name: string } }>;
+        name: string;
+    }>;
+    const layer = layers.find((entry) => entry.name === layerName);
+    assert.ok(layer, `Expected room document to contain layer '${layerName}'.`);
+    return layer;
 }
 
 async function writeProjectFile(projectRoot: string, relativePath: string, contents: string | Buffer): Promise<void> {
@@ -523,6 +538,111 @@ void test("addRoomInstance appends an object instance to a room with dry-run saf
         ).document;
         assert.deepEqual(deletedMetadata.instanceCreationOrder, []);
         assert.deepEqual(deletedMetadata.layers[0].instances, []);
+    } finally {
+        await rm(projectRoot, { force: true, recursive: true });
+    }
+});
+
+void test("moveRoomInstanceToLayer relocates an instance between named instance layers with dry-run safety", async () => {
+    const projectRoot = await createTemporaryProjectRoot();
+
+    try {
+        await addProjectResource({
+            dryRun: false,
+            projectRoot,
+            resourceKind: ProjectResourceKind.OBJECT,
+            resourceName: "obj_enemy"
+        });
+        await addProjectResource({
+            dryRun: false,
+            projectRoot,
+            resourceKind: ProjectResourceKind.ROOM,
+            resourceName: "rm_main"
+        });
+        await createRoomLayer({
+            depth: -100,
+            dryRun: false,
+            layerName: "Instances_Enemies",
+            projectRoot,
+            roomName: "rm_main"
+        });
+
+        const added = await addRoomInstance({
+            dryRun: false,
+            objectName: "obj_enemy",
+            projectRoot,
+            roomName: "rm_main",
+            x: 16,
+            y: 48
+        });
+        assert.equal(added.layerName, "Instances");
+
+        const roomMetadataPath = path.join(projectRoot, "rooms/rm_main/rm_main.yy");
+
+        const moveDryRun = await moveRoomInstanceToLayer({
+            dryRun: true,
+            instanceId: added.instanceId,
+            projectRoot,
+            roomName: "rm_main",
+            targetLayerName: "Instances_Enemies"
+        });
+        assert.equal(moveDryRun.action, "move");
+        assert.equal(moveDryRun.dryRun, true);
+        assert.equal(moveDryRun.layerName, "Instances_Enemies");
+        assert.equal(moveDryRun.instanceId, added.instanceId);
+        assert.equal(moveDryRun.objectName, "obj_enemy");
+        assert.equal(moveDryRun.x, 16);
+        assert.equal(moveDryRun.y, 48);
+
+        const dryRunMetadata = Core.parseProjectMetadataDocumentForMutation(
+            await readFile(roomMetadataPath, "utf8"),
+            roomMetadataPath
+        ).document;
+        assert.equal(findLayerByName(dryRunMetadata, "Instances").instances.length, 1);
+        assert.equal(findLayerByName(dryRunMetadata, "Instances_Enemies").instances.length, 0);
+
+        const moveWrite = await moveRoomInstanceToLayer({
+            dryRun: false,
+            instanceId: added.instanceId,
+            projectRoot,
+            roomName: "rm_main",
+            targetLayerName: "Instances_Enemies"
+        });
+        assert.equal(moveWrite.action, "move");
+        assert.equal(moveWrite.dryRun, false);
+        assert.equal(moveWrite.layerName, "Instances_Enemies");
+
+        const writtenMetadata = Core.parseProjectMetadataDocumentForMutation(
+            await readFile(roomMetadataPath, "utf8"),
+            roomMetadataPath
+        ).document;
+        assert.equal(findLayerByName(writtenMetadata, "Instances").instances.length, 0);
+        const enemyLayerInstances = findLayerByName(writtenMetadata, "Instances_Enemies").instances;
+        assert.equal(enemyLayerInstances.length, 1);
+        assert.equal(enemyLayerInstances[0].name, added.instanceId);
+        assert.equal(enemyLayerInstances[0].objectId.name, "obj_enemy");
+
+        await assert.rejects(
+            moveRoomInstanceToLayer({
+                dryRun: true,
+                instanceId: added.instanceId,
+                projectRoot,
+                roomName: "rm_main",
+                targetLayerName: "Instances_Missing"
+            }),
+            /does not contain an instance layer named 'Instances_Missing'/u
+        );
+
+        await assert.rejects(
+            moveRoomInstanceToLayer({
+                dryRun: true,
+                instanceId: "inst_does_not_exist",
+                projectRoot,
+                roomName: "rm_main",
+                targetLayerName: "Instances_Enemies"
+            }),
+            /Could not find room instance 'inst_does_not_exist'/u
+        );
     } finally {
         await rm(projectRoot, { force: true, recursive: true });
     }

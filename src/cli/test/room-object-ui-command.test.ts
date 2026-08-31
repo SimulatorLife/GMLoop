@@ -765,6 +765,127 @@ void test("room layer delete rejects non-empty instance layers", async () => {
     }
 });
 
+void test("room layer move-resource relocates a room instance to another instance layer through CLI write mode", async () => {
+    const projectRoot = await createTemporaryRoomInstanceCliProject();
+
+    try {
+        const createLayerResult = await runCliTestCommand({
+            argv: [
+                "room",
+                "layer",
+                "create",
+                "rm_main",
+                "Instances_Enemies",
+                "-100",
+                "--path",
+                projectRoot,
+                "--json",
+                "--write"
+            ]
+        });
+        assert.equal(createLayerResult.exitCode, 0);
+
+        const addInstanceResult = await runCliTestCommand({
+            argv: [
+                "room",
+                "instance",
+                "add",
+                "rm_main",
+                "obj_player",
+                "10",
+                "20",
+                "--path",
+                projectRoot,
+                "--json",
+                "--write"
+            ]
+        });
+        assert.equal(addInstanceResult.exitCode, 0);
+        const addInstancePayload = JSON.parse(addInstanceResult.stdout) as { payload: { instanceId: string } };
+        const instanceId = addInstancePayload.payload.instanceId;
+
+        const dryRunResult = await runCliTestCommand({
+            argv: [
+                "room",
+                "layer",
+                "move-resource",
+                "rm_main",
+                instanceId,
+                "Instances_Enemies",
+                "--path",
+                projectRoot,
+                "--json"
+            ]
+        });
+        assert.equal(dryRunResult.exitCode, 0);
+        const dryRunPayload = JSON.parse(dryRunResult.stdout) as {
+            command: string;
+            payload: { action: string; dryRun: boolean; instanceId: string; layerName: string };
+        };
+        assert.equal(dryRunPayload.command, "room layer move-resource");
+        assert.equal(dryRunPayload.payload.action, "move");
+        assert.equal(dryRunPayload.payload.dryRun, true);
+        assert.equal(dryRunPayload.payload.instanceId, instanceId);
+        assert.equal(dryRunPayload.payload.layerName, "Instances_Enemies");
+
+        const roomMetadataPath = path.join(projectRoot, "rooms/rm_main/rm_main.yy");
+        const dryRunRoomMetadata = Core.parseProjectMetadataDocumentForMutation(
+            await readFile(roomMetadataPath, "utf8"),
+            roomMetadataPath
+        ).document;
+        const dryRunLayers = dryRunRoomMetadata.layers as Array<{ instances: Array<unknown>; name: string }>;
+        assert.equal(dryRunLayers.find((layer) => layer.name === "Instances")?.instances.length, 1);
+        assert.equal(dryRunLayers.find((layer) => layer.name === "Instances_Enemies")?.instances.length, 0);
+
+        const writeResult = await runCliTestCommand({
+            argv: [
+                "room",
+                "layer",
+                "move-resource",
+                "rm_main",
+                instanceId,
+                "Instances_Enemies",
+                "--path",
+                projectRoot,
+                "--json",
+                "--write"
+            ]
+        });
+        assert.equal(writeResult.exitCode, 0);
+        const writePayload = JSON.parse(writeResult.stdout) as {
+            payload: { dryRun: boolean; layerName: string };
+        };
+        assert.equal(writePayload.payload.dryRun, false);
+        assert.equal(writePayload.payload.layerName, "Instances_Enemies");
+
+        const writtenRoomMetadata = Core.parseProjectMetadataDocumentForMutation(
+            await readFile(roomMetadataPath, "utf8"),
+            roomMetadataPath
+        ).document;
+        const writtenLayers = writtenRoomMetadata.layers as Array<{ instances: Array<unknown>; name: string }>;
+        assert.equal(writtenLayers.find((layer) => layer.name === "Instances")?.instances.length, 0);
+        assert.equal(writtenLayers.find((layer) => layer.name === "Instances_Enemies")?.instances.length, 1);
+
+        const missingLayerResult = await runCliTestCommand({
+            argv: [
+                "room",
+                "layer",
+                "move-resource",
+                "rm_main",
+                instanceId,
+                "Instances_Missing",
+                "--path",
+                projectRoot,
+                "--json"
+            ]
+        });
+        assert.equal(missingLayerResult.exitCode, 1);
+        assert.match(missingLayerResult.stderr, /does not contain an instance layer named 'Instances_Missing'/u);
+    } finally {
+        await rm(projectRoot, { force: true, recursive: true });
+    }
+});
+
 void test("room camera list exposes structured view metadata", async () => {
     const projectRoot = await createTemporaryRoomInstanceCliProject();
 

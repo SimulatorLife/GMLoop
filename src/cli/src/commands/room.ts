@@ -36,6 +36,8 @@ type RoomMutationOptions = SharedProjectContextOptions &
     }>;
 
 const ROOM_LAYER_NAME_ARGUMENT_DESCRIPTION = "Layer name";
+const ROOM_INSTANCE_ID_ARGUMENT_TAG = "<instance-id>";
+const ROOM_INSTANCE_ID_ARGUMENT_DESCRIPTION = "Room instance id";
 
 function addRoomSharedOptions(command: Command): Command {
     return command
@@ -326,6 +328,24 @@ async function runRoomLayerReorderAction(
     });
 
     printRoomPayload({ command: "room layer reorder", ok: true, payload: toRoomLayerMutationPayload(result) });
+}
+
+async function runRoomLayerMoveResourceAction(
+    roomName: string,
+    instanceId: string,
+    targetLayerName: string,
+    options: RoomMutationOptions
+): Promise<void> {
+    const context = await resolveCommandProjectContext(options);
+    const result = await Refactor.moveRoomInstanceToLayer({
+        dryRun: options.write !== true,
+        instanceId,
+        projectRoot: context.projectRoot,
+        roomName,
+        targetLayerName
+    });
+
+    printRoomPayload({ command: "room layer move-resource", ok: true, payload: toRoomInstanceMutationPayload(result) });
 }
 
 async function runRoomCameraUpdateAction(
@@ -625,6 +645,30 @@ function createRoomLayerCommand(): Command {
             layer.addCommand(nested);
             continue;
         }
+        if (layerLeaf === "move-resource") {
+            nested
+                .argument("<room>", "Room name")
+                .argument(ROOM_INSTANCE_ID_ARGUMENT_TAG, ROOM_INSTANCE_ID_ARGUMENT_DESCRIPTION)
+                .argument("<layer>", "Target instance layer name");
+            nested.action(async function roomLayerMoveResourceAction(
+                roomName: string,
+                instanceId: string,
+                targetLayerName: string
+            ) {
+                try {
+                    await runRoomLayerMoveResourceAction(
+                        roomName,
+                        instanceId,
+                        targetLayerName,
+                        this.opts<RoomMutationOptions>()
+                    );
+                } catch (error) {
+                    handleCliError(error);
+                }
+            });
+            layer.addCommand(nested);
+            continue;
+        }
         nested.action(function roomLayerAction() {
             const options = this.opts<RoomMutationOptions>();
             emitRoomUnavailableLeaf(`room layer ${layerLeaf}`, options, "room_layer_mutation");
@@ -750,7 +794,7 @@ export function createRoomCommand(): Command {
         applyStandardCommandOptions(new Command("inspect")).description("Inspect room instance.")
     )
         .argument("<room>", "Room name")
-        .argument("<instance-id>", "Room instance id");
+        .argument(ROOM_INSTANCE_ID_ARGUMENT_TAG, ROOM_INSTANCE_ID_ARGUMENT_DESCRIPTION);
     instanceInspect.action(async function roomInstanceInspectAction(roomName: string, instanceId: string) {
         try {
             await runRoomInstanceInspectAction(roomName, instanceId, this.opts<RoomMutationOptions>());
@@ -785,7 +829,7 @@ export function createRoomCommand(): Command {
         applyStandardCommandOptions(new Command("update")).description("Update room instance.")
     )
         .argument("<room>", "Room name")
-        .argument("<instance-id>", "Room instance id")
+        .argument(ROOM_INSTANCE_ID_ARGUMENT_TAG, ROOM_INSTANCE_ID_ARGUMENT_DESCRIPTION)
         .argument("<x>", "Updated instance x coordinate")
         .argument("<y>", "Updated instance y coordinate")
         .addOption(createWriteOption());
@@ -808,7 +852,7 @@ export function createRoomCommand(): Command {
         applyStandardCommandOptions(new Command("delete")).description("Delete room instance.")
     )
         .argument("<room>", "Room name")
-        .argument("<instance-id>", "Room instance id")
+        .argument(ROOM_INSTANCE_ID_ARGUMENT_TAG, ROOM_INSTANCE_ID_ARGUMENT_DESCRIPTION)
         .addOption(createWriteOption());
     instanceDelete.action(function roomInstanceDeleteAction(roomName: string, instanceId: string) {
         const options = this.opts<RoomMutationOptions>();

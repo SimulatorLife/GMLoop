@@ -74,6 +74,18 @@ export interface DeleteRoomInstanceRequest {
 }
 
 /**
+ * Parameters for moving an existing object instance to a different instance
+ * layer inside a GameMaker room.
+ */
+export interface MoveRoomInstanceToLayerRequest {
+    dryRun?: boolean;
+    instanceId: string;
+    projectRoot: string;
+    roomName: string;
+    targetLayerName: string;
+}
+
+/**
  * Parameters for inspecting one GameMaker room instance.
  */
 export interface InspectRoomInstanceRequest {
@@ -94,7 +106,7 @@ export interface ListRoomInstancesRequest {
  * Summary returned after a room instance mutation.
  */
 export interface RoomInstanceMutationResult {
-    action: "add" | "delete" | "update";
+    action: "add" | "delete" | "move" | "update";
     deletedPaths: Array<string>;
     dryRun: boolean;
     instanceId: string;
@@ -123,8 +135,16 @@ export interface RoomInstanceInspectionResult {
     y: number;
 }
 
-function findInstanceLayer(roomDocument: Record<string, unknown>, roomName: string): RoomInstanceLayerRecord {
+/**
+ * Collect every top-level instance layer declared by a room document,
+ * normalizing each layer's `instances` array to a fresh mutable copy so
+ * callers can safely splice/push without mutating the parsed document until
+ * the mutation is ready to be written.
+ */
+function findAllInstanceLayers(roomDocument: Record<string, unknown>): Array<RoomInstanceLayerRecord> {
     const layers = Core.asArray(roomDocument.layers);
+    const instanceLayers: Array<RoomInstanceLayerRecord> = [];
+
     for (const layer of layers) {
         if (!Core.isObjectLike(layer)) {
             continue;
@@ -138,10 +158,57 @@ function findInstanceLayer(roomDocument: Record<string, unknown>, roomName: stri
 
         const existingInstances = Core.asArray(layerRecord.instances);
         layerRecord.instances = [...existingInstances];
-        return layerRecord as RoomInstanceLayerRecord;
+        instanceLayers.push(layerRecord as RoomInstanceLayerRecord);
     }
 
-    throw new Error(`Room '${roomName}' does not contain a ${INSTANCE_LAYER_RESOURCE_TYPE} layer.`);
+    return instanceLayers;
+}
+
+function findInstanceLayer(roomDocument: Record<string, unknown>, roomName: string): RoomInstanceLayerRecord {
+    const instanceLayer = findAllInstanceLayers(roomDocument)[0];
+    if (instanceLayer === undefined) {
+        throw new Error(`Room '${roomName}' does not contain a ${INSTANCE_LAYER_RESOURCE_TYPE} layer.`);
+    }
+    return instanceLayer;
+}
+
+function findInstanceLayerByName(
+    roomDocument: Record<string, unknown>,
+    roomName: string,
+    layerName: string
+): RoomInstanceLayerRecord {
+    const instanceLayer = findAllInstanceLayers(roomDocument).find(
+        (layer) =>
+            Core.getNonEmptyString(layer.name) === layerName || Core.getNonEmptyString(layer["%Name"]) === layerName
+    );
+    if (instanceLayer === undefined) {
+        throw new Error(`Room '${roomName}' does not contain an instance layer named '${layerName}'.`);
+    }
+    return instanceLayer;
+}
+
+/**
+ * Locate an object instance by id across every instance layer in a room,
+ * regardless of which layer currently holds it.
+ */
+function locateRoomInstanceAcrossLayers(
+    roomDocument: Record<string, unknown>,
+    roomName: string,
+    instanceId: string
+): Readonly<{ layer: RoomInstanceLayerRecord; located: LocatedRoomInstance }> {
+    for (const layer of findAllInstanceLayers(roomDocument)) {
+        for (const [index, instance] of layer.instances.entries()) {
+            if (!Core.isObjectLike(instance)) {
+                continue;
+            }
+            const instanceRecord = instance as Record<string, unknown>;
+            if (getRoomInstanceName(instanceRecord) === instanceId) {
+                return Object.freeze({ layer, located: Object.freeze({ index, instance: instanceRecord }) });
+            }
+        }
+    }
+
+    throw new Error(`Could not find room instance '${instanceId}' in room '${roomName}'.`);
 }
 
 function createRoomInstance(instanceId: string, objectReference: ResourceReference, x: number, y: number) {
@@ -423,6 +490,60 @@ export async function deleteRoomInstance(request: DeleteRoomInstanceRequest): Pr
         roomPath: context.roomReference.path,
         warnings: [],
         writtenPaths: [context.roomReference.path],
+        x,
+        y
+    };
+}
+
+/**
+ * Move an existing object instance from its current instance layer to a
+ * different named instance layer inside the same GameMaker room.
+ *
+ * @param request - Room instance layer move request.
+ * @returns Summary of the planned or applied room metadata mutation.
+ */
+export async function moveRoomInstanceToLayer(
+    request: MoveRoomInstanceToLayerRequest
+): Promise<RoomInstanceMutationResult> {
+    const projectRoot = path.resolve(request.projectRoot);
+    const manifest = await resolveProjectManifestFile(projectRoot);
+    const manifestDocument = await readProjectMetadataDocument(manifest.absolutePath);
+    const roomReference = locateRoomReference(getManifestResources(manifestDocument), request.roomName);
+    const roomAbsolutePath = path.join(projectRoot, Core.fromPosixPath(roomReference.path));
+    const roomDocument = await readProjectMetadataDocument(roomAbsolutePath);
+
+    const { layer: sourceLayer, located } = locateRoomInstanceAcrossLayers(
+        roomDocument,
+        roomReference.name,
+        request.instanceId
+    );
+    const targetLayer = findInstanceLayerByName(roomDocument, roomReference.name, request.targetLayerName);
+    const objectReference = readRoomInstanceObjectReference(located.instance, request.instanceId);
+    const x = readRoomInstanceCoordinate(located.instance, "x");
+    const y = readRoomInstanceCoordinate(located.instance, "y");
+    const targetLayerName = Core.getNonEmptyString(targetLayer.name) ?? request.targetLayerName;
+    const changed = sourceLayer !== targetLayer;
+
+    if (changed) {
+        sourceLayer.instances = sourceLayer.instances.filter((_, index) => index !== located.index);
+        targetLayer.instances = [...targetLayer.instances, located.instance];
+    }
+
+    const dryRun = request.dryRun !== false;
+    await writeRoomDocumentIfApplying(dryRun, roomAbsolutePath, roomDocument);
+
+    return {
+        action: "move",
+        deletedPaths: [],
+        dryRun,
+        instanceId: request.instanceId,
+        layerName: targetLayerName,
+        objectName: objectReference.name,
+        objectPath: objectReference.path,
+        roomName: roomReference.name,
+        roomPath: roomReference.path,
+        warnings: [],
+        writtenPaths: [roomReference.path],
         x,
         y
     };
