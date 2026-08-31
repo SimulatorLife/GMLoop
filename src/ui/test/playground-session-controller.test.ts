@@ -1,54 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import type { ReactiveController, ReactiveControllerHost } from "lit";
-
 import { PlaygroundSessionController } from "../src/app/components/playground-session-controller.js";
 import type { GraphVisualizationUiModel } from "../src/app/contracts.js";
 import { DEFAULT_PLAYGROUND_GML_SOURCE } from "../src/app/playground-default-gml.js";
 import type { GraphVisualizationUiState } from "../src/app/state/types.js";
-
-class MockReactiveHost implements ReactiveControllerHost {
-    #controllers: ReactiveController[] = [];
-    public requestUpdateCallCount = 0;
-    public readonly updateComplete = Promise.resolve(true);
-
-    public addController(controller: ReactiveController): void {
-        this.#controllers.push(controller);
-    }
-
-    public removeController(controller: ReactiveController): void {
-        this.#controllers = this.#controllers.filter((candidate) => candidate !== controller);
-    }
-
-    public requestUpdate(): void {
-        this.requestUpdateCallCount += 1;
-    }
-
-    public connect(): void {
-        for (const controller of this.#controllers) {
-            controller.hostConnected?.();
-        }
-    }
-
-    public disconnect(): void {
-        for (const controller of this.#controllers) {
-            controller.hostDisconnected?.();
-        }
-    }
-
-    public update(): void {
-        for (const controller of this.#controllers) {
-            controller.hostUpdate?.();
-        }
-    }
-
-    public updated(): void {
-        for (const controller of this.#controllers) {
-            controller.hostUpdated?.();
-        }
-    }
-}
+import { MockReactiveHost } from "./mock-reactive-host.js";
 
 interface SessionSpyCallbacks {
     onInputChangedCalls: number;
