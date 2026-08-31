@@ -1100,6 +1100,13 @@ export class GmlToJsEmitter {
     private isCurrentStaticDeclaration(declaration: VariableDeclaratorNode): boolean {
         const name = this.resolveIdentifierName(declaration.id);
         const currentScope = this.staticScopes.at(-1);
+        // `staticScopes` is expected to be non-empty whenever this method is called
+        // (its only call site checks `staticScopes.length > 0` first), but `.at(-1)`
+        // still types as possibly `undefined`. Guard explicitly rather than relying
+        // on that external invariant, so this method stays safe to call directly.
+        if (!currentScope) {
+            return false;
+        }
         return name !== null && currentScope.names.has(name);
     }
 
