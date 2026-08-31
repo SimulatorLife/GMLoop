@@ -20,7 +20,12 @@ import {
     resolveObjectEventPartsFromSegments,
     resolveObjectRuntimeIdFromSegments
 } from "./runtime-identifiers.js";
-import { extractReferencesFromAst, extractSymbolsFromAst } from "./symbol-extraction.js";
+import {
+    extractReferencesFromAst,
+    extractReferencesPerTopLevelFunction,
+    extractSymbolsFromAst,
+    type PerTopLevelFunctionReferences
+} from "./symbol-extraction.js";
 
 /**
  * Default parser adapter used by the coordinator when no override is supplied.
@@ -769,6 +774,7 @@ interface MacroTranspilationResult {
     readonly effectiveAst: unknown;
     readonly effectiveSymbols: Array<string>;
     readonly effectiveReferences: Array<string>;
+    readonly macroReferences: Array<string>;
     readonly macroDefinitionChanges: Array<string>;
     readonly candidateDefinitionsBySourcePath: TranspilerTypes.MacroDefinitionsBySourcePath | null;
     readonly macroDefinitions: Map<string, TranspilerTypes.MacroDefinition>;
@@ -831,6 +837,7 @@ function prepareMacroTranspilation(
         effectiveAst,
         effectiveSymbols,
         effectiveReferences,
+        macroReferences,
         macroDefinitionChanges,
         candidateDefinitionsBySourcePath,
         macroDefinitions
@@ -870,6 +877,85 @@ function asScriptProgramAst(ast: unknown): ScriptProgramAst | null {
         type: "Program",
         body: record.body.filter((node): node is ScriptAstNode => Core.isObjectLike(node))
     };
+}
+
+/**
+ * Augment a per-function reference map with file-wide macro references.
+ *
+ * Macro references are project-wide, so every patch in a file needs to see
+ * them. Walking the AST does not surface them; the macro extractor in
+ * `prepareMacroTranspilation` does. We accept them as an explicit input so
+ * the helper stays decoupled from the macro pipeline.
+ *
+ * The returned object is fully owned by the caller (each set is a fresh
+ * copy), so downstream consumers can safely mutate the sets without
+ * disturbing the upstream reference map.
+ */
+function augmentPerTopLevelFunctionReferencesWithMacros(
+    base: PerTopLevelFunctionReferences,
+    macroReferences: ReadonlyArray<string>
+): PerTopLevelFunctionReferences {
+    if (macroReferences.length === 0) {
+        return base;
+    }
+
+    const functionReferences = new Map<string, ReadonlySet<string>>();
+    for (const [name, references] of base.functionReferences) {
+        const augmented = new Set(references);
+        for (const macroReference of macroReferences) {
+            augmented.add(macroReference);
+        }
+        functionReferences.set(name, augmented);
+    }
+
+    const topLevelReferences = new Set(base.topLevelReferences);
+    for (const macroReference of macroReferences) {
+        topLevelReferences.add(macroReference);
+    }
+
+    return { functionReferences, topLevelReferences };
+}
+
+/**
+ * Selects the reference set to use for a single transpile patch.
+ *
+ * For single-patch files (single-function scripts, top-level-only scripts, and
+ * event files) the patch AST spans the entire executable AST, so the
+ * file-wide `effectiveReferences` are already exact. Returning that array
+ * avoids re-walking the AST in the per-patch loop.
+ *
+ * For multi-function scripts, the patch AST is a Program containing either a
+ * single FunctionDeclaration (per-function patch) or a list of top-level
+ * non-function nodes (top-level patch). The previously-computed
+ * `perFunctionReferences` map gives the references for each named function,
+ * and the helper's `topLevelReferences` set covers the top-level patch.
+ */
+function selectPatchReferences(
+    patchAst: unknown,
+    effectiveReferences: ReadonlyArray<string>,
+    perFunctionReferences: PerTopLevelFunctionReferences | null
+): ReadonlyArray<string> {
+    if (perFunctionReferences === null) {
+        return effectiveReferences;
+    }
+
+    const program = asScriptProgramAst(patchAst);
+    if (program === null || program.body.length === 0) {
+        return effectiveReferences;
+    }
+
+    // Single-FunctionDeclaration patch: look up by the function's source identifier.
+    if (program.body.length === 1 && program.body[0].type === "FunctionDeclaration") {
+        const functionName = getScriptFunctionName(program.body[0]);
+        if (functionName !== null) {
+            const references = perFunctionReferences.functionReferences.get(functionName);
+            if (references !== undefined) {
+                return Array.from(references);
+            }
+        }
+    }
+
+    return Array.from(perFunctionReferences.topLevelReferences);
 }
 
 function getScriptFunctionName(node: ScriptAstNode): string | null {
@@ -1035,6 +1121,7 @@ export function transpileFile(
             effectiveAst,
             effectiveSymbols,
             effectiveReferences,
+            macroReferences,
             macroDefinitionChanges,
             candidateDefinitionsBySourcePath,
             macroDefinitions
@@ -1055,14 +1142,30 @@ export function transpileFile(
                   ]
                 : transpileScriptPatches(context, content, filePath, transpilationAst, parsedSymbols);
 
+        // Multi-function scripts emit one patch per top-level function plus a
+        // top-level patch. Each patch needs its own per-function reference set,
+        // so compute the per-function reference map from the effective AST once
+        // and reuse it for every patch instead of re-walking the patch AST.
+        // Single-patch files (single-function scripts, top-level-only scripts,
+        // event files) get `null` here and fall back to `effectiveReferences`
+        // directly — the per-patch AST walk would be redundant work.
+        const perFunctionReferences =
+            patchPlans.length > 1
+                ? augmentPerTopLevelFunctionReferencesWithMacros(
+                      extractReferencesPerTopLevelFunction(transpilationAst),
+                      macroReferences
+                  )
+                : null;
+
         const patchPayloads = patchPlans.map(({ patch, ast: patchAst }) => {
+            const patchReferences = selectPatchReferences(patchAst, effectiveReferences, perFunctionReferences);
             const patchWithMetadata = {
                 ...patch,
                 metadata: {
                     ...patch.metadata,
                     sourcePath: filePath,
                     dependencies: resolvePatchDependencies(
-                        extractReferencesFromAst(patchAst),
+                        patchReferences,
                         patch.id,
                         parsedSymbols,
                         context.scriptNames
