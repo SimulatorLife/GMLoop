@@ -433,3 +433,15 @@ export interface CallTargetAnalyzer {
     callTargetKind(node: CallExpressionNode): "script" | "builtin" | "unknown";
     callTargetSymbol(node: CallExpressionNode): string | null;
 }
+
+/**
+ * Receives balanced lexical-scope lifecycle events during AST emission.
+ *
+ * Scope-aware semantic collaborators implement this contract separately from
+ * identifier and call-target analysis so the emitter never infers capabilities
+ * from a collaborator's concrete shape.
+ */
+export interface LexicalScopeController {
+    pushScope(localNames: ReadonlySet<string>): void;
+    popScope(): void;
+}

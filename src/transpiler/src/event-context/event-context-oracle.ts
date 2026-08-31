@@ -27,6 +27,7 @@ import type {
     IdentifierAnalyzer,
     IdentifierMetadata,
     IdentifierNode,
+    LexicalScopeController,
     SemKind
 } from "../emitter/ast.js";
 /**
@@ -57,13 +58,13 @@ const DELEGATE_OWNED_KINDS: ReadonlySet<SemKind> = new Set<SemKind>([
  * const baseOracle = createSemanticOracle({ scriptNames });
  * const localVars = collectLocalVariables(ast);
  * const oracle = new EventContextOracle(baseOracle, localVars);
- * const emitter = new GmlToJsEmitter(oracle);
+ * const emitter = new GmlToJsEmitter(oracle, {}, oracle);
  * // Identifiers like `health` → `self.health`
  * // Identifiers like `var speed` → `speed` (local)
  * // Built-ins like `abs` → `abs`
  * ```
  */
-export class EventContextOracle implements IdentifierAnalyzer, CallTargetAnalyzer {
+export class EventContextOracle implements IdentifierAnalyzer, CallTargetAnalyzer, LexicalScopeController {
     private readonly delegate: IdentifierAnalyzer & CallTargetAnalyzer;
     private readonly scopeStack: Array<ReadonlySet<string>>;
 
