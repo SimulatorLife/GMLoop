@@ -1701,7 +1701,17 @@ function classifyAssetReferenceEdgeType(reference: Record<string, unknown>): Gra
         return "placed_in_room";
     }
 
-    return fromResourcePath && isProjectManifestPath(fromResourcePath) ? "contains" : "references";
+    if (fromResourcePath && isProjectManifestPath(fromResourcePath)) {
+        return "contains";
+    }
+
+    // Everything else is a resource-to-resource metadata pointer (an object's
+    // sprite/collision mask, a room's background/creation script, a sequence's
+    // tracked sprite, and similar `.yy` asset references). Classifying these as
+    // `depends_on` keeps them distinct from `references`, which is reserved for
+    // GML source referencing a symbol, so the graph and viewer can tell asset
+    // ownership apart from code usage instead of flattening both into one edge type.
+    return "depends_on";
 }
 
 function addCrossGraphEdges(
