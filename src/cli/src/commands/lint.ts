@@ -1,4 +1,4 @@
-import { constants, existsSync, readdirSync, statSync } from "node:fs";
+import { constants, existsSync, statSync } from "node:fs";
 import { access } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
@@ -19,6 +19,7 @@ import {
     WRITE_OPTION_DESCRIPTION,
     WRITE_OPTION_FLAGS
 } from "../cli-core/shared-command-options.js";
+import { traverseDirectoryEntries } from "../shared/directory-traversal.js";
 import {
     calculateElapsedNanoseconds,
     formatElapsedNanosecondsAsMilliseconds
@@ -42,49 +43,7 @@ const FLAT_CONFIG_CANDIDATES = Object.freeze([
 const SUPPORTED_FORMATTERS = new Set(["stylish", "json", "checkstyle"]);
 const GML_FILE_EXTENSION = ".gml";
 const LINT_RUNTIME_ERROR_RULE_ID = "gml/internal-runtime-error";
-
-/**
- * Enumerate all directory paths under a root by walking breadth-first.
- *
- * The search uses a mutable queue internally (the same primitive used for
- * tree-level directory traversal) but is wrapped in a pure interface so
- * callers are isolated from the bookkeeping state. Each yielded path has been
- * confirmed as a directory via `readdirSync`.
- *
- * @param rootDirectoryPath - The topmost directory to search.
- * @yields Absolute paths of every directory at or beneath `rootDirectoryPath`.
- */
-function* walkDirectoryTree(rootDirectoryPath: string): Generator<string> {
-    const pending: Array<string> = [rootDirectoryPath];
-
-    while (pending.length > 0) {
-        const currentDirectory = pending.shift();
-        if (!currentDirectory) {
-            continue;
-        }
-
-        let entries: Array<{ name: string; isDirectory(): boolean }>;
-        try {
-            entries = readdirSync(currentDirectory, { withFileTypes: true });
-        } catch {
-            continue;
-        }
-
-        for (const entry of entries) {
-            if (!entry.isDirectory()) {
-                continue;
-            }
-
-            if (Core.DEFAULT_PROJECT_EXCLUDES.directoryNames.includes(entry.name)) {
-                continue;
-            }
-
-            const entryPath = path.join(currentDirectory, entry.name);
-            pending.push(entryPath);
-            yield entryPath;
-        }
-    }
-}
+const EXCLUDED_DIRECTORY_NAMES = new Set(Core.DEFAULT_PROJECT_EXCLUDES.directoryNames);
 
 const LINT_COMMAND_CLI_EXAMPLE = "pnpm dlx gmloop lint path/to/project";
 const LINT_COMMAND_FIX_EXAMPLE = `pnpm dlx gmloop lint ${WRITE_OPTION_FLAGS} path/to/project`;
@@ -432,9 +391,9 @@ type LintProgressLineWriter = (line: string) => void;
 /**
  * Collect all .gml file paths under a root directory.
  *
- * Delegates breadth-first tree traversal to `walkDirectoryTree` so this
- * function is responsible only for the file-filter step — no queue bookkeeping
- * lives inline here.
+ * Delegates tree traversal to the shared {@link traverseDirectoryEntries}
+ * helper so this function is responsible only for project-wide exclusion and
+ * the `.gml` file filter — no queue bookkeeping lives inline here.
  *
  * @param directoryPath - Root directory to search recursively.
  * @returns Sorted array of absolute file paths with the `.gml` extension.
@@ -442,42 +401,18 @@ type LintProgressLineWriter = (line: string) => void;
 function collectGmlFilesFromDirectory(directoryPath: string): Array<string> {
     const discoveredFilePaths: Array<string> = [];
 
-    // walkDirectoryTree yields subdirectories; the root itself must be scanned
-    // for files before the generator descends into its children.
-    scanDirectoryForGmlFiles(directoryPath, discoveredFilePaths);
-
-    for (const currentDirectory of walkDirectoryTree(directoryPath)) {
-        scanDirectoryForGmlFiles(currentDirectory, discoveredFilePaths);
-    }
+    traverseDirectoryEntries(directoryPath, {
+        shouldDescend: (_fullPath, entry) => !EXCLUDED_DIRECTORY_NAMES.has(entry.name),
+        onFile: (filePath, entry) => {
+            if (entry.name.toLowerCase().endsWith(GML_FILE_EXTENSION)) {
+                discoveredFilePaths.push(filePath);
+            }
+        },
+        continueOnReadError: true,
+        ignoreDotEntries: false
+    });
 
     return discoveredFilePaths.sort((leftPath, rightPath) => leftPath.localeCompare(rightPath));
-}
-
-/**
- * Scan a single directory for `.gml` files and push their absolute paths into `out`.
- *
- * Separated from `collectGmlFilesFromDirectory` so the root directory and each
- * discovered subdirectory are handled by the same file-scanning logic.
- */
-function scanDirectoryForGmlFiles(directoryPath: string, out: Array<string>): void {
-    let entries: Array<{ name: string; isFile(): boolean }>;
-    try {
-        entries = readdirSync(directoryPath, { withFileTypes: true });
-    } catch {
-        return;
-    }
-
-    for (const entry of entries) {
-        if (!entry.isFile()) {
-            continue;
-        }
-
-        if (!entry.name.toLowerCase().endsWith(GML_FILE_EXTENSION)) {
-            continue;
-        }
-
-        out.push(path.join(directoryPath, entry.name));
-    }
 }
 
 function expandLintTargetsForRecovery(parameters: {
