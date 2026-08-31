@@ -170,13 +170,20 @@ function formatNonScientificNumericLiteral(value: number): string | null {
 
 function buildMultiplicativeExpression(components: MultiplicativeComponents): string | null {
     const { coefficient, factors } = components;
-    if (coefficient === 0) {
+    if (isApproximatelyZero(coefficient)) {
         return "0";
     }
 
+    // `coefficient` is accumulated via chained floating-point multiplication and
+    // division of the source's literal factors (see collectMultiplicativeComponents),
+    // so a mathematically-exact identity such as `x / 9 / 0.2 * 1.8` can land on
+    // 0.9999999999999999 instead of exactly 1. Compare with tolerance so those cases
+    // still collapse to the bare factor list instead of emitting a spurious
+    // near-1 coefficient.
+    const coefficientIsOne = Core.areNumbersApproximatelyEqual(coefficient, 1);
     const terms: string[] = [];
-    const coefficientText = coefficient === 1 ? "1" : formatNonScientificNumericLiteral(coefficient);
-    if (coefficient !== 1 && coefficientText === null) {
+    const coefficientText = coefficientIsOne ? "1" : formatNonScientificNumericLiteral(coefficient);
+    if (!coefficientIsOne && coefficientText === null) {
         return null;
     }
 
@@ -189,7 +196,7 @@ function buildMultiplicativeExpression(components: MultiplicativeComponents): st
     // append small positive coefficients at the end, preserving the ordering of
     // the remaining factors.
     const shouldPrefixCoefficient =
-        coefficient !== 1 && (factors.size === 0 || coefficient <= -1 || coefficient >= 1 || coefficient < 0);
+        !coefficientIsOne && (factors.size === 0 || coefficient <= -1 || coefficient >= 1 || coefficient < 0);
     if (shouldPrefixCoefficient) {
         terms.push(coefficientText);
     }
@@ -210,7 +217,7 @@ function buildMultiplicativeExpression(components: MultiplicativeComponents): st
     // if we decided not to prefix the coefficient earlier (typically because it
     // was a small positive fraction) then append it now so the term sequence
     // still includes the numeric factor.
-    if (!shouldPrefixCoefficient && coefficient !== 1) {
+    if (!shouldPrefixCoefficient && !coefficientIsOne) {
         terms.push(coefficientText);
     }
 
@@ -245,7 +252,7 @@ function simplifyMathExpression(sourceText: string, node: any, _source?: string)
         }
     }
 
-    if (components.coefficient === 0) {
+    if (isApproximatelyZero(components.coefficient)) {
         return "0";
     }
 

@@ -196,3 +196,25 @@ void test("optimize-math-expressions removes *= and /= no-op rewrites for floati
     assert.equal(result.output.includes("0.9999999999999998"), false);
     assert.equal(result.output.includes("1.0000000000000002"), false);
 });
+
+void test("optimize-math-expressions collapses a chained division/multiplication coefficient that rounds to near-1", () => {
+    // Regression coverage for the precision-bug fix in `buildMultiplicativeExpression`
+    // / `simplifyMathExpression`. `collectMultiplicativeComponents` accumulates
+    // `coefficient` via real floating-point multiplication and division of the
+    // source's literal factors as it walks a chain of `*`/`/` operators. For a
+    // mathematically-exact identity chain like `y / 9 / 0.2 * 1.8` (dividing by 9,
+    // then by 0.2, then multiplying back by 9 * 0.2 = 1.8), IEEE-754 rounding
+    // lands the accumulated coefficient on 0.9999999999999999 instead of exactly
+    // 1 (verified: (1 / 9 / 0.2) * 1.8 === 0.9999999999999999 in Node). A strict
+    // `coefficient === 1` check would miss this and emit the noisy, unsimplified
+    // `y * 0.9999999999999999` instead of collapsing the expression to the bare
+    // `y` factor. The tolerance-aware `Core.areNumbersApproximatelyEqual`
+    // comparison recognizes the coefficient as "effectively 1" and simplifies.
+    const input = "result = y / 9 / 0.2 * 1.8;\n";
+    const result = lintWithRule("optimize-math-expressions", input, {});
+
+    assert.equal(result.messages.length, 1);
+    assert.equal(result.messages[0]?.messageId, "optimizeMathExpressions");
+    assert.equal(result.output, "result = y;\n");
+    assert.equal(result.output.includes("0.9999999999999999"), false);
+});
