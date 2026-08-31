@@ -620,26 +620,74 @@ async function lintTargetWithRuntimeRecovery(parameters: {
 }
 
 /**
+ * Convert an expanded file target into the {@link RecoverableLintTarget}
+ * shape expected by runtime recovery.
+ *
+ * Acts as a Law-of-Demeter façade alongside {@link createRecoverablePassthroughTarget}
+ * so the per-target conversion lives next to its peer. The mapper here
+ * never reaches back into the `expandedTargets` collection or reads any
+ * caller state — it only touches its single `target` argument — keeping
+ * the inbound parameter list at exactly one neighbour and avoiding the
+ * `parameters.expandedTargets.fileTargets.map(...)` four-segment walk that
+ * the previous inline-implementation repeated for every file target.
+ *
+ * File targets are already absolute `.gml` paths resolved by
+ * {@link expandLintTargetsForRecovery}, so the returned target uses the
+ * input as its own fallback file path.
+ *
+ * @param target Absolute `.gml` path that should be lint-executed.
+ * @returns Frozen {@link RecoverableLintTarget} with matching `target` and `fallbackFilePath`.
+ */
+function createRecoverableFileTarget(target: string): RecoverableLintTarget {
+    return Object.freeze({ target, fallbackFilePath: target });
+}
+
+/**
+ * Convert an expanded passthrough target into the {@link RecoverableLintTarget}
+ * shape expected by runtime recovery, resolving the relative path against
+ * the working directory for the fallback bookkeeping.
+ *
+ * Acts as a Law-of-Demeter façade alongside {@link createRecoverableFileTarget}
+ * so the per-target conversion lives next to its peer. This helper is the
+ * only one in the recoverable-target pipeline that talks to `cwd`; isolating
+ * the read here keeps {@link createRecoverableLintTargets} from having to
+ * thread the `parameters.cwd` value into an inline lambda at every call
+ * site, and the per-target `parameters.expandedTargets.passthroughTargets.map(...)`
+ * four-segment walk collapses into a two-segment `map(helper)` call.
+ *
+ * Passthrough targets may be relative glob patterns that only resolve at
+ * lint time, so the returned fallback is resolved against `cwd` for stable
+ * error reporting when the original target fails.
+ *
+ * @param target Passthrough path that could not be resolved to a `.gml` file.
+ * @param cwd Working directory used to resolve the fallback file path.
+ * @returns Frozen {@link RecoverableLintTarget} with the cwd-resolved fallback.
+ */
+function createRecoverablePassthroughTarget(target: string, cwd: string): RecoverableLintTarget {
+    return Object.freeze({ target, fallbackFilePath: path.resolve(cwd, target) });
+}
+
+/**
  * Convert expanded lint targets into the execution order expected by runtime
  * recovery, keeping file targets ahead of passthrough patterns while
  * centralizing fallback path bookkeeping.
+ *
+ * Delegates the per-target conversion to {@link createRecoverableFileTarget}
+ * and {@link createRecoverablePassthroughTarget} so this function only walks
+ * the `expandedTargets` collection and never builds the per-target shape
+ * itself. The helpers also encapsulate the `Object.freeze(...)` call so the
+ * returned `RecoverableLintTarget` array stays read-only end-to-end and the
+ * fall-through `Object.freeze({...})` literals that previously lived inline
+ * here never need to be repeated when a new target shape is added.
  */
 function createRecoverableLintTargets(parameters: {
     cwd: string;
     expandedTargets: Readonly<{ fileTargets: Array<string>; passthroughTargets: Array<string> }>;
 }): Array<RecoverableLintTarget> {
     return [
-        ...parameters.expandedTargets.fileTargets.map((target) =>
-            Object.freeze({
-                target,
-                fallbackFilePath: target
-            })
-        ),
+        ...parameters.expandedTargets.fileTargets.map((target) => createRecoverableFileTarget(target)),
         ...parameters.expandedTargets.passthroughTargets.map((target) =>
-            Object.freeze({
-                target,
-                fallbackFilePath: path.resolve(parameters.cwd, target)
-            })
+            createRecoverablePassthroughTarget(target, parameters.cwd)
         )
     ];
 }
@@ -1625,6 +1673,8 @@ export const __lintCommandTest__ = Object.freeze({
     discoverFlatConfig,
     expandLintTargetsForRecovery,
     extractLintRuntimeFailureLocation,
+    createRecoverableFileTarget,
+    createRecoverablePassthroughTarget,
     createRecoverableLintTargets,
     appendRetainedLintResults,
     lintTargetsWithRuntimeRecovery,
