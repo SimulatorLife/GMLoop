@@ -744,7 +744,7 @@ class GraphVisualizationServeController {
                     .flat()
                     .filter((fixture): fixture is GraphVisualizationServerPlaygroundFixture => fixture !== null);
             } catch (error) {
-                console.error("Failed to discover playground fixtures:", error);
+                console.error(`Failed to discover playground fixtures: ${Core.getErrorMessageOrFallback(error)}`);
                 return [];
             }
         };
