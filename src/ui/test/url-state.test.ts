@@ -43,7 +43,16 @@ void test("serializeGraphVisualizationUiStateToUrlSearch round-trips supported n
         searchQuery: "enemy ship"
     });
 
-    assert.equal(search, "?page=config&docs=linting&view=json&labels=always&config=rendered&q=enemy+ship");
+    // Assert on individual query parameters (order-independent) rather than the full
+    // string: the contract is "each field round-trips", not "keys appear in this order".
+    const parameters = new URLSearchParams(search);
+    assert.equal(parameters.get("page"), "config");
+    assert.equal(parameters.get("docs"), "linting");
+    assert.equal(parameters.get("view"), "json");
+    assert.equal(parameters.get("labels"), "always");
+    assert.equal(parameters.get("config"), "rendered");
+    assert.equal(parameters.get("q"), "enemy ship");
+
     const parsed = parseGraphVisualizationUiStateFromUrlSearch(search);
     assert.equal(parsed.activePage, "config");
     assert.equal(parsed.activeDocsView, "linting");
@@ -87,8 +96,14 @@ void test("resetProjectScopedGraphVisualizationUiState removes project search fr
         liveReloadErrorMessage: "Old project live reload error."
     });
 
-    assert.equal(
-        serializeGraphVisualizationUiStateToUrlSearch(reset),
-        "?page=fix&docs=codemods&view=json&labels=always&config=rendered"
-    );
+    // Assert on individual parameters instead of the full string: the contract is
+    // "project-scoped fields are cleared, navigation/view preferences survive",
+    // not "keys appear in this exact order".
+    const resetParameters = new URLSearchParams(serializeGraphVisualizationUiStateToUrlSearch(reset));
+    assert.equal(resetParameters.get("page"), "fix");
+    assert.equal(resetParameters.get("docs"), "codemods");
+    assert.equal(resetParameters.get("view"), "json");
+    assert.equal(resetParameters.get("labels"), "always");
+    assert.equal(resetParameters.get("config"), "rendered");
+    assert.equal(resetParameters.get("q"), null, "search query is project-scoped and must be cleared");
 });
