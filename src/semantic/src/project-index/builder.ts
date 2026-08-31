@@ -3369,18 +3369,17 @@ async function prepareIncrementalState(
         relationships
     });
 
+    // `removeChangedFilesFromAggregationState` above already swept every
+    // changed path (including these non-deleted ones) out of `scopeMap`,
+    // `filesMap`, and `identifierCollections`. Re-running
+    // `removeFileFromAggregationState` per file here would re-scan the full
+    // project state for entries that are already gone, so this pass only
+    // resolves the descriptor metadata needed to re-add each file.
     const changedFileDescriptors = changedGmlFiles
         .filter((change) => change.kind !== "deleted")
         .map((change) => {
             const changedFile = change.filePath;
             const relativeChangedPath = path.relative(resolvedRoot, changedFile);
-            removeFileFromAggregationState(
-                relativeChangedPath,
-                scopeMap,
-                filesMap,
-                identifierCollections,
-                relationships
-            );
             let fileResourcePath = `scripts/${path.basename(changedFile, ".gml")}/${path.basename(changedFile)}`;
             for (const [resPath, resRecord] of resourceAnalysis.resourcesMap.entries()) {
                 if (resRecord.gmlFiles.has(relativeChangedPath)) {
