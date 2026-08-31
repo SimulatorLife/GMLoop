@@ -1,9 +1,29 @@
+import type { CallTargetAnalyzer, EmitOptions, GmlNode, IdentifierAnalyzer } from "./ast.js";
+import { GmlToJsEmitter as GmlToJsEmitterImplementation } from "./emitter.js";
+import { createSemanticOracle as createSemanticOracleImplementation } from "./semantic-factory.js";
+
+type StatementLike = GmlNode | undefined | null;
+type SemanticInput = IdentifierAnalyzer & CallTargetAnalyzer;
+
+/**
+ * Emit JavaScript from a GML AST using the transpiler emitter.
+ *
+ * @param ast - AST node to emit.
+ * @param sem - Optional semantic oracle/analyzers for identifier and call analysis.
+ * @param options - Optional emitter options to override defaults.
+ * @returns JavaScript code for the AST.
+ */
+export function emitJavaScript(ast: StatementLike, sem?: SemanticInput, options: Partial<EmitOptions> = {}): string {
+    const oracle = sem ?? createSemanticOracleImplementation();
+    const emitter = new GmlToJsEmitterImplementation(oracle, options);
+    return emitter.emit(ast);
+}
+
 export type * from "./ast.js";
 export { emitBuiltinFunction, isBuiltinFunction } from "./builtins.js";
 export { wrapConditional, wrapConditionalBody, wrapRawBody } from "./code-wrapping.js";
 export { tryFoldConstantExpression } from "./constant-folding.js";
 export { GmlToJsEmitter } from "./emitter.js";
-export { emitJavaScript } from "./emitter-entrypoints.js";
 export { lowerEnumDeclaration } from "./enum-lowering.js";
 export { escapeTemplateText, isIdentifierLike, normalizeStructKeyText, stringifyStructKey } from "./js-string-utils.js";
 export { normalizeGmlNumericLiteral } from "./literal-normalization.js";
