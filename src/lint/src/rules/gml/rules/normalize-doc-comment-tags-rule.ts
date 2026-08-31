@@ -1,6 +1,6 @@
 import type { Rule } from "eslint";
 
-import { normalizeDocCommentTagAliasLine } from "../doc-comment-tag-aliases.js";
+import { normalizeDocCommentTagAliasLine } from "../../../doc-comment/tag-aliases.js";
 import type { GmlRuleDefinition } from "../index.js";
 import { createMeta, reportLineTextFixes } from "../rule-base-helpers.js";
 

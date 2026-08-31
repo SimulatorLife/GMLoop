@@ -8,3 +8,4 @@ export * from "./normalize-param-name.js";
 export * from "./synthetic-generation.js";
 export * from "./synthetic-helpers.js";
 export * from "./synthetic-merge.js";
+export * from "./tag-aliases.js";
