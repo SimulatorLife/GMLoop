@@ -209,6 +209,17 @@ void test("malformed scientific-notation helpers are only exposed through Lint n
     assert.equal(typeof Lint.toPlainDecimalFromScientificLiteral, "function");
 });
 
+void test("Phase A malformed-comment fixer is reachable from the public Lint namespace", () => {
+    // target-state.md §3.1: Phase A token-based fixes must run even when
+    // parse fails, so this helper must not be locked behind AST-based rule
+    // execution (which only runs after a successful parse).
+    assert.equal(typeof Lint.fixMalformedComments, "function");
+
+    const result = Lint.fixMalformedComments("/ @param foo The foo parameter");
+    assert.equal(result.sourceText, "// @param foo The foo parameter");
+    assert.equal(typeof result.indexMapper, "function");
+});
+
 void test("feather namespace rule IDs are strictly feather/gm#### only", () => {
     const featherRuleShortNames = Object.keys(Lint.featherPlugin.rules);
     assert.ok(featherRuleShortNames.length > 0);
