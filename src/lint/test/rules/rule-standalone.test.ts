@@ -1497,6 +1497,18 @@ void test("optimize-math-expressions folds lengthdir_x half-subtraction pattern 
     assertEquals(result.output, expected);
 });
 
+void test("optimize-math-expressions accepts floating-point noise in lengthdir unit literals", () => {
+    const input = [
+        "var s = size * 0.5;",
+        "s = s * (1.0000000000000002 - lengthdir_x(1.0000000000000002, swim_rot));",
+        ""
+    ].join("\n");
+    const expected = ["var s = size * 0.25 * (1 - lengthdir_x(1, swim_rot));", ""].join("\n");
+
+    const result = lintWithRule("optimize-math-expressions", input, {});
+    assertEquals(result.output, expected);
+});
+
 void test("optimize-math-expressions merges three consecutive lengthdir scalar assignment patterns", () => {
     // Regression test: the original for-loop with "index -= 1" after splice+1 caused the loop
     // to make zero net progress (splice shrinks body by 1, then index -= 1, then loop increments
