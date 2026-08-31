@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { Lsp } from "@gmloop/lsp";
 import type { Semantic } from "@gmloop/semantic";
 
 type SemanticIndexStore = ReturnType<typeof Semantic.openSemanticIndexStore>;
@@ -9,19 +8,6 @@ type SemanticSnapshotAcquireResult = Awaited<ReturnType<SemanticIndexStore["acqu
 type SemanticSnapshotLease = Extract<SemanticSnapshotAcquireResult, Readonly<{ kind: "lease" }>>["lease"];
 type SemanticSnapshotQueries = SemanticSnapshotLease["queries"];
 type SemanticSymbolOccurrenceMatch = ReturnType<SemanticSnapshotQueries["findDefinitions"]>[number];
-
-const {
-    hasExactResolution,
-    readOccurrenceEndFromMatch,
-    readOccurrenceFilePathFromMatch,
-    readOccurrenceRoleFromMatch,
-    readOccurrenceStartFromMatch,
-    readResolutionKindFromMatch,
-    readSymbolDisplayNameFromMatch,
-    readSymbolIdFromMatch,
-    readSymbolKindFromMatch,
-    readSymbolNameFromMatch
-} = Lsp.Intelligence;
 
 function createExactMatch(): SemanticSymbolOccurrenceMatch {
     return {
@@ -85,43 +71,43 @@ function createCandidateMatch(): SemanticSymbolOccurrenceMatch {
     };
 }
 
-void test("readSymbolNameFromMatch returns the canonical symbol name", () => {
-    assert.equal(readSymbolNameFromMatch(createExactMatch()), "player_hp");
+void test("match.symbol.name exposes the canonical symbol name", () => {
+    assert.equal(createExactMatch().symbol.name, "player_hp");
 });
 
-void test("readSymbolIdFromMatch returns the canonical semantic symbol id", () => {
-    assert.equal(readSymbolIdFromMatch(createExactMatch()), "symbol-1");
+void test("match.symbol.symbolId exposes the canonical semantic symbol id", () => {
+    assert.equal(createExactMatch().symbol.symbolId, "symbol-1");
 });
 
-void test("readSymbolDisplayNameFromMatch returns the LSP-facing label", () => {
-    assert.equal(readSymbolDisplayNameFromMatch(createExactMatch()), "player_hp");
+void test("match.symbol.displayName surfaces the LSP-facing label", () => {
+    assert.equal(createExactMatch().symbol.displayName, "player_hp");
 });
 
-void test("readSymbolKindFromMatch returns the symbol kind discriminator", () => {
-    assert.equal(readSymbolKindFromMatch(createExactMatch()), "globalVariable");
+void test("match.symbol.kind exposes the symbol kind discriminator", () => {
+    assert.equal(createExactMatch().symbol.kind, "globalVariable");
 });
 
-void test("readOccurrenceRoleFromMatch surfaces definition vs reference", () => {
-    assert.equal(readOccurrenceRoleFromMatch(createExactMatch()), "definition");
-    assert.equal(readOccurrenceRoleFromMatch(createCandidateMatch()), "reference");
+void test("match.occurrence.role distinguishes definition vs reference", () => {
+    assert.equal(createExactMatch().occurrence.role, "definition");
+    assert.equal(createCandidateMatch().occurrence.role, "reference");
 });
 
-void test("readOccurrenceStartFromMatch and readOccurrenceEndFromMatch expose offsets", () => {
+void test("match.occurrence.start and match.occurrence.end expose the offsets", () => {
     const match = createExactMatch();
-    assert.equal(readOccurrenceStartFromMatch(match), 30);
-    assert.equal(readOccurrenceEndFromMatch(match), 42);
+    assert.equal(match.occurrence.start, 30);
+    assert.equal(match.occurrence.end, 42);
 });
 
-void test("readOccurrenceFilePathFromMatch returns the occurrence file path", () => {
-    assert.equal(readOccurrenceFilePathFromMatch(createCandidateMatch()), "scripts/enemy/enemy.gml");
+void test("match.occurrence.filePath exposes the occurrence file path", () => {
+    assert.equal(createCandidateMatch().occurrence.filePath, "scripts/enemy/enemy.gml");
 });
 
-void test("readResolutionKindFromMatch preserves the discriminated-union narrowing", () => {
-    assert.equal(readResolutionKindFromMatch(createExactMatch()), "exact");
-    assert.equal(readResolutionKindFromMatch(createCandidateMatch()), "candidate");
+void test("match.occurrence.resolution.kind preserves the discriminated-union narrowing", () => {
+    assert.equal(createExactMatch().occurrence.resolution.kind, "exact");
+    assert.equal(createCandidateMatch().occurrence.resolution.kind, "candidate");
 });
 
-void test("hasExactResolution returns true only for exact matches", () => {
-    assert.equal(hasExactResolution(createExactMatch()), true);
-    assert.equal(hasExactResolution(createCandidateMatch()), false);
+void test("match.occurrence.resolution.kind equals 'exact' only for exact matches", () => {
+    assert.equal(createExactMatch().occurrence.resolution.kind === "exact", true);
+    assert.equal(createCandidateMatch().occurrence.resolution.kind === "exact", false);
 });
