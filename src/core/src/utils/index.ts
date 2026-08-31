@@ -6,6 +6,7 @@ export * from "./enumerated-options.js";
 export * from "./environment.js";
 export * from "./error.js";
 export * from "./function.js";
+export * from "./html.js";
 export * from "./json.js";
 export * from "./number.js";
 export * from "./numeric-options.js";
