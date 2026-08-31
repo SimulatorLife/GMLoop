@@ -1,11 +1,12 @@
 import { createHash } from "node:crypto";
-import { constants, type Dirent } from "node:fs";
-import { access, lstat, mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { type Dirent } from "node:fs";
+import { lstat, mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { Core } from "@gmloop/core";
 
+import { pathExists } from "../../shared/path-exists.js";
 import {
     type AgentCliCommandRunner,
     type AgentConfigTargetSelection,
@@ -124,15 +125,6 @@ type ProjectFileDisposition = Readonly<{
 
 function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-async function pathExists(candidatePath: string): Promise<boolean> {
-    try {
-        await access(candidatePath, constants.F_OK);
-        return true;
-    } catch {
-        return false;
-    }
 }
 
 async function readDirectoryEntries(directoryPath: string): Promise<ReadonlyArray<Dirent>> {
