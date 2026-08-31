@@ -55,3 +55,41 @@ void test("applyWorkspaceEdit keeps large write batches below the bounded-I/O re
         `Expected bounded-I/O applyWorkspaceEdit runtime <= ${PERFORMANCE_THRESHOLD_MS}ms, received ${durationMs.toFixed(2)}ms`
     );
 });
+
+void test("applyWorkspaceEdit honors an explicit ioConcurrency override", async () => {
+    const engine = new Refactor.RefactorEngine();
+    const workspace = new Refactor.WorkspaceEdit();
+    const sourceByPath = new Map<string, string>();
+
+    for (let fileIndex = 0; fileIndex < FILE_COUNT; fileIndex += 1) {
+        const filePath = `scripts/demo_${fileIndex}.gml`;
+        const originalContent = `var old_name_${fileIndex} = ${fileIndex};\n`;
+        const replacementContent = `var new_name_${fileIndex} = ${fileIndex};\n`;
+        sourceByPath.set(filePath, originalContent);
+        workspace.addEdit(filePath, 0, originalContent.length, replacementContent);
+    }
+
+    let concurrentReads = 0;
+    let maxObservedConcurrentReads = 0;
+
+    const startTime = performance.now();
+    await engine.applyWorkspaceEdit(workspace, {
+        dryRun: true,
+        includeResultContent: false,
+        ioConcurrency: 1,
+        readFile: async (filePath) => {
+            concurrentReads += 1;
+            maxObservedConcurrentReads = Math.max(maxObservedConcurrentReads, concurrentReads);
+            await waitForDelay(IO_DELAY_MS);
+            concurrentReads -= 1;
+            return sourceByPath.get(filePath) ?? "";
+        }
+    });
+    const durationMs = performance.now() - startTime;
+
+    assert.equal(maxObservedConcurrentReads, 1, "Expected ioConcurrency: 1 to force fully sequential file reads");
+    assert.ok(
+        durationMs >= FILE_COUNT * IO_DELAY_MS,
+        `Expected sequential ioConcurrency: 1 runtime to reflect ${FILE_COUNT} serialized reads, received ${durationMs.toFixed(2)}ms`
+    );
+});

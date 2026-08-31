@@ -596,6 +596,15 @@ export interface ApplyWorkspaceEditOptions {
     writeFile?: WorkspaceWriteFile;
     renameFile?: (oldPath: string, newPath: string) => MaybePromise<void>;
     deleteFile?: (path: string) => MaybePromise<void>;
+    /**
+     * Maximum number of files read, written, or renamed concurrently while
+     * applying the edit. Defaults to
+     * `APPLY_WORKSPACE_EDIT_IO_CONCURRENCY_LIMIT`. Lower this on slow or
+     * resource-constrained storage (e.g. network drives, CI containers with
+     * limited file descriptors); raise it on fast local disks to shorten
+     * large batch-rename runs.
+     */
+    ioConcurrency?: number;
 }
 
 export interface RenameImpactNode {
