@@ -2,6 +2,7 @@ import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 import { readProjectOperationState } from "../../../modules/runtime/project-operation-state.js";
+import { createRefactorSubprocessMaxOldSpaceSizeArg } from "../../../shared/refactor-subprocess-memory.js";
 import type { GraphCommandSharedOptions, GraphResolutionContext } from "../shared.js";
 import type { GraphVisualizationProjectWorkflow } from "./types.js";
 
@@ -188,7 +189,7 @@ async function runGraphVisualizationProjectWorkflow(
     const cliEntryPath = fileURLToPath(new URL("../../../../index.js", import.meta.url));
     const args = ["--disable-warning=ExperimentalWarning"];
     if (workflow === "refactor") {
-        args.push("--max-old-space-size=16384");
+        args.push(createRefactorSubprocessMaxOldSpaceSizeArg());
     }
     args.push(cliEntryPath, ...createGraphVisualizationWorkflowArguments(workflow, context.projectRoot));
     if (configPath) {

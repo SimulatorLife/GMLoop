@@ -16,6 +16,7 @@ import {
     createVerboseOption,
     createWriteOption
 } from "../cli-core/shared-command-options.js";
+import { createRefactorSubprocessMaxOldSpaceSizeArg } from "../shared/refactor-subprocess-memory.js";
 import { SKIP_CLI_RUN_ENV_VAR } from "../shared/skip-cli-run.js";
 import {
     discoverProjectRoot,
@@ -271,7 +272,7 @@ async function runRefactorCodemodSubprocess(options: ValidatedFixCommandOptions)
 
     const subprocessArgs = [
         "--disable-warning=ExperimentalWarning",
-        "--max-old-space-size=16384",
+        createRefactorSubprocessMaxOldSpaceSizeArg(),
         cliEntryPath,
         ...createRefactorCodemodArgs(options)
     ];
