@@ -2,7 +2,7 @@ import { Core } from "@gmloop/core";
 import type { Rule } from "eslint";
 
 import type { GmlRuleDefinition } from "../index.js";
-import { type AstNodeRecord, createMeta, isAstNodeRecord } from "../rule-base-helpers.js";
+import { type AstNodeRecord, createMeta, getNodeRange, isAstNodeRecord } from "../rule-base-helpers.js";
 
 const { unwrapParenthesizedExpression } = Core;
 
@@ -22,14 +22,19 @@ type UndefinedCheckRewrite = Readonly<{
  * Detected `value (==|!=) undefined` comparison, normalised so the
  * `is_undefined(...)` rewrite can be built once and reused by every visitor.
  *
- * Two AST shapes both surface the same logical comparison:
+ * Three AST shapes all surface the same logical comparison:
  *   - A direct `BinaryExpression` (the `BinaryExpression` visitor)
  *   - A `UnaryExpression(!)` whose argument is a `BinaryExpression` (the
  *     `UnaryExpression` visitor)
+ *   - A `CallExpression` whose callee is the `!` identifier and whose sole
+ *     argument is a `BinaryExpression` (the `CallExpression` visitor) — the
+ *     GML grammar parses a `!` immediately followed by `(` as a call rather
+ *     than a unary expression (see `isLogicalNotCallExpression`), so this
+ *     shape is how `!(value == undefined)` actually arrives from the parser.
  * The visitor that observed the node also dictates which range should be
  * overwritten — the binary node itself for the first shape, the entire
- * unary node for the second. The detected outer negation is exposed
- * uniformly as `isExternallyNegated` so both visitors can share the
+ * wrapper node for the other two. The detected outer negation is exposed
+ * uniformly as `isExternallyNegated` so all three visitors can share the
  * replacement-text builder.
  */
 type UndefinedComparisonTarget = Readonly<{
@@ -69,54 +74,91 @@ function isUndefinedComparisonBinary(node: unknown): node is AstNodeRecord & {
     return isUndefinedIdentifier(node.left) || isUndefinedIdentifier(node.right);
 }
 
-function resolveImmediateNegatedWrapperRange(sourceText: string, start: number, end: number): [number, number] | null {
-    const wrapperStart = start - 2;
-    if (wrapperStart < 0 || end >= sourceText.length) {
-        return null;
+/**
+ * Detects the GML parser's call-shaped rendering of `!(...)`. The grammar
+ * treats a `!` immediately followed by `(` as a call expression whose callee
+ * is the `!` identifier rather than as a `UnaryExpression`, so this is the
+ * structural (whitespace-agnostic) equivalent of `UnaryExpression(!)` for
+ * that source shape. `logical-expression-traversal-normalization.ts` relies
+ * on the same parser quirk when it canonicalizes `!(...)` back into a real
+ * `UnaryExpression`.
+ */
+function isLogicalNotCallExpression(
+    node: AstNodeRecord
+): node is AstNodeRecord & { type: "CallExpression"; arguments: [unknown] } {
+    if (node.type !== "CallExpression" || !Array.isArray(node.arguments) || node.arguments.length !== 1) {
+        return false;
     }
 
-    return sourceText.slice(wrapperStart, start) === "!(" && sourceText[end] === ")" ? [wrapperStart, end + 1] : null;
+    const callee = node.callee ?? node.object;
+    return isAstNodeRecord(callee) && callee.type === "Identifier" && callee.name === "!";
 }
 
-function resolveUndefinedComparisonTarget(node: unknown, sourceText: string): UndefinedComparisonTarget | null {
+/** Structural negation wrapper: either a real `!` unary node or its call-shaped equivalent. */
+function isNegationWrapperNode(node: unknown): node is AstNodeRecord & { type: "UnaryExpression" | "CallExpression" } {
+    if (!isAstNodeRecord(node)) {
+        return false;
+    }
+
+    return (node.type === "UnaryExpression" && node.operator === "!") || isLogicalNotCallExpression(node);
+}
+
+function getNegationArgument(node: AstNodeRecord & { type: "UnaryExpression" | "CallExpression" }): unknown {
+    return node.type === "UnaryExpression" ? node.argument : (node.arguments as [unknown])[0];
+}
+
+/**
+ * Determines whether `node` is the immediate (parenthesis-unwrapped) operand
+ * of an ancestor negation wrapper. When it is, the wrapper's own visit
+ * already resolves and reports the combined rewrite, so the plain
+ * `BinaryExpression` visit should defer rather than reporting the inner
+ * range on its own.
+ */
+function isDirectOperandOfNegationWrapper(node: AstNodeRecord): boolean {
+    let current = (node as { parent?: unknown }).parent;
+    while (isAstNodeRecord(current) && current.type === "ParenthesizedExpression") {
+        current = (current as { parent?: unknown }).parent;
+    }
+
+    return isNegationWrapperNode(current);
+}
+
+function resolveUndefinedComparisonTarget(node: unknown): UndefinedComparisonTarget | null {
     if (!isAstNodeRecord(node)) {
         return null;
     }
 
-    if (node.type === "UnaryExpression" && node.operator === "!") {
-        const inner = unwrapParenthesizedExpression(node.argument);
+    if (isNegationWrapperNode(node)) {
+        const inner = unwrapParenthesizedExpression(getNegationArgument(node));
         if (!isUndefinedComparisonBinary(inner)) {
             return null;
         }
 
-        const start = Core.getNodeStartIndex(node);
-        const end = Core.getNodeEndIndex(node);
-        if (typeof start !== "number" || typeof end !== "number") {
+        const range = getNodeRange(node);
+        if (!range) {
             return null;
         }
 
         return {
             binary: inner,
             isExternallyNegated: true,
-            outerRange: [start, end]
+            outerRange: [range.start, range.end]
         };
     }
 
-    if (!isUndefinedComparisonBinary(node)) {
+    if (!isUndefinedComparisonBinary(node) || isDirectOperandOfNegationWrapper(node)) {
         return null;
     }
 
-    const start = Core.getNodeStartIndex(node);
-    const end = Core.getNodeEndIndex(node);
-    if (typeof start !== "number" || typeof end !== "number") {
+    const range = getNodeRange(node);
+    if (!range) {
         return null;
     }
 
-    const wrapperRange = resolveImmediateNegatedWrapperRange(sourceText, start, end);
     return {
         binary: node,
-        isExternallyNegated: wrapperRange !== null,
-        outerRange: wrapperRange ?? [start, end]
+        isExternallyNegated: false,
+        outerRange: [range.start, range.end]
     };
 }
 
@@ -130,7 +172,7 @@ function resolveUndefinedComparisonTarget(node: unknown, sourceText: string): Un
  * the result directly as a "report-or-skip" gate.
  */
 export function tryResolveUndefinedCheckRewrite(node: unknown, sourceText: string): UndefinedCheckRewrite | null {
-    const target = resolveUndefinedComparisonTarget(node, sourceText);
+    const target = resolveUndefinedComparisonTarget(node);
     if (!target) {
         return null;
     }
@@ -164,13 +206,16 @@ export function createPreferIsUndefinedCheckRule(definition: GmlRuleDefinition):
         create(context) {
             const sourceText = context.sourceCode.text;
 
-            // The `BinaryExpression` and `UnaryExpression` visitors share an
-            // identical body: resolve the rewrite via the shared helper and,
-            // when it succeeds, report a single diagnostic with the matching
-            // autofix. Extracting that body into one closure lets the rule's
-            // visitor declaration read as a flat mapping (`{ BinaryExpression:
-            // fn, UnaryExpression: fn }`) and guarantees the two entry points
-            // stay in lock-step if the rewrite shape ever grows.
+            // The `BinaryExpression`, `UnaryExpression`, and `CallExpression`
+            // visitors share an identical body: resolve the rewrite via the
+            // shared helper and, when it succeeds, report a single diagnostic
+            // with the matching autofix. Extracting that body into one closure
+            // lets the rule's visitor declaration read as a flat mapping and
+            // guarantees the entry points stay in lock-step if the rewrite
+            // shape ever grows. `CallExpression` is required alongside
+            // `UnaryExpression` because the GML grammar parses `!(...)` as a
+            // call to the `!` identifier rather than as a unary expression
+            // (see `isLogicalNotCallExpression`).
             const reportUndefinedCheckRewrite = (node: unknown): void => {
                 const rewrite = tryResolveUndefinedCheckRewrite(node, sourceText);
                 if (!rewrite) {
@@ -186,7 +231,8 @@ export function createPreferIsUndefinedCheckRule(definition: GmlRuleDefinition):
 
             return Object.freeze({
                 BinaryExpression: reportUndefinedCheckRewrite,
-                UnaryExpression: reportUndefinedCheckRewrite
+                UnaryExpression: reportUndefinedCheckRewrite,
+                CallExpression: reportUndefinedCheckRewrite
             });
         }
     });
