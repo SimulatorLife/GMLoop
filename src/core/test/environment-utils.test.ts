@@ -3,7 +3,11 @@ import { randomUUID } from "node:crypto";
 import process from "node:process";
 import { test } from "node:test";
 
-import { applyEnvironmentOverride, createEnvConfiguredValue } from "../src/utils/environment.js";
+import {
+    applyEnvironmentOverride,
+    createEnvConfiguredValue,
+    createEnvConfiguredValueWithFallback
+} from "../src/utils/environment.js";
 
 void test("applyEnvironmentOverride forwards values from provided env", () => {
     let received = null;
@@ -110,4 +114,27 @@ void test("createEnvConfiguredValue applies environment overrides", () => {
 
     assert.equal(applied, "42");
     assert.equal(config.get(), 42);
+});
+
+void test("createEnvConfiguredValueWithFallback falls back when resolve returns undefined", () => {
+    // The `resolve` JSDoc contract explicitly permits returning `undefined` to
+    // trigger the fallback, matching the `null` case. A regression here would
+    // let `undefined` leak through as the "configured" value instead.
+    const config = createEnvConfiguredValueWithFallback({
+        defaultValue: 5,
+        resolve: (value) => (value === "bad" ? undefined : Number(value))
+    });
+
+    assert.equal(config.set("bad"), 5);
+    assert.equal(config.get(), 5);
+});
+
+void test("createEnvConfiguredValueWithFallback falls back when resolve returns null", () => {
+    const config = createEnvConfiguredValueWithFallback({
+        defaultValue: 5,
+        resolve: (value) => (value === "bad" ? null : Number(value))
+    });
+
+    assert.equal(config.set("bad"), 5);
+    assert.equal(config.get(), 5);
 });
