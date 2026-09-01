@@ -43,7 +43,9 @@ export function isIdentifierCaseStyle(style: unknown): style is IdentifierCaseSt
 function createUnknownIdentifierCaseStyleError(style: unknown, optionName: string): RangeError {
     const validStyles = Array.from(IDENTIFIER_CASE_STYLE_SET).join(", ");
     const received = Core.describeValueForError(style);
-    return new RangeError(`Invalid identifier case style '${received}' for ${optionName}. Valid styles: ${validStyles}.`);
+    return new RangeError(
+        `Invalid identifier case style '${received}' for ${optionName}. Valid styles: ${validStyles}.`
+    );
 }
 
 export function parseIdentifierCaseStyle(value: unknown): IdentifierCaseStyleValue | null {
@@ -285,7 +287,10 @@ export function normalizeIdentifierCaseOptions(options: IdentifierCaseRawOptions
         defaultValue: IdentifierCaseStyle.OFF
     });
     const { scopeSettings, scopeStyles } = resolveScopeSettings(options, baseStyle);
-    const ignorePatterns = normalizeList(IDENTIFIER_CASE_IGNORE_OPTION_NAME, options[IDENTIFIER_CASE_IGNORE_OPTION_NAME]);
+    const ignorePatterns = normalizeList(
+        IDENTIFIER_CASE_IGNORE_OPTION_NAME,
+        options[IDENTIFIER_CASE_IGNORE_OPTION_NAME]
+    );
     const preservedIdentifiers = normalizeList(
         IDENTIFIER_CASE_PRESERVE_OPTION_NAME,
         options[IDENTIFIER_CASE_PRESERVE_OPTION_NAME]

@@ -34,10 +34,7 @@ import {
     resolveExplicitWorkflowTargetPath
 } from "../workflow/project-root.js";
 import { createCodemodExecutionOrderTracker } from "./refactor-codemod-execution-order.js";
-import {
-    shouldDeferInitialSemanticIndexBuild,
-    toModifiedSemanticIndexChanges
-} from "./refactor-semantic-index-scheduling.js";
+import { toModifiedSemanticIndexChanges } from "./refactor-semantic-index-scheduling.js";
 
 const { buildProjectIndex } = Semantic;
 const {
@@ -620,6 +617,57 @@ function selectConfiguredCodemodIds(
         .map((codemod) => codemod.id);
 }
 
+/**
+ * Determines whether the selected codemods require a semantic project index and,
+ * if so, whether the initial build can be deferred past the first non-dependent
+ * codemod.
+ *
+ * @param selectedCodemodIds Codemod ids selected for the current run.
+ * @param semanticIndexDependentCodemodIds Set of codemod ids that require a
+ *   semantic project index (pre-built before codemod execution begins).
+ * @returns An object describing the initial index build strategy.
+ */
+function resolveCodemodIndexStrategy(
+    selectedCodemodIds: ReadonlyArray<RegisteredCodemodId>,
+    semanticIndexDependentCodemodIds: ReadonlySet<RegisteredCodemodId>
+): {
+    requiresSemanticProjectIndex: boolean;
+    shouldDeferInitialSemanticIndexBuild: boolean;
+} {
+    const requiresSemanticProjectIndex = selectedCodemodIds.some((id) => semanticIndexDependentCodemodIds.has(id));
+    const firstSemanticCodemodIndex = selectedCodemodIds.findIndex((id) => semanticIndexDependentCodemodIds.has(id));
+    const shouldDeferInitialSemanticIndexBuild =
+        firstSemanticCodemodIndex > 0 &&
+        selectedCodemodIds.slice(0, firstSemanticCodemodIndex).some((id) => !semanticIndexDependentCodemodIds.has(id));
+
+    return { requiresSemanticProjectIndex, shouldDeferInitialSemanticIndexBuild };
+}
+
+/**
+ * Evaluates whether a semantic project index rebuild is needed before the next
+ * codemod in the pipeline, based on the current codemod's output and the
+ * remaining codemod queue.
+ *
+ * Does NOT mutate any state; callers are responsible for applying the result.
+ *
+ * @param completedCodemodId Id of the codemod that just finished.
+ * @param remainingCodemodIds Ids of codemods still pending in the pipeline.
+ * @param semanticIndexDependentCodemodIds Set of codemod ids that require the
+ *   semantic project index.
+ * @param pendingRefresh Whether a codemod has marked a refresh as needed.
+ * @returns `true` when an index rebuild is required before continuing; `false`
+ *   when no rebuild should occur at this time.
+ */
+function shouldRebuildSemanticIndexBeforeNextCodemod(
+    completedCodemodId: RegisteredCodemodId,
+    remainingCodemodIds: ReadonlyArray<RegisteredCodemodId>,
+    semanticIndexDependentCodemodIds: ReadonlySet<RegisteredCodemodId>,
+    pendingRefresh: boolean
+): boolean {
+    const nextCodemodId = remainingCodemodIds[0];
+    return pendingRefresh && nextCodemodId !== undefined && semanticIndexDependentCodemodIds.has(nextCodemodId);
+}
+
 async function performConfiguredCodemods(options: ValidatedCodemodOptions): Promise<void> {
     const { projectRoot, verbose, configPath, targetPaths, dryRun, onlyCodemods, list } = options;
 
@@ -650,18 +698,14 @@ async function performConfiguredCodemods(options: ValidatedCodemodOptions): Prom
 
     const selectedCodemodIds = selectConfiguredCodemodIds(config, onlyCodemods);
     const semanticIndexDependentCodemodIds = new Set(listSemanticProjectIndexDependentCodemodIds());
-    const requiresSemanticProjectIndex = selectedCodemodIds.some((codemodId) =>
-        semanticIndexDependentCodemodIds.has(codemodId)
-    );
-    const deferInitialSemanticIndexBuild = shouldDeferInitialSemanticIndexBuild(
+    const { requiresSemanticProjectIndex, shouldDeferInitialSemanticIndexBuild } = resolveCodemodIndexStrategy(
         selectedCodemodIds,
         semanticIndexDependentCodemodIds
     );
-
     let projectIndex: BuiltProjectIndex | null = null;
     let coordinator: ProjectIndexCoordinator | null = null;
 
-    if (requiresSemanticProjectIndex && !deferInitialSemanticIndexBuild) {
+    if (requiresSemanticProjectIndex && !shouldDeferInitialSemanticIndexBuild) {
         if (verbose) {
             console.log("Building or loading semantic project index...");
         }
@@ -691,7 +735,7 @@ async function performConfiguredCodemods(options: ValidatedCodemodOptions): Prom
         let currentCodemodId: string | null = null;
         let lastProgressLogTime = 0;
         let codemodStartTime = 0;
-        let hasPendingSemanticIndexRefresh = deferInitialSemanticIndexBuild;
+        let hasPendingSemanticIndexRefresh = shouldDeferInitialSemanticIndexBuild;
         const result = await engine.executeConfiguredCodemods({
             projectRoot,
             targetPaths,
@@ -737,11 +781,14 @@ async function performConfiguredCodemods(options: ValidatedCodemodOptions): Prom
                 }
 
                 const nextCodemodId = codemodExecutionOrder.nextCodemodId();
+                const remainingCodemodIds = nextCodemodId === undefined ? [] : [nextCodemodId];
 
-                const shouldRefreshBeforeRemainingSemanticCodemods =
-                    hasPendingSemanticIndexRefresh &&
-                    nextCodemodId !== undefined &&
-                    semanticIndexDependentCodemodIds.has(nextCodemodId);
+                const shouldRefreshBeforeRemainingSemanticCodemods = shouldRebuildSemanticIndexBeforeNextCodemod(
+                    summary.id,
+                    remainingCodemodIds,
+                    semanticIndexDependentCodemodIds,
+                    hasPendingSemanticIndexRefresh
+                );
 
                 if (shouldRefreshBeforeRemainingSemanticCodemods) {
                     hasPendingSemanticIndexRefresh = false;

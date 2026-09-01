@@ -1,10 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import {
-    readCxcDxStore,
-    readRuntimeObjectPool
-} from "../src/browser/support/runtime-value-utils.js";
+import { readCxcDxStore, readRuntimeObjectPool } from "../src/browser/support/runtime-value-utils.js";
 
 void describe("runtime object-store readers", () => {
     void describe("readCxcDxStore", () => {

@@ -87,11 +87,7 @@ export function findScriptTables(snapshot: RuntimeReadinessSnapshot): ReadonlyAr
         return fromJsonGame.Scripts;
     }
 
-    const fromMinified = tryReadAuthoritativeScriptTables(
-        tryReadGlobalProperty(snapshot.globals, "_a1"),
-        "_98",
-        "_a8"
-    );
+    const fromMinified = tryReadAuthoritativeScriptTables(tryReadGlobalProperty(snapshot.globals, "_a1"), "_98", "_a8");
     if (fromMinified !== null) {
         return fromMinified.Scripts;
     }

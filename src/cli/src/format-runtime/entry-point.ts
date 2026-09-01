@@ -197,5 +197,5 @@ export function importFormatModule(options = {}) {
  */
 export async function resolveFormatModule(options = {}): Promise<FormatModuleContract> {
     const moduleValue: unknown = await importFormatModule(options);
-    return moduleValue as FormatModuleContract;
+    return moduleValue;
 }

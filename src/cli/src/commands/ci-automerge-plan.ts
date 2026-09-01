@@ -68,7 +68,9 @@ function compareRunsNewestFirst(left: AutoMergeWorkflowRun, right: AutoMergeWork
 }
 
 /** Return the newest validation workflow generation for every exact normalized PR/head identity. */
-export function selectNewestValidationRuns(runs: ReadonlyArray<AutoMergeWorkflowRun>): ReadonlyMap<string, AutoMergeWorkflowRun> {
+export function selectNewestValidationRuns(
+    runs: ReadonlyArray<AutoMergeWorkflowRun>
+): ReadonlyMap<string, AutoMergeWorkflowRun> {
     const selected = new Map<string, AutoMergeWorkflowRun>();
     for (const run of [...runs].sort(compareRunsNewestFirst)) {
         const pr = Number(run.validationPr || 0);
@@ -81,7 +83,10 @@ export function selectNewestValidationRuns(runs: ReadonlyArray<AutoMergeWorkflow
 }
 
 /** Summarize actual finalizer executions without counting successful no-op runs as failures. */
-export function summarizeFinalizerRuns(runs: ReadonlyArray<AutoMergeWorkflowRun>, validationRunId: number): FinalizerRunState {
+export function summarizeFinalizerRuns(
+    runs: ReadonlyArray<AutoMergeWorkflowRun>,
+    validationRunId: number
+): FinalizerRunState {
     let active = false;
     let failedAttempts = 0;
     for (const run of runs) {
@@ -94,21 +99,25 @@ export function summarizeFinalizerRuns(runs: ReadonlyArray<AutoMergeWorkflowRun>
 
 /** Verify that a completed validation worker itself executed from the exact trusted main commit it evaluated. */
 export function isTrustedValidationProducer(run: AutoMergeWorkflowRun, expectedBase: string): boolean {
-    return SHA_PATTERN.test(expectedBase)
-        && run.path === ".github/workflows/automerge-prs.yml"
-        && run.event === "workflow_dispatch"
-        && run.status === "completed"
-        && Number(run.run_attempt || 1) === 1
-        && run.head_branch === "main"
-        && run.head_sha === expectedBase;
+    return (
+        SHA_PATTERN.test(expectedBase) &&
+        run.path === ".github/workflows/automerge-prs.yml" &&
+        run.event === "workflow_dispatch" &&
+        run.status === "completed" &&
+        Number(run.run_attempt || 1) === 1 &&
+        run.head_branch === "main" &&
+        run.head_sha === expectedBase
+    );
 }
 
 /** Only a known, non-placeholder prior base may reset an infrastructure retry generation. */
 export function isKnownBaseTransition(previousBase: string, liveBase: string): boolean {
-    return SHA_PATTERN.test(previousBase)
-        && previousBase !== "0".repeat(40)
-        && SHA_PATTERN.test(liveBase)
-        && previousBase !== liveBase;
+    return (
+        SHA_PATTERN.test(previousBase) &&
+        previousBase !== "0".repeat(40) &&
+        SHA_PATTERN.test(liveBase) &&
+        previousBase !== liveBase
+    );
 }
 
 /** Treat an orphaned pending state as retryable after the configured bounded timeout. */
@@ -120,7 +129,8 @@ export function isPendingStateExpired(state: AutoMergeStateSnapshot, nowMs: numb
 
 /** Plan one PR using only typed state and workflow snapshots; API mutation stays in the coordinator workflow. */
 export function planAutoMergePr(input: AutoMergePlanInput): AutoMergePlanDecision {
-    const { head, liveBase, state, newestValidation, finalizer, maxInfrastructureRetries, pendingTimeoutMs, nowMs } = input;
+    const { head, liveBase, state, newestValidation, finalizer, maxInfrastructureRetries, pendingTimeoutMs, nowMs } =
+        input;
     if (!SHA_PATTERN.test(head) || !SHA_PATTERN.test(liveBase)) {
         return Object.freeze({ kind: "blocked", retry: 0, reason: "invalid-ref" });
     }
@@ -132,12 +142,16 @@ export function planAutoMergePr(input: AutoMergePlanInput): AutoMergePlanDecisio
         if (newestValidation.status === "completed") {
             const finalized = state?.head === head && state.runId === newestValidation.id;
             if (!finalized) {
-                const handoffRetry = state?.head === head && state.reason === "infrastructure" && state.runId === 0
-                    ? state.retry
-                    : 0;
-                if (finalizer.active) return Object.freeze({ kind: "wait", retry: handoffRetry, reason: "finalizer-active" });
+                const handoffRetry =
+                    state?.head === head && state.reason === "infrastructure" && state.runId === 0 ? state.retry : 0;
+                if (finalizer.active)
+                    return Object.freeze({ kind: "wait", retry: handoffRetry, reason: "finalizer-active" });
                 if (finalizer.failedAttempts > maxInfrastructureRetries || handoffRetry > maxInfrastructureRetries) {
-                    return Object.freeze({ kind: "blocked", retry: Math.max(finalizer.failedAttempts, handoffRetry), reason: "finalizer-retry-exhausted" });
+                    return Object.freeze({
+                        kind: "blocked",
+                        retry: Math.max(finalizer.failedAttempts, handoffRetry),
+                        reason: "finalizer-retry-exhausted"
+                    });
                 }
                 return Object.freeze({ kind: "finalize", retry: handoffRetry, reason: "validation-completed" });
             }
@@ -150,12 +164,16 @@ export function planAutoMergePr(input: AutoMergePlanInput): AutoMergePlanDecisio
 
     if (!state || state.head !== head) return Object.freeze({ kind: "validate", retry: 0, reason: "new-head" });
 
-    if ((state.reason === "infrastructure" || state.reason === "baseline-unavailable")
-        && isKnownBaseTransition(state.base, liveBase)) {
+    if (
+        (state.reason === "infrastructure" || state.reason === "baseline-unavailable") &&
+        isKnownBaseTransition(state.base, liveBase)
+    ) {
         return Object.freeze({ kind: "validate", retry: 0, reason: "new-base-generation" });
     }
-    if ((state.reason === "infrastructure" || state.reason === "baseline-unavailable")
-        && state.retry < maxInfrastructureRetries) {
+    if (
+        (state.reason === "infrastructure" || state.reason === "baseline-unavailable") &&
+        state.retry < maxInfrastructureRetries
+    ) {
         return Object.freeze({ kind: "validate", retry: state.retry + 1, reason: "infrastructure-retry" });
     }
     if (state.reason === "stale" || (state.green && state.base !== liveBase)) {
@@ -196,16 +214,27 @@ function selfTest(): void {
     assert.equal(isKnownBaseTransition("", base), false);
     assert.equal(isKnownBaseTransition("0".repeat(40), base), false);
     assert.equal(isKnownBaseTransition("c".repeat(40), base), true);
-    assert.equal(isTrustedValidationProducer({
-        id: 1,
-        run_attempt: 1,
-        path: ".github/workflows/automerge-prs.yml",
-        event: "workflow_dispatch",
-        status: "completed",
-        head_branch: "main",
-        head_sha: base
-    }, base), true);
+    assert.equal(
+        isTrustedValidationProducer(
+            {
+                id: 1,
+                run_attempt: 1,
+                path: ".github/workflows/automerge-prs.yml",
+                event: "workflow_dispatch",
+                status: "completed",
+                head_branch: "main",
+                head_sha: base
+            },
+            base
+        ),
+        true
+    );
     process.stdout.write("ci-automerge plan self-test passed\n");
 }
 
-if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url) && process.argv[2] === "self-test") selfTest();
+if (
+    process.argv[1] &&
+    path.resolve(process.argv[1]) === fileURLToPath(import.meta.url) &&
+    process.argv[2] === "self-test"
+)
+    selfTest();
