@@ -33,16 +33,25 @@ import type { GmlRuleDefinition } from "../index.js";
 import { createMeta, isAstNodeRecord, walkAstNodes } from "../rule-base-helpers.js";
 
 /**
- * Matches a valid GML numeric literal string: optional sign, integer part,
- * optional decimal, and optional exponent. Used to validate that the content
- * of the string argument to `real()` can be safely emitted as a bare literal.
+ * Matches a valid GML numeric literal string that `real()` can also convert:
+ * an optional sign followed by a decimal number (integer part with optional
+ * fraction, or a leading-dot fraction) or a hexadecimal integer with the
+ * `0x` prefix that GML's `real()` explicitly accepts (per the GameMaker
+ * manual: "Hexadecimal numbers are also supported in a string. These strings
+ * should have a format `"0x00F"`"). Scientific notation is intentionally
+ * excluded: GML does not parse exponent syntax natively (the
+ * `no-scientific-notation` rule explicitly flags `1e-3` style tokens), so
+ * emitting one as a replacement for `real("1e-3")` would produce invalid
+ * source. The pattern therefore stops at decimal and 0x-hexadecimal forms to
+ * guarantee the rewritten literal is always a syntactically valid GML token
+ * with the same runtime value as the original `real(...)` call.
  *
  * This pattern is deliberately duplicated here rather than imported from
  * `@gmloop/format` to keep the linter's public API surface minimal. The lint
  * workspace must not re-export internal formatter utilities that could pull in
  * Prettier internals and widen the dependency graph for consumers.
  */
-const NUMERIC_STRING_LITERAL_PATTERN = /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/u;
+const NUMERIC_STRING_LITERAL_PATTERN = /^[+-]?(?:\d+(?:\.\d*)?|\.\d+|0x[0-9a-fA-F]+)$/u;
 
 /**
  * Extracts the inner content of a GML string literal node value.

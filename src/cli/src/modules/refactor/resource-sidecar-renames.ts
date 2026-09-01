@@ -206,45 +206,33 @@ function collectSpriteSidecarRenames({
     return renames;
 }
 
-function collectFontSidecarRenames({
-    currentResourcePath,
-    oldName,
-    newName,
-    fileRenameDestinationDir,
-    doesWorkspaceFilePathExist
-}: Omit<
-    SidecarRenamePlanningParameters,
-    "resourceType" | "metadataDocument" | "doesWorkspaceDirectoryPathExist" | "listWorkspaceDirectoryEntries"
->): Array<ResourceSidecarRename> {
-    // GameMaker bitmap fonts keep a generated texture page beside the `.yy`
-    // using the resource basename. Renaming only the metadata/folder leaves the
-    // font pointing at a missing `<newName>.png`, which causes runtime load
-    // failures in real projects such as Scribble fallback fonts.
+/**
+ * Plans sidecar renames for resources whose payload file sits beside the
+ * `.yy` metadata and uses the resource basename plus a fixed extension.
+ *
+ * GameMaker bitmap fonts keep a generated texture page (`<name>.png`) beside
+ * the `.yy`, and notes keep a sibling `<name>.txt`.  Both rely on the
+ * resource basename, so they share the exact same rename flow and only
+ * differ in the file extension.  Routing both through this helper keeps the
+ * file-naming logic in one place.
+ *
+ * @param parameters - Resource rename planning inputs.
+ * @param fileExtension - Payload file extension, including the leading `.`.
+ * @returns Single-file sidecar rename when the payload exists, otherwise `[]`.
+ */
+function collectNamedExtensionSidecarRenames(
+    parameters: Pick<
+        SidecarRenamePlanningParameters,
+        "currentResourcePath" | "fileRenameDestinationDir" | "oldName" | "newName" | "doesWorkspaceFilePathExist"
+    >,
+    fileExtension: string
+): Array<ResourceSidecarRename> {
     return collectSingleFileSidecarRenames({
-        currentResourcePath,
-        fileRenameDestinationDir,
-        oldFileName: `${oldName}.png`,
-        newFileName: `${newName}.png`,
-        doesWorkspaceFilePathExist
-    });
-}
-
-function collectNoteSidecarRenames({
-    currentResourcePath,
-    oldName,
-    newName,
-    fileRenameDestinationDir,
-    doesWorkspaceFilePathExist
-}: Omit<
-    SidecarRenamePlanningParameters,
-    "resourceType" | "metadataDocument" | "doesWorkspaceDirectoryPathExist" | "listWorkspaceDirectoryEntries"
->): Array<ResourceSidecarRename> {
-    return collectSingleFileSidecarRenames({
-        currentResourcePath,
-        fileRenameDestinationDir,
-        oldFileName: `${oldName}.txt`,
-        newFileName: `${newName}.txt`,
-        doesWorkspaceFilePathExist
+        currentResourcePath: parameters.currentResourcePath,
+        fileRenameDestinationDir: parameters.fileRenameDestinationDir,
+        oldFileName: `${parameters.oldName}${fileExtension}`,
+        newFileName: `${parameters.newName}${fileExtension}`,
+        doesWorkspaceFilePathExist: parameters.doesWorkspaceFilePathExist
     });
 }
 
@@ -259,12 +247,18 @@ function collectDirectoryCarryoverRenames(parameters: {
 }): Array<ResourceSidecarRename> {
     const renames: Array<ResourceSidecarRename> = [];
 
+    const lowercasedExcludedPaths = new Set(Array.from(parameters.excludedPaths).map((p) => p.toLowerCase()));
+    const lowercasedExcludedDirectoryPaths = new Set(
+        Array.from(parameters.excludedDirectoryPaths).map((p) => p.toLowerCase())
+    );
+
     const visitDirectory = (sourceDirectoryPath: string, destinationDirectoryPath: string): void => {
         for (const entryName of parameters.listWorkspaceDirectoryEntries(sourceDirectoryPath)) {
             const oldEntryPath = path.posix.join(sourceDirectoryPath, entryName);
+            const oldEntryPathLower = oldEntryPath.toLowerCase();
             if (
-                parameters.excludedPaths.has(oldEntryPath) ||
-                pathIsInsideAnyDirectory(oldEntryPath, parameters.excludedDirectoryPaths)
+                lowercasedExcludedPaths.has(oldEntryPathLower) ||
+                pathIsInsideAnyDirectory(oldEntryPathLower, lowercasedExcludedDirectoryPaths)
             ) {
                 continue;
             }
@@ -291,6 +285,30 @@ function collectDirectoryCarryoverRenames(parameters: {
     return renames;
 }
 
+function dispatchResourceSidecarRenamesByType(
+    resourceType: string | null | undefined,
+    parameters: SidecarRenamePlanningParameters
+): Array<ResourceSidecarRename> {
+    switch (resourceType) {
+        case "GMSound": {
+            return collectSoundSidecarRenames(parameters);
+        }
+        case "GMSprite": {
+            return collectSpriteSidecarRenames(parameters);
+        }
+        case "GMFont": {
+            return collectNamedExtensionSidecarRenames(parameters, ".png");
+        }
+        case "GMNote":
+        case "GMNotes": {
+            return collectNamedExtensionSidecarRenames(parameters, ".txt");
+        }
+        default: {
+            return [];
+        }
+    }
+}
+
 /**
  * Collect sprite/sound/font payload renames that must accompany a resource metadata
  * rename when the refactor engine cannot rely on a single enclosing directory
@@ -307,27 +325,7 @@ export function collectResourceSidecarRenames(
         return [];
     }
 
-    const renames =
-        (() => {
-            switch (resourceType) {
-                case "GMSound": {
-                    return collectSoundSidecarRenames(parameters);
-                }
-                case "GMSprite": {
-                    return collectSpriteSidecarRenames(parameters);
-                }
-                case "GMFont": {
-                    return collectFontSidecarRenames(parameters);
-                }
-                case "GMNote":
-                case "GMNotes": {
-                    return collectNoteSidecarRenames(parameters);
-                }
-                default: {
-                    return [];
-                }
-            }
-        })() ?? [];
+    const renames = dispatchResourceSidecarRenamesByType(resourceType, parameters);
 
     const resourceDir = path.posix.dirname(parameters.currentResourcePath);
     if (parameters.fileRenameDestinationDir === resourceDir) {

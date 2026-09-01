@@ -1,0 +1,833 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+
+import type { PropertyValues } from "lit";
+
+import { GmAppShell } from "../src/app/components/gm-app-shell.js";
+import { GmAutoGamePanel } from "../src/app/components/gm-auto-game-panel.js";
+import type { GraphVisualizationUiModel } from "../src/app/contracts.js";
+import {
+    GRAPH_UI_EVENT_CLEAR_PAGE_ERROR,
+    GRAPH_UI_EVENT_INITIALIZE_AUTO_GAME_AGENT_PACK,
+    GRAPH_UI_EVENT_SET_AUTO_GAME_SKILL_ENABLED
+} from "../src/app/events/events.js";
+import { createInitialGraphVisualizationUiState } from "../src/app/state/reducer.js";
+import type { GraphVisualizationUiState } from "../src/app/state/types.js";
+import { renderTemplateValue } from "./render-template-helpers.js";
+
+class TestableGmAutoGamePanel extends GmAutoGamePanel {
+    public renderForTest(): unknown {
+        return this.render();
+    }
+}
+
+class TestableGmAppShell extends GmAppShell {
+    protected override update(_changedProperties: PropertyValues<this>): void {}
+}
+
+function createMockModel(overrides?: Partial<GraphVisualizationUiModel>): GraphVisualizationUiModel {
+    return {
+        autoGamePipeline: null,
+        data: {
+            edges: [],
+            generatedAt: "2026-01-01T00:00:00.000Z",
+            graphs: [],
+            nodes: [],
+            projectRoot: "/tmp/test"
+        },
+        documentationCatalogs: {
+            cliCommands: [],
+            mcpServer: {
+                name: "gmloop-mcp",
+                version: "0.2.0"
+            },
+            mcpTools: [
+                {
+                    commandDisplayName: "Graph Visualize",
+                    description: "Builds graph visualization assets.",
+                    fields: [
+                        {
+                            attributeName: "path",
+                            choices: [],
+                            description: "Path to project",
+                            kind: "argument",
+                            multiple: false,
+                            name: "path",
+                            required: true,
+                            valueType: "string"
+                        }
+                    ],
+                    toolName: "graph.visualize"
+                },
+                {
+                    commandDisplayName: "Lint Project",
+                    description: "Runs lint rules against a project.",
+                    fields: [],
+                    toolName: "lint.project"
+                }
+            ],
+            workspaceRules: {
+                formatOptions: [],
+                lintRules: [],
+                refactorCodemods: []
+            }
+        },
+        isServerMode: true,
+        lastFixRun: null,
+        loadedTarget: null,
+        liveReload: null,
+        mcpServerStatus: "running",
+        projectConfigurationCatalog: null,
+        startupState: null,
+        title: "Auto-Game",
+        ...overrides
+    };
+}
+
+function createMockState(overrides?: Partial<GraphVisualizationUiState>): GraphVisualizationUiState {
+    return {
+        ...createInitialGraphVisualizationUiState(),
+        activeConfigView: "rendered",
+        activeDocsView: "cli",
+        activeGraphView: "visual",
+        activePage: "auto-game",
+        labelMode: "auto",
+        mcpServerStatus: "running",
+        ...overrides
+    };
+}
+
+const SAMPLE_AGENT_CONFIGS = Object.freeze([
+    {
+        cliInstalled: true,
+        cliName: "qwen",
+        cliVersion: "1.0.0",
+        configDetected: true,
+        configPaths: [".qwen/settings.json"],
+        id: "qwen" as const,
+        label: "Qwen Code",
+        manualInstructions: [],
+        selectedByDefault: true,
+        status: "cli-configurable" as const,
+        statusDetail: "Project-scoped MCP setup is available through the provider CLI."
+    },
+    {
+        cliInstalled: true,
+        cliName: "codex",
+        cliVersion: "0.42.0",
+        configDetected: true,
+        configPaths: [".codex/config.toml"],
+        id: "codex" as const,
+        label: "Codex",
+        manualInstructions: ["Configure project MCP servers manually."],
+        selectedByDefault: false,
+        status: "manual-required" as const,
+        statusDetail: "GMLoop will not edit this provider config directly; manual setup is required."
+    },
+    {
+        cliInstalled: false,
+        cliName: "gemini",
+        cliVersion: null,
+        configDetected: false,
+        configPaths: [],
+        id: "gemini" as const,
+        label: "Gemini / Antigravity",
+        manualInstructions: ["Install Gemini CLI before configuring MCP servers."],
+        selectedByDefault: false,
+        status: "unavailable" as const,
+        statusDetail: "No supported project config or provider CLI was detected."
+    }
+]);
+
+void test("GmAutoGamePanel renders empty pipeline slots and MCP bridge metadata", () => {
+    const panel = new TestableGmAutoGamePanel();
+    panel.model = createMockModel({ isServerMode: false });
+    panel.state = createMockState();
+
+    const rendered = renderTemplateValue(panel.renderForTest());
+
+    assert.match(rendered, /id="auto-game-page"[\s\S]*class=page content-page active/u);
+    assert.match(rendered, /id="auto-game-content"[\s\S]*class="auto-game-dashboard"/u);
+    assert.match(rendered, /class="auto-game-primary-grid"[\s\S]*AI Skills/u);
+    assert.match(rendered, /class="auto-game-secondary-grid"[\s\S]*Pipeline Feed[\s\S]*LLM Output/u);
+    assert.match(rendered, /class="auto-game-supporting"[\s\S]*MCP Bridge/u);
+    assert.doesNotMatch(rendered, /id="auto-game-meta"/u);
+    assert.match(rendered, /Pipeline Feed/u);
+    assert.match(rendered, /\.gmloop\/agent-log\.jsonl/u);
+    assert.match(rendered, /AI Skills/u);
+    assert.match(rendered, /Open a GameMaker project to discover its Auto-Game skills/u);
+    assert.doesNotMatch(rendered, /initialize-auto-game-agent-pack/u);
+    assert.match(rendered, /LLM Output/u);
+    assert.match(rendered, /MCP Bridge/u);
+    assert.match(rendered, /gmloop-mcp/u);
+    assert.match(rendered, /0\.2\.0/u);
+    assert.match(rendered, /MCP lifecycle events/u);
+});
+
+void test("GmAutoGamePanel renders host-provided pipeline details", () => {
+    const panel = new TestableGmAutoGamePanel();
+    panel.model = createMockModel({
+        autoGamePipeline: {
+            actions: [
+                {
+                    description: "Create a playable vertical slice.",
+                    disabled: false,
+                    id: "start",
+                    label: "Start Pipeline"
+                }
+            ],
+            agentPack: {
+                agentConfigs: [],
+                availableVersion: "0.0.1",
+                conflicts: [],
+                installedVersion: "0.0.1",
+                resources: [
+                    {
+                        content: "# Autonomous Game Development Guidance\n\nIterate on a playable outcome.\n",
+                        kind: "template",
+                        packagePath: "templates/project-agents.md",
+                        targetPath: "AGENTS.md"
+                    },
+                    {
+                        content: "---\nname: gmloop-game-development-loop\n---\n",
+                        kind: "skill",
+                        packagePath: "skills/gmloop-game-development-loop/SKILL.md",
+                        targetPath: ".agents/skills/gmloop-game-development-loop/SKILL.md"
+                    }
+                ],
+                status: "current"
+            },
+            events: [
+                {
+                    detail: "Defined core loop and player verbs.",
+                    id: "event-1",
+                    status: "success",
+                    timestamp: "2026-01-01T00:00:00.000Z",
+                    title: "Design pass complete"
+                }
+            ],
+            llmOutputs: [
+                {
+                    content: "Keep the first playable slice small.",
+                    id: "llm-1",
+                    role: "thought",
+                    timestamp: "2026-01-01T00:00:01.000Z",
+                    title: "Scope note"
+                }
+            ],
+            skills: [
+                {
+                    description: "Defines core loop and playable-slice constraints.",
+                    diagnostic: null,
+                    enabled: true,
+                    id: "game-design",
+                    name: "game-design",
+                    sourcePath: ".agents/skills/game-design/SKILL.md",
+                    status: "available"
+                },
+                {
+                    description: "GMLoop could not read this skill's display metadata.",
+                    diagnostic: "Could not parse SKILL.md frontmatter.",
+                    enabled: true,
+                    id: "project-notes",
+                    name: "project-notes",
+                    sourcePath: ".agents/skills/project-notes/SKILL.md",
+                    status: "unreadable"
+                }
+            ],
+            status: "running",
+            statusText: "Creating the first playable slice."
+        }
+    });
+    panel.state = createMockState();
+
+    const rendered = renderTemplateValue(panel.renderForTest());
+
+    assert.match(rendered, /Design pass complete/u);
+    assert.match(rendered, /<gm-badge[\s\S]*\.label=Success[\s\S]*\.tone=success/u);
+    assert.match(rendered, /<time[\s\S]*datetime=2026-01-01T00:00:00.000Z/u);
+    assert.match(rendered, /game-design/u);
+    assert.doesNotMatch(rendered, /class="auto-game-skill-disclosure"[\s\S]*?open/u);
+    assert.match(
+        rendered,
+        /<gm-collapsible[\s\S]*class="auto-game-skill-disclosure"[\s\S]*Packaged Skills & Guidance Templates/u
+    );
+    assert.match(rendered, /Exclude game-design from Auto-Game/u);
+    assert.match(rendered, /class="auto-game-skill-toggle__track"/u);
+    assert.match(rendered, /\.label=Skill \(Detected\)[\s\S]*\.tone=success/u);
+    assert.match(rendered, /Exclude project-notes from Auto-Game/u);
+    assert.match(rendered, /\.label=Skill \(Unreadable\)[\s\S]*\.tone=error/u);
+    assert.match(rendered, /Could not parse SKILL\.md frontmatter\./u);
+    assert.match(rendered, /auto-game-skill-item--unreadable/u);
+    assert.match(rendered, /\.agents\/skills\/game-design\/SKILL\.md/u);
+    assert.match(rendered, /Scope note/u);
+    assert.match(rendered, /<gm-badge[\s\S]*\.label=thought/u);
+    assert.match(rendered, /<time[\s\S]*datetime=2026-01-01T00:00:01.000Z/u);
+    assert.match(rendered, /Keep the first playable slice small\./u);
+    assert.match(
+        rendered,
+        /<gm-copy-button[\s\S]*class="auto-game-llm-item__copy"[\s\S]*\.value=Keep the first playable slice small\./u
+    );
+    assert.match(rendered, /accessibleLabel=Copy Scope note LLM output to clipboard/u);
+    assert.match(rendered, /AGENTS\.md/u);
+    assert.match(rendered, /templates\/project-agents\.md/u);
+    assert.match(rendered, /AGENTS\.md packaged source preview/u);
+    assert.match(rendered, /# Autonomous Game Development Guidance/u);
+    assert.match(rendered, /\.agents\/skills\/gmloop-game-development-loop\/SKILL\.md/u);
+    assert.match(rendered, /Update \/ Re-sync Agent Pack/u);
+    assert.match(rendered, /\.label=Up to Date[\s\S]*\.tone=success/u);
+    assert.match(rendered, /id="initialize-auto-game-agent-pack"[\s\S]*\?disabled=true/u);
+});
+
+void test("GmAutoGamePanel offers initialization for an empty loaded GameMaker project", () => {
+    const panel = new TestableGmAutoGamePanel();
+    panel.model = createMockModel({
+        autoGamePipeline: {
+            actions: [],
+            agentPack: {
+                agentConfigs: [],
+                availableVersion: "0.0.1",
+                conflicts: [],
+                installedVersion: null,
+                resources: [],
+                status: "not-installed"
+            },
+            events: [],
+            llmOutputs: [],
+            skills: [],
+            status: "idle",
+            statusText: "No project-scoped Auto-Game skills are installed."
+        },
+        loadedTarget: {
+            activePath: "/tmp/test/Test.yyp",
+            projectRoot: "/tmp/test",
+            selectedPaths: ["/tmp/test/Test.yyp"],
+            source: "cli-path"
+        }
+    });
+    panel.state = createMockState();
+
+    const rendered = renderTemplateValue(panel.renderForTest());
+
+    assert.match(rendered, /No Auto-Game skills or templates are available\./u);
+    assert.match(rendered, /Initialize GMLoop's Auto-Game Agent Pack/u);
+    assert.match(rendered, /\.label=Not Initialized[\s\S]*\.tone=warning/u);
+    assert.match(rendered, /Update Project \.gitignore/u);
+    assert.match(rendered, /type="checkbox"[\s\S]*\.checked=true/u);
+    assert.match(rendered, /id="initialize-auto-game-agent-pack"[\s\S]*\?disabled=false/u);
+});
+
+void test("GmAutoGamePanel renders CLI-configurable and manual agent MCP setup targets", () => {
+    const panel = new TestableGmAutoGamePanel();
+    panel.model = createMockModel({
+        autoGamePipeline: {
+            actions: [],
+            agentPack: {
+                agentConfigs: SAMPLE_AGENT_CONFIGS,
+                availableVersion: "0.0.1",
+                conflicts: [],
+                installedVersion: null,
+                resources: [],
+                status: "not-installed"
+            },
+            events: [],
+            llmOutputs: [],
+            skills: [],
+            status: "idle",
+            statusText: "No project-scoped Auto-Game skills are installed."
+        },
+        loadedTarget: {
+            activePath: "/tmp/test/Test.yyp",
+            projectRoot: "/tmp/test",
+            selectedPaths: ["/tmp/test/Test.yyp"],
+            source: "cli-path"
+        }
+    });
+    panel.state = createMockState();
+
+    const rendered = renderTemplateValue(panel.renderForTest());
+
+    assert.match(rendered, /Agent MCP Setup/u);
+    assert.match(rendered, /GMLoop only uses provider CLI commands for automatic setup\./u);
+    assert.match(rendered, /Qwen Code/u);
+    assert.match(rendered, /\.checked=true[\s\S]*aria-label=Exclude Qwen Code MCP setup/u);
+    assert.match(rendered, /\.label=CLI Setup[\s\S]*\.tone=success/u);
+    assert.match(rendered, /Codex/u);
+    assert.match(rendered, /\?disabled=true[\s\S]*aria-label=Include Codex MCP setup/u);
+    assert.match(rendered, /Configure project MCP servers manually\./u);
+    assert.match(rendered, /\.label=Manual[\s\S]*\.tone=warning/u);
+    assert.match(rendered, /Gemini \/ Antigravity/u);
+    assert.match(rendered, /\?disabled=true[\s\S]*aria-label=Include Gemini \/ Antigravity MCP setup/u);
+    assert.match(rendered, /\.label=Unavailable[\s\S]*\.tone=muted/u);
+});
+
+void test("GmAutoGamePanel disables initialization and shows the shared spinner while it is pending", () => {
+    const panel = new TestableGmAutoGamePanel();
+    panel.model = createMockModel({
+        autoGamePipeline: {
+            actions: [],
+            agentPack: {
+                agentConfigs: [],
+                availableVersion: "0.0.2",
+                conflicts: [],
+                installedVersion: null,
+                resources: [],
+                status: "not-installed"
+            },
+            events: [],
+            llmOutputs: [],
+            skills: [],
+            status: "idle",
+            statusText: "No project-scoped Auto-Game skills are installed."
+        },
+        loadedTarget: {
+            activePath: "/tmp/test/Test.yyp",
+            projectRoot: "/tmp/test",
+            selectedPaths: ["/tmp/test/Test.yyp"],
+            source: "cli-path"
+        }
+    });
+    panel.state = createMockState({ autoGamePendingOperation: "initialize-agent-pack" });
+
+    const rendered = renderTemplateValue(panel.renderForTest());
+
+    assert.match(rendered, /id="initialize-auto-game-agent-pack"[\s\S]*\?disabled=true/u);
+    assert.match(rendered, /id="initialize-auto-game-agent-pack"[\s\S]*aria-busy=true/u);
+    assert.match(rendered, /id="initialize-auto-game-agent-pack"[\s\S]*class="button-spinner"/u);
+    assert.match(rendered, /id="initialize-auto-game-agent-pack"[\s\S]*Initialize Auto-Game Agent Pack/u);
+    assert.match(rendered, /type="checkbox"[\s\S]*\?disabled=true/u);
+});
+
+void test("GmAutoGamePanel presents detected skills without a receipt as incomplete setup", () => {
+    const panel = new TestableGmAutoGamePanel();
+    panel.model = createMockModel({
+        autoGamePipeline: {
+            actions: [],
+            agentPack: {
+                agentConfigs: [],
+                availableVersion: "0.0.1",
+                conflicts: [],
+                installedVersion: null,
+                resources: [],
+                status: "not-installed"
+            },
+            events: [],
+            llmOutputs: [],
+            skills: [
+                {
+                    description: "Design the game.",
+                    diagnostic: null,
+                    enabled: true,
+                    id: "game-design",
+                    name: "game-design",
+                    sourcePath: ".agents/skills/game-design/SKILL.md",
+                    status: "available"
+                }
+            ],
+            status: "idle",
+            statusText: "1 of 1 Auto-Game skills enabled."
+        },
+        loadedTarget: {
+            activePath: "/tmp/test/Test.yyp",
+            projectRoot: "/tmp/test",
+            selectedPaths: ["/tmp/test/Test.yyp"],
+            source: "cli-path"
+        }
+    });
+    panel.state = createMockState();
+
+    const rendered = renderTemplateValue(panel.renderForTest());
+
+    assert.match(rendered, /\.label=Setup Incomplete[\s\S]*\.tone=warning/u);
+    assert.match(rendered, /1 project skill was detected, but this project has no agent-pack installation record/u);
+    assert.match(rendered, /Complete setup to synchronize GMLoop's packaged resources and record their version/u);
+    assert.match(rendered, /Complete Auto-Game Setup/u);
+    assert.match(rendered, /\.label=Skill \(Detected\)[\s\S]*\.tone=success/u);
+    assert.match(rendered, />Included</u);
+    assert.match(rendered, /Exclude game-design from Auto-Game/u);
+    assert.doesNotMatch(rendered, /\.label=Available/u);
+    assert.doesNotMatch(rendered, />Enabled</u);
+    assert.doesNotMatch(rendered, /\.label=Not Initialized/u);
+});
+
+void test("GmAutoGamePanel offers an agent-pack update while retaining discovered skills", () => {
+    const panel = new TestableGmAutoGamePanel();
+    panel.model = createMockModel({
+        autoGamePipeline: {
+            actions: [],
+            agentPack: {
+                agentConfigs: [],
+                availableVersion: "0.0.2",
+                conflicts: [],
+                installedVersion: "0.0.1",
+                resources: [],
+                status: "update-available"
+            },
+            events: [],
+            llmOutputs: [],
+            skills: [
+                {
+                    description: "Design the game.",
+                    diagnostic: null,
+                    enabled: true,
+                    id: "game-design",
+                    name: "game-design",
+                    sourcePath: ".agents/skills/game-design/SKILL.md",
+                    status: "available"
+                }
+            ],
+            status: "idle",
+            statusText: "1 of 1 Auto-Game skills enabled."
+        },
+        loadedTarget: {
+            activePath: "/tmp/test/Test.yyp",
+            projectRoot: "/tmp/test",
+            selectedPaths: ["/tmp/test/Test.yyp"],
+            source: "cli-path"
+        }
+    });
+    panel.state = createMockState();
+
+    const rendered = renderTemplateValue(panel.renderForTest());
+
+    assert.match(rendered, /Auto-Game Agent Pack 0\.0\.2 is available/u);
+    assert.match(rendered, /Update Auto-Game Agent Pack/u);
+    assert.match(rendered, /game-design/u);
+});
+
+void test("GmAutoGamePanel offers a re-sync option when the agent-pack is up to date and project is loaded", () => {
+    const panel = new TestableGmAutoGamePanel();
+    panel.model = createMockModel({
+        autoGamePipeline: {
+            actions: [],
+            agentPack: {
+                agentConfigs: [],
+                availableVersion: "0.0.1",
+                conflicts: [],
+                installedVersion: "0.0.1",
+                resources: [],
+                status: "current"
+            },
+            events: [],
+            llmOutputs: [],
+            skills: [],
+            status: "idle",
+            statusText: "All skills up to date."
+        },
+        loadedTarget: {
+            activePath: "/tmp/test/Test.yyp",
+            projectRoot: "/tmp/test",
+            selectedPaths: ["/tmp/test/Test.yyp"],
+            source: "cli-path"
+        }
+    });
+    panel.state = createMockState();
+
+    const rendered = renderTemplateValue(panel.renderForTest());
+
+    assert.match(rendered, /This project is synchronized with GMLoop's latest packaged skills/u);
+    assert.match(rendered, /Update \/ Re-sync Agent Pack/u);
+    assert.match(rendered, /\.label=Up to Date[\s\S]*\.tone=success/u);
+    assert.match(rendered, /id="initialize-auto-game-agent-pack"[\s\S]*\?disabled=false/u);
+});
+
+void test("GmAutoGamePanel presents preserved agent-pack conflicts as an actionable status", () => {
+    const panel = new TestableGmAutoGamePanel();
+    panel.model = createMockModel({
+        autoGamePipeline: {
+            actions: [],
+            agentPack: {
+                agentConfigs: [],
+                availableVersion: "0.0.2",
+                conflicts: ["skills/game-design/SKILL.md"],
+                installedVersion: "0.0.1",
+                resources: [],
+                status: "update-available"
+            },
+            events: [],
+            llmOutputs: [],
+            skills: [],
+            status: "blocked",
+            statusText: "Resolve preserved project changes before continuing."
+        },
+        loadedTarget: {
+            activePath: "/tmp/test/Test.yyp",
+            projectRoot: "/tmp/test",
+            selectedPaths: ["/tmp/test/Test.yyp"],
+            source: "cli-path"
+        }
+    });
+    panel.state = createMockState();
+
+    const rendered = renderTemplateValue(panel.renderForTest());
+
+    assert.match(rendered, /class="auto-game-skill-item__diagnostic auto-game-conflict-notice"[\s\S]*role="status"/u);
+    assert.match(rendered, /Preserved project-modified agent-pack files: skills\/game-design\/SKILL\.md/u);
+});
+
+void test("GmAutoGamePanel renders without server metadata when documentationCatalogs is null", () => {
+    const panel = new TestableGmAutoGamePanel();
+    panel.model = createMockModel({ documentationCatalogs: null });
+    panel.state = createMockState();
+
+    const rendered = renderTemplateValue(panel.renderForTest());
+
+    assert.match(rendered, /id="auto-game-page"[\s\S]*class=page content-page active/u);
+    assert.match(rendered, /MCP Bridge/u);
+    assert.doesNotMatch(rendered, /gmloop-mcp/u);
+});
+
+void test("GmAutoGamePanel renders inactive page class when not on Auto-Game page", () => {
+    const panel = new TestableGmAutoGamePanel();
+    panel.model = createMockModel();
+    panel.state = createMockState({ activePage: "graph" });
+
+    const rendered = renderTemplateValue(panel.renderForTest());
+
+    assert.match(rendered, /id="auto-game-page"[\s\S]*class=page content-page/u);
+    assert.doesNotMatch(rendered, /class=page content-page active/u);
+});
+
+void test("GmAppShell routes agent-pack initialization and skill toggles through host callbacks", async () => {
+    const shell = new TestableGmAppShell();
+    let initialized = 0;
+    let initializationOptions: Readonly<{
+        agentTargets: ReadonlyArray<"codex" | "gemini" | "qwen">;
+        includeGitIgnore: boolean;
+        includeVSCode: boolean;
+    }> | null = null;
+    let toggled: Readonly<{ enabled: boolean; name: string }> | null = null;
+    shell.model = createMockModel({
+        loadedTarget: {
+            activePath: "/tmp/test/Test.yyp",
+            projectRoot: "/tmp/test",
+            selectedPaths: ["/tmp/test/Test.yyp"],
+            source: "cli-path"
+        }
+    });
+    shell.callbacks = {
+        onInitializeAutoGameAgentPack: (options) => {
+            initialized += 1;
+            initializationOptions = options;
+        },
+        onOpenProject: () => {},
+        onRegenerate: () => {},
+        onRunFix: () => ({ logLines: [], status: "success" }),
+        onSaveConfig: () => {},
+        onSetAutoGameSkillEnabled: (name, enabled) => {
+            toggled = { enabled, name };
+        },
+        onStartLiveReload: () => null,
+        onStopLiveReload: () => {}
+    };
+
+    shell.connectedCallback();
+    shell.dispatchEvent(
+        new CustomEvent(GRAPH_UI_EVENT_INITIALIZE_AUTO_GAME_AGENT_PACK, {
+            bubbles: true,
+            detail: { agentTargets: ["qwen"], includeGitIgnore: false, includeVSCode: true }
+        })
+    );
+    await Promise.resolve();
+    shell.dispatchEvent(
+        new CustomEvent(GRAPH_UI_EVENT_SET_AUTO_GAME_SKILL_ENABLED, {
+            bubbles: true,
+            detail: { enabled: false, name: "game-design" }
+        })
+    );
+    await Promise.resolve();
+    shell.disconnectedCallback();
+
+    assert.equal(initialized, 1);
+    assert.deepEqual(initializationOptions, { agentTargets: ["qwen"], includeGitIgnore: false, includeVSCode: true });
+    assert.deepEqual(toggled, { enabled: false, name: "game-design" });
+});
+
+void test("GmAppShell rejects duplicate agent-pack initialization events while the first is pending", async () => {
+    const shell = new TestableGmAppShell();
+    let resolveInitialization = (): void => {
+        throw new Error("Initialization promise resolver was not assigned.");
+    };
+    const initialization = new Promise<void>((resolve) => {
+        resolveInitialization = resolve;
+    });
+    let initializationCount = 0;
+    shell.model = createMockModel({
+        loadedTarget: {
+            activePath: "/tmp/test/Test.yyp",
+            projectRoot: "/tmp/test",
+            selectedPaths: ["/tmp/test/Test.yyp"],
+            source: "cli-path"
+        }
+    });
+    shell.callbacks = {
+        onInitializeAutoGameAgentPack: () => {
+            initializationCount += 1;
+            return initialization;
+        },
+        onOpenProject: () => {},
+        onRegenerate: () => {},
+        onRunFix: () => ({ logLines: [], status: "success" }),
+        onSaveConfig: () => {},
+        onStartLiveReload: () => null,
+        onStopLiveReload: () => {}
+    };
+
+    shell.connectedCallback();
+    const initializeEvent = () =>
+        new CustomEvent(GRAPH_UI_EVENT_INITIALIZE_AUTO_GAME_AGENT_PACK, {
+            bubbles: true,
+            detail: { agentTargets: ["qwen"], includeGitIgnore: true, includeVSCode: false }
+        });
+    shell.dispatchEvent(initializeEvent());
+    shell.dispatchEvent(initializeEvent());
+    await Promise.resolve();
+
+    assert.equal(initializationCount, 1);
+
+    resolveInitialization();
+    await initialization;
+    await Promise.resolve();
+    shell.disconnectedCallback();
+});
+
+void test("GmAutoGamePanel renders agent-pack resources even when no project is loaded", () => {
+    const panel = new TestableGmAutoGamePanel();
+    panel.model = createMockModel({
+        loadedTarget: null,
+        autoGamePipeline: {
+            actions: [],
+            agentPack: {
+                agentConfigs: [],
+                availableVersion: "0.0.1",
+                conflicts: [],
+                installedVersion: null,
+                resources: [
+                    {
+                        content: "# Autonomous Game Guidance",
+                        kind: "template",
+                        packagePath: "templates/project-agents.md",
+                        targetPath: "AGENTS.md"
+                    }
+                ],
+                status: "not-installed"
+            },
+            events: [],
+            llmOutputs: [],
+            skills: [],
+            status: "idle",
+            statusText: null
+        }
+    });
+    panel.state = createMockState();
+
+    const rendered = renderTemplateValue(panel.renderForTest());
+
+    assert.match(rendered, /Packaged Skills & Guidance Templates/u);
+    assert.match(rendered, /AGENTS\.md/u);
+    assert.match(rendered, /templates\/project-agents\.md/u);
+    assert.match(rendered, /# Autonomous Game Guidance/u);
+    assert.match(rendered, /Open a GameMaker project to discover its Auto-Game skills\./u);
+});
+
+void test("GmAutoGamePanel does not override Lit lifecycle hooks for event wiring", () => {
+    // The composition refactor moved the gm-error-banner-dismiss listener
+    // into an EventBusManager registered through LifecycleParticipantsController.
+    // The host must not re-introduce lifecycle overrides that duplicate that
+    // wiring. Reading own properties (not the prototype chain) keeps this
+    // assertion stable against inherited LitElement hooks.
+    const prototype = GmAutoGamePanel.prototype as unknown as Record<string, unknown>;
+    const hasOwn = Object.prototype.hasOwnProperty;
+
+    assert.equal(
+        hasOwn.call(prototype, "connectedCallback"),
+        false,
+        "Expected GmAutoGamePanel to drop its connectedCallback override."
+    );
+    assert.equal(
+        hasOwn.call(prototype, "disconnectedCallback"),
+        false,
+        "Expected GmAutoGamePanel to drop its disconnectedCallback override."
+    );
+});
+
+void test("GmAutoGamePanel propagates gm-error-banner-dismiss via composition", () => {
+    // With the composition refactor the EventBusManager registered in the
+    // constructor owns the gm-error-banner-dismiss subscription. The panel
+    // must still translate that dismissal into a GRAPH_UI_EVENT_CLEAR_PAGE_ERROR
+    // custom event so the surrounding app shell can clear the auto-game error
+    // state. Invoking the inherited LitElement connectedCallback/disconnectedCallback
+    // drives the LifecycleParticipantsController in the same way the DOM would.
+    const panel = new GmAutoGamePanel();
+    let observedPage: string | null = null;
+    const listener = (event: Event): void => {
+        const customEvent = event as CustomEvent<{ page: string }>;
+        if (customEvent.detail?.page !== undefined) {
+            observedPage = customEvent.detail.page;
+        }
+    };
+    panel.addEventListener(GRAPH_UI_EVENT_CLEAR_PAGE_ERROR, listener);
+
+    try {
+        panel.connectedCallback();
+        panel.dispatchEvent(new CustomEvent("gm-error-banner-dismiss", { bubbles: true }));
+
+        assert.equal(observedPage, "auto-game");
+    } finally {
+        panel.disconnectedCallback();
+        panel.removeEventListener(GRAPH_UI_EVENT_CLEAR_PAGE_ERROR, listener);
+    }
+});
+
+void test("GmAutoGamePanel renders a copy button for each LLM output item with the output content", () => {
+    const panel = new TestableGmAutoGamePanel();
+    panel.model = createMockModel({
+        autoGamePipeline: {
+            actions: [],
+            agentPack: {
+                agentConfigs: [],
+                availableVersion: "0.0.1",
+                conflicts: [],
+                installedVersion: null,
+                resources: [],
+                status: "not-installed"
+            },
+            events: [],
+            llmOutputs: [
+                {
+                    content: "Plan the loop first.",
+                    id: "llm-1",
+                    role: "thought",
+                    timestamp: "2026-01-01T00:00:01.000Z",
+                    title: "Plan"
+                },
+                {
+                    content: "Verify the player verb.",
+                    id: "llm-2",
+                    role: "assistant",
+                    timestamp: "2026-01-01T00:00:02.000Z",
+                    title: "Verify"
+                }
+            ],
+            skills: [],
+            status: "idle",
+            statusText: "Idle"
+        }
+    });
+    panel.state = createMockState();
+
+    const rendered = renderTemplateValue(panel.renderForTest());
+
+    assert.match(
+        rendered,
+        /<gm-copy-button[\s\S]*class="auto-game-llm-item__copy"[\s\S]*\.value=Plan the loop first\./u
+    );
+    assert.match(
+        rendered,
+        /<gm-copy-button[\s\S]*class="auto-game-llm-item__copy"[\s\S]*\.value=Verify the player verb\./u
+    );
+    assert.match(rendered, /accessibleLabel=Copy Plan LLM output to clipboard/u);
+    assert.match(rendered, /accessibleLabel=Copy Verify LLM output to clipboard/u);
+    assert.match(rendered, /label="Copy"/u);
+    assert.match(rendered, /\?hideLabel=true/u);
+});

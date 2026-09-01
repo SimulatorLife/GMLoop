@@ -30,6 +30,7 @@ class TestableGmPlaygroundPanel extends GmPlaygroundPanel {
 
 function createMockModel(): GraphVisualizationUiModel {
     return {
+        autoGamePipeline: null,
         data: {
             edges: [],
             generatedAt: "2026-01-01T00:00:00.000Z",
@@ -72,6 +73,7 @@ function createMockModel(): GraphVisualizationUiModel {
 
 function createEmptyGraphModel(): GraphVisualizationUiModel {
     return {
+        autoGamePipeline: null,
         data: {
             edges: [],
             generatedAt: "2026-01-01T00:00:00.000Z",
@@ -117,6 +119,7 @@ void test("app header renders grouped identity, actions, and loaded target secti
     assert.match(rendered, /class="loaded-target-actions"/u);
     assert.equal(Array.from(rendered.matchAll(/id="open-project"/gu)).length, 1);
     assert.match(rendered, /id="open-project"[\s\S]*class="open-button"/u);
+    assert.match(rendered, /Open \.yyp\.\.\./u);
     assert.match(rendered, /id="manual-link"[\s\S]*href="https:\/\/manual\.gamemaker\.io\/"/u);
     assert.match(rendered, /id="manual-link"[\s\S]*class="header-icon-link"/u);
     assert.match(rendered, /id="github-link"[\s\S]*class="header-icon-link"/u);
@@ -125,19 +128,51 @@ void test("app header renders grouped identity, actions, and loaded target secti
     assert.doesNotMatch(rendered, /mcp-status-badge/u);
     assert.doesNotMatch(rendered, /id="loaded-source"/u);
     assert.doesNotMatch(rendered, /id="loaded-selected"/u);
-    assert.match(rendered, /id="tab-mcp"/u);
+    assert.match(rendered, /id="tab-auto-game"/u);
 });
 
-void test("MCP toolbar renders page status in the single shared page toolbar", () => {
+void test("app header shows the selected project path while project loading is in progress", () => {
+    const header = new TestableGmAppHeader();
+    header.model = {
+        ...createMockModel(),
+        data: {
+            edges: [],
+            generatedAt: "2026-01-01T00:00:00.000Z",
+            graphs: [],
+            nodes: [],
+            projectRoot: ""
+        },
+        loadedTarget: {
+            activePath: "/tmp/loading-project/Project.yyp",
+            projectRoot: "/tmp/loading-project",
+            selectedPaths: ["/tmp/loading-project"],
+            source: "finder-open"
+        },
+        startupState: {
+            detail: null,
+            message: "Loading project data…",
+            phase: "loading"
+        }
+    };
+    header.state = createMockState("graph");
+
+    const rendered = renderTemplateValue(header.renderForTest());
+
+    assert.match(rendered, /id="loaded-target"[^>]*aria-busy=true/u);
+    assert.match(rendered, /loaded-path-value[\s\S]*\/tmp\/loading-project\/Project\.yyp/u);
+    assert.match(rendered, /class="loading-spinner loaded-path-spinner"/u);
+});
+
+void test("Auto-Game toolbar renders page status in the single shared page toolbar", () => {
     const toolbar = new TestableGmGraphToolbar();
     toolbar.model = createMockModel();
-    toolbar.state = createMockState("mcp");
+    toolbar.state = createMockState("auto-game");
 
     const rendered = renderTemplateValue(toolbar.renderForTest());
 
     assert.match(rendered, /class="toolbar-heading-row"/u);
-    assert.match(rendered, /id="toolbar-heading"[\s\S]*MCP/u);
-    assert.match(rendered, /id="toolbar-subheading"[\s\S]*The MCP bridge has not started in this session yet\./u);
+    assert.match(rendered, /id="toolbar-heading"[\s\S]*Auto-Game/u);
+    assert.match(rendered, /id="toolbar-subheading"[\s\S]*Run autonomous game-development/u);
     assert.match(rendered, /<gm-status-chip[\s\S]*\.status=not-running[\s\S]*><\/gm-status-chip>/u);
     assert.doesNotMatch(rendered, /mcp-runtime-status-chip/u);
 });
@@ -159,7 +194,72 @@ void test("Live Reload toolbar owns page title, status, subtitle, and controls",
     assert.match(rendered, /id="live-reload-controls"[\s\S]*id="stop-live-reload"/u);
 });
 
-void test("Docs toolbar owns subcategory controls and catalog search", () => {
+void test("Fix toolbar renders combined and individual project workflow buttons", () => {
+    const toolbar = new TestableGmGraphToolbar();
+    toolbar.model = createMockModel();
+    toolbar.state = createMockState("fix");
+
+    const rendered = renderTemplateValue(toolbar.renderForTest());
+
+    assert.match(rendered, /id=run-fix[\s\S]*Fix/u);
+    assert.match(rendered, /id=run-format[\s\S]*Format/u);
+    assert.match(rendered, /id=run-refactor[\s\S]*Refactor \/ Codemods/u);
+    assert.match(rendered, /id=run-lint[\s\S]*Lint/u);
+});
+
+void test("Fix toolbar identifies the active workflow and disables concurrent project writes", () => {
+    const toolbar = new TestableGmGraphToolbar();
+    toolbar.model = createMockModel();
+    toolbar.state = {
+        ...createMockState("fix"),
+        fixWorkflow: "format",
+        isFixPending: true
+    };
+
+    const rendered = renderTemplateValue(toolbar.renderForTest());
+
+    assert.match(rendered, /id=run-format[\s\S]*\?disabled=true[\s\S]*aria-busy=true[\s\S]*Format/u);
+    assert.equal(Array.from(rendered.matchAll(/\?disabled=true/gu)).length, 4);
+    assert.equal(Array.from(rendered.matchAll(/button-spinner/gu)).length, 1);
+});
+
+void test("Fix toolbar keeps its workflow buttons visible but disabled while a project is still opening", () => {
+    const toolbar = new TestableGmGraphToolbar();
+    toolbar.model = {
+        ...createMockModel(),
+        startupState: {
+            detail: null,
+            message: "Loading project data…",
+            phase: "loading"
+        }
+    };
+    toolbar.state = createMockState("fix");
+
+    const rendered = renderTemplateValue(toolbar.renderForTest());
+
+    assert.match(rendered, /id=run-fix[\s\S]*Fix/u);
+    assert.match(rendered, /id=run-format[\s\S]*Format/u);
+    assert.match(rendered, /id=run-refactor[\s\S]*Refactor \/ Codemods/u);
+    assert.match(rendered, /id=run-lint[\s\S]*Lint/u);
+    const fixControlsMatch = /toolbar-fix-controls">(?<body>[\s\S]*?)<\/div>\s*<\/div>/u.exec(rendered);
+    assert.ok(fixControlsMatch?.groups, "expected to find the fix controls group in the rendered toolbar");
+    assert.equal(Array.from(fixControlsMatch.groups.body.matchAll(/\?disabled=true/gu)).length, 4);
+});
+
+void test("Fix toolbar enables its workflow buttons once the project finishes opening", () => {
+    const toolbar = new TestableGmGraphToolbar();
+    toolbar.model = createMockModel();
+    toolbar.state = createMockState("fix");
+
+    const rendered = renderTemplateValue(toolbar.renderForTest());
+
+    assert.match(rendered, /id=run-fix[\s\S]*Fix/u);
+    const fixControlsMatch = /toolbar-fix-controls">(?<body>[\s\S]*?)<\/div>\s*<\/div>/u.exec(rendered);
+    assert.ok(fixControlsMatch?.groups, "expected to find the fix controls group in the rendered toolbar");
+    assert.equal(Array.from(fixControlsMatch.groups.body.matchAll(/\?disabled=true/gu)).length, 0);
+});
+
+void test("Docs toolbar owns catalog search and subcategory controls", () => {
     const toolbar = new TestableGmGraphToolbar();
     toolbar.model = createMockModel();
     toolbar.state = createMockState("docs");
@@ -167,14 +267,21 @@ void test("Docs toolbar owns subcategory controls and catalog search", () => {
     const rendered = renderTemplateValue(toolbar.renderForTest());
 
     assert.match(rendered, /id="toolbar-heading"[\s\S]*Docs/u);
-    assert.match(rendered, /id="toolbar-subheading"[\s\S]*Command help is not available right now\./u);
-    assert.match(rendered, /id="docs-controls"[\s\S]*class="gm-view-selector"/u);
-    assert.match(rendered, /id="docs-controls"[\s\S]*id="docs-view-cli"/u);
-    assert.match(rendered, /id="docs-controls"[\s\S]*id="docs-view-mcp"/u);
-    assert.match(rendered, /id="docs-controls"[\s\S]*id="docs-view-rules"/u);
-    assert.match(rendered, /id="docs-view-cli"[\s\S]*class=gm-btn--chip active/u);
-    assert.match(rendered, /id="docs-controls"[\s\S]*id="docs-search-input"/u);
+    assert.match(rendered, /id="toolbar-subheading"[\s\S]*CLI: Command help is not available right now\./u);
+    assert.match(rendered, /role="search" aria-label="Filter documentation catalog"/u);
     assert.match(rendered, /id="docs-search-input"[\s\S]*aria-describedby="toolbar-subheading docs-search-summary"/u);
+    assert.match(
+        rendered,
+        /<div class="gm-view-selector toolbar-docs-subtabs" role="tablist" aria-label="Documentation view selector">/u
+    );
+    assert.match(
+        rendered,
+        /id=docs-view-cli[\s\S]*class=gm-btn--chip active[\s\S]*role="tab"[\s\S]*aria-selected=true[\s\S]*aria-controls=cli-page[\s\S]*tabindex=0/u
+    );
+    assert.match(rendered, /id=docs-view-mcp[\s\S]*aria-controls=docs-mcp-page/u);
+    assert.match(rendered, /id=docs-view-linting[\s\S]*aria-controls=linting-page/u);
+    assert.match(rendered, /id=docs-view-formatting[\s\S]*aria-controls=formatting-page/u);
+    assert.match(rendered, /id=docs-view-codemods[\s\S]*aria-controls=codemods-page/u);
 });
 
 void test("graph toolbar renders grouped controls for search, view state, and actions", () => {
@@ -191,14 +298,14 @@ void test("graph toolbar renders grouped controls for search, view state, and ac
     assert.match(rendered, /id="regenerate"[\s\S]*class="gm-btn--chip"/u);
 });
 
-void test("graph index header tab is disabled when no graph index is loaded", () => {
+void test("graph index header tab remains enabled even when no graph index is loaded", () => {
     const header = new TestableGmAppHeader();
     header.model = createEmptyGraphModel();
     header.state = createMockState("docs");
 
     const rendered = renderTemplateValue(header.renderForTest());
 
-    assert.match(rendered, /id="tab-graph"[\s\S]*disabled/u);
+    assert.doesNotMatch(rendered, /id="tab-graph"[^>]*disabled/u);
 });
 
 void test("graph toolbar disables graph controls and regenerate without a loaded graph target", () => {
@@ -241,19 +348,33 @@ void test("toolbar stylesheet keeps graph toolbar controls in a full-width horiz
     const source = readFileSync(new URL("../../src/web/styles/toolbar.css", import.meta.url), "utf8");
 
     assert.match(source, /\.page-toolbar\s*\{[\s\S]*display:\s*flex;[\s\S]*flex-direction:\s*column;/u);
-    assert.match(source, /\.page-toolbar\s*\{[\s\S]*gap:\s*var\(--gm-space-control-gap\);/u);
+    assert.match(source, /\.page-toolbar\s*\{[\s\S]*gap:\s*var\(--gm-space-md\);/u);
+    assert.match(source, /\.page-toolbar\s*\{[\s\S]*margin:\s*var\(--gm-space-lg\)\s+var\(--gm-space-xl\)\s+0;/u);
     assert.match(
         source,
-        /\.page-toolbar\s*\{[\s\S]*margin:\s*var\(--gm-page-toolbar-gap\)\s+var\(--gm-page-gutter\)\s+0;/u
+        /\.toolbar-controls\s*\{[\s\S]*gap:\s*var\(--gm-space-xl\);[\s\S]*align-items:\s*center;[\s\S]*justify-content:\s*flex-start;[\s\S]*width:\s*100%;/u
     );
-    assert.match(
-        source,
-        /\.toolbar-controls\s*\{[\s\S]*gap:\s*var\(--gm-space-section-gap\);[\s\S]*align-items:\s*center;[\s\S]*justify-content:\s*flex-start;[\s\S]*width:\s*100%;/u
-    );
-    assert.match(source, /\.toolbar-heading-row\s*\{[\s\S]*gap:\s*var\(--gm-space-section-gap\);/u);
-    assert.match(source, /\.toolbar-control-group\s*\{[\s\S]*gap:\s*var\(--gm-space-control-gap\);/u);
+    assert.match(source, /\.toolbar-heading-row\s*\{[\s\S]*gap:\s*var\(--gm-space-xl\);/u);
+    assert.match(source, /\.toolbar-control-group\s*\{[\s\S]*gap:\s*var\(--gm-space-md\);/u);
     assert.match(source, /\.toolbar-control-group\s*\{[\s\S]*flex-wrap:\s*nowrap;/u);
     assert.match(source, /\.toolbar-search-group\s*\{[\s\S]*flex:\s*1 1 220px;[\s\S]*max-width:\s*360px;/u);
+});
+
+void test("docs toolbar lays docs subtabs and search controls out side-by-side instead of stacking", () => {
+    const toolbarSource = readFileSync(new URL("../../src/web/styles/toolbar.css", import.meta.url), "utf8");
+    const docsSource = readFileSync(new URL("../../src/web/styles/docs.css", import.meta.url), "utf8");
+
+    const docsControlsRule = /\.toolbar-docs-controls\s*\{[\s\S]*?\}/u.exec(toolbarSource)?.[0] ?? "";
+    const docsSearchRule = /\.toolbar-docs-search\s*\{[\s\S]*?\}/u.exec(docsSource)?.[0] ?? "";
+
+    assert.match(
+        toolbarSource,
+        /\.toolbar-docs-controls\s*\{[\s\S]*flex-direction:\s*row;[\s\S]*flex-wrap:\s*wrap;[\s\S]*align-items:\s*flex-start;/u
+    );
+    assert.doesNotMatch(docsControlsRule, /flex-direction:\s*column;/u);
+    assert.match(toolbarSource, /\.toolbar-docs-subtabs\s*\{[\s\S]*flex:\s*0 1 auto;/u);
+    assert.match(docsSource, /\.toolbar-docs-search\s*\{[\s\S]*flex:\s*1 1 220px;[\s\S]*max-width:\s*360px;/u);
+    assert.doesNotMatch(docsSearchRule, /width:\s*100%/u);
 });
 
 void test("spacing tokens define shared page and toolbar rhythm", () => {
@@ -261,21 +382,26 @@ void test("spacing tokens define shared page and toolbar rhythm", () => {
     const layoutSource = readFileSync(new URL("../../src/web/styles/layout.css", import.meta.url), "utf8");
     const responsiveSource = readFileSync(new URL("../../src/web/styles/responsive.css", import.meta.url), "utf8");
 
-    assert.match(tokensSource, /--gm-space-control-gap:\s*var\(--gm-space-md\);/u);
-    assert.match(tokensSource, /--gm-space-section-gap:\s*var\(--gm-space-xl\);/u);
-    assert.match(tokensSource, /--gm-page-gutter:\s*var\(--gm-space-xl\);/u);
-    assert.match(tokensSource, /--gm-page-toolbar-gap:\s*var\(--gm-space-lg\);/u);
+    assert.match(tokensSource, /--gm-space-xs:\s*4px;/u);
+    assert.match(tokensSource, /--gm-space-sm:\s*8px;/u);
+    assert.match(tokensSource, /--gm-space-md:\s*12px;/u);
+    assert.match(tokensSource, /--gm-space-lg:\s*16px;/u);
+    assert.match(tokensSource, /--gm-space-xl:\s*24px;/u);
     assert.match(
         layoutSource,
-        /main\s*\{[\s\S]*padding:\s*var\(--gm-page-toolbar-gap\)\s+var\(--gm-page-gutter\)\s+var\(--gm-page-gutter\);/u
+        /main\s*\{[\s\S]*padding:\s*var\(--gm-space-lg\)\s+var\(--gm-space-xl\)\s+var\(--gm-space-xl\);/u
     );
     assert.match(
         responsiveSource,
-        /main\s*\{[\s\S]*padding:\s*var\(--gm-page-toolbar-gap\)\s+var\(--gm-page-gutter-compact\)\s+var\(--gm-page-gutter-compact\);/u
+        /main\s*\{[\s\S]*padding:\s*var\(--gm-space-lg\)\s+var\(--gm-space-lg\)\s+var\(--gm-space-lg\);/u
     );
     assert.match(
         responsiveSource,
-        /\.playground-toolbar\s*\{[\s\S]*flex-direction:\s*column;[\s\S]*gap:\s*var\(--gm-space-control-gap\);/u
+        /\.toolbar-search-group,[\s\S]*\.toolbar-docs-search,[\s\S]*\.toolbar-docs-controls\s*\{[\s\S]*width:\s*100%;/u
+    );
+    assert.match(
+        responsiveSource,
+        /\.toolbar-heading-row\s+\.toolbar-docs-search,[\s\S]*\.toolbar-docs-controls\s*\{[\s\S]*flex:\s*0 1 auto;[\s\S]*max-width:\s*none;/u
     );
 });
 
@@ -287,6 +413,38 @@ void test("shared view selector keeps inactive tabs visually unoutlined", () => 
     assert.match(
         source,
         /\.gm-view-selector\s*>\s*\.gm-btn--chip\.active,[\s\S]*\.gm-view-selector\s*>\s*\.gm-btn--chip\[aria-pressed="true"\]\s*\{[\s\S]*border-color:\s*transparent;/u
+    );
+});
+
+void test("docs stylesheet defines a constrained documentation browser layout", () => {
+    const source = readFileSync(new URL("../../src/web/styles/docs.css", import.meta.url), "utf8");
+
+    assert.doesNotMatch(source, /auto-fit/u);
+    assert.match(source, /\.docs-layout\s*\{[\s\S]*grid-template-areas:\s*"main";/u);
+    assert.match(source, /\.docs-layout\s*\{[\s\S]*grid-template-columns:\s*minmax\(0,\s*1fr\);/u);
+    assert.doesNotMatch(source, /\.docs-nav\s*\{/u);
+    assert.doesNotMatch(source, /\.docs-sidebar\s*\{/u);
+    assert.match(source, /\.docs-reference-entry\s*\{[\s\S]*grid-template-columns:\s*minmax\(0,\s*1fr\);/u);
+    assert.match(source, /\.docs-usage-shell\s*\{[\s\S]*grid-template-columns:\s*minmax\(0,\s*1fr\)\s+auto;/u);
+    assert.match(source, /\.docs-usage-copy-button\s+\.gm-copy-button\s*\{[\s\S]*min-width:\s*var\(--gm-height-sm\);/u);
+    assert.match(source, /\.docs-usage-copy-button\s+\.gm-copy-button__label\s*\{[\s\S]*clip-path:\s*inset\(50%\);/u);
+    assert.match(source, /\.docs-search-summary:empty\s*\{[\s\S]*display:\s*none;/u);
+    assert.match(
+        source,
+        /@media\s*\(max-width:\s*920px\)\s*\{[\s\S]*?\.toolbar-heading-row\s+\.toolbar-docs-search\s*\{[\s\S]*flex:\s*0 1 auto;[\s\S]*max-width:\s*none;/u
+    );
+    assert.match(source, /\.docs-detail-container\s*\{[\s\S]*border:\s*1px solid var\(--gm-border-subtle\);/u);
+    assert.match(
+        source,
+        /\.docs-detail-container \.gm-collapsible__summary\s*\{[\s\S]*min-height:\s*var\(--gm-height-sm\);/u
+    );
+    assert.match(
+        source,
+        /\.docs-detail-row\s*\{[\s\S]*grid-template-columns:\s*minmax\(156px,\s*220px\)\s+minmax\(0,\s*1fr\);/u
+    );
+    assert.match(
+        source,
+        /@media\s*\(max-width:\s*760px\)\s*\{[\s\S]*?\.docs-reference-entry\s*\{[\s\S]*grid-template-columns:\s*minmax\(0,\s*1fr\);/u
     );
 });
 
@@ -320,12 +478,12 @@ void test("page styles keep every top-level page on the shared lighter content b
         "../../src/app/components/gm-fix-panel.ts",
         "../../src/app/components/gm-graph-panel.ts",
         "../../src/app/components/gm-live-reload-panel.ts",
-        "../../src/app/components/gm-mcp-panel.ts",
+        "../../src/app/components/gm-auto-game-panel.ts",
         "../../src/app/components/gm-playground-panel.ts"
     ].map((sourcePath) => readFileSync(new URL(sourcePath, import.meta.url), "utf8"));
 
-    assert.match(graphSource, /#graph-page\s*\{[\s\S]*background:\s*var\(--gm-bg-light\);/u);
-    assert.match(playgroundSource, /#playground-page\s*\{[\s\S]*background:\s*var\(--gm-bg-light\);/u);
+    assert.match(graphSource, /#graph-page\s*\{[\s\S]*background:\s*var\(--gm-bg-muted\);/u);
+    assert.match(playgroundSource, /#playground-page\s*\{[\s\S]*background:\s*var\(--gm-bg-muted\);/u);
     assert.doesNotMatch(graphSource, /background:\s*linear-gradient\(180deg,\s*rgba\(8,\s*14,\s*24/u);
     assert.doesNotMatch(playgroundSource, /background:\s*linear-gradient\(180deg,\s*rgba\(8,\s*14,\s*24/u);
     assert.equal(

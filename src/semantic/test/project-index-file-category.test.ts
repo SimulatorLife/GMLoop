@@ -6,14 +6,11 @@ import {
     getProjectResourceMetadataExtensions,
     normalizeProjectFileCategory,
     ProjectFileCategory,
-    resetProjectIndexSourceExtensions,
     resetProjectResourceMetadataExtensions,
-    resolveProjectFileCategory,
-    setProjectIndexSourceExtensions
+    resolveProjectFileCategory
 } from "../src/project-index/index.js";
 
 test.afterEach(() => {
-    resetProjectIndexSourceExtensions();
     resetProjectResourceMetadataExtensions();
 });
 
@@ -53,22 +50,9 @@ void test("project index source extensions expose the default list", () => {
     }, TypeError);
 });
 
-void test("setProjectIndexSourceExtensions extends recognised source files", () => {
-    setProjectIndexSourceExtensions([".gmlx"]);
-    assert.deepEqual(getProjectIndexSourceExtensions(), [".gml", ".gmlx"]);
-    assert.equal(resolveProjectFileCategory("scripts/player/move.gmlx"), ProjectFileCategory.SOURCE);
-    assert.equal(resolveProjectFileCategory("scripts/player/move.gml"), ProjectFileCategory.SOURCE);
-});
-
-void test("setProjectIndexSourceExtensions normalises and deduplicates extensions", () => {
-    setProjectIndexSourceExtensions([" GMLX ", ".gmlx", "custom"]);
-    assert.deepEqual(getProjectIndexSourceExtensions(), [".gml", ".gmlx", ".custom"]);
-});
-
-void test("setProjectIndexSourceExtensions rejects invalid input", () => {
-    assert.throws(() => setProjectIndexSourceExtensions("gml"), /array of strings/);
-    assert.throws(() => setProjectIndexSourceExtensions([""]), /cannot be empty/);
-    assert.throws(() => setProjectIndexSourceExtensions([42]), /must be strings/);
+void test("resolveProjectFileCategory rejects custom GML-like source extensions", () => {
+    assert.equal(resolveProjectFileCategory("scripts/player/move.gmlx"), null);
+    assert.equal(resolveProjectFileCategory("scripts/player/move.custom"), null);
 });
 
 void test("resource metadata extensions expose the default list", () => {

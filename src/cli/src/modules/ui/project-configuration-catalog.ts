@@ -35,6 +35,7 @@ type ProjectConfigurationLintRuleEntry = Readonly<{
 type ProjectConfigurationLintRulesetEntry = Readonly<{
     name: string;
     ruleIds: ReadonlyArray<string>;
+    ruleLevels: Readonly<Record<string, "error" | "off" | "warn">>;
 }>;
 
 type LintConfigRuleList = ReadonlyArray<
@@ -222,14 +223,25 @@ function createLintRulesetEntries(): ReadonlyArray<ProjectConfigurationLintRules
                 return [];
             }
 
+            const mergedRules: Record<string, unknown> = {};
+            for (const configEntry of configEntries) {
+                Object.assign(mergedRules, configEntry.rules);
+            }
+            const sortedRuleIds = Object.freeze(
+                Core.uniqueArray(Object.keys(mergedRules)).toSorted((leftRuleId, rightRuleId) =>
+                    leftRuleId.localeCompare(rightRuleId)
+                )
+            );
+            const ruleLevels: Record<string, "error" | "off" | "warn"> = {};
+            for (const ruleId of sortedRuleIds) {
+                const rawLevel = mergedRules[ruleId];
+                ruleLevels[ruleId] = rawLevel === "error" || rawLevel === "warn" ? rawLevel : "off";
+            }
             return [
                 Object.freeze({
                     name,
-                    ruleIds: Object.freeze(
-                        [...new Set(configEntries.flatMap((configEntry) => Object.keys(configEntry.rules)))].sort(
-                            (leftRuleId, rightRuleId) => leftRuleId.localeCompare(rightRuleId)
-                        )
-                    )
+                    ruleIds: sortedRuleIds,
+                    ruleLevels: Object.freeze(ruleLevels)
                 })
             ];
         })
@@ -263,7 +275,7 @@ function createRefactorConfigurationEntries(
             Object.freeze({
                 config: configuredCodemods[codemod.id] ?? null,
                 description: codemod.description,
-                enabled: configuredCodemods[codemod.id] !== false,
+                enabled: configuredCodemods[codemod.id] !== undefined && configuredCodemods[codemod.id] !== false,
                 id: codemod.id,
                 requiresSemanticProjectIndex: semanticIndexDependentCodemodIds.has(codemod.id)
             })

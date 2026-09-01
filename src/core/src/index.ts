@@ -57,11 +57,19 @@ export const Core = Object.freeze({
 // Publicly export key AST types at the package root for other packages to
 // import without deep imports. This is the preferred path for type imports
 // across the monorepo.
-export type { GameMakerAstLocation, GameMakerAstNode, LiteralNode, MutableGameMakerAstNode } from "./ast/types.js";
+export type { ForStatementHoistContext } from "./ast/node-helpers/loop-length-accessor.js";
+export type {
+    GameMakerAstLocation,
+    GameMakerAstNode,
+    LiteralNode,
+    MutableGameMakerAstNode,
+    ProgramNode
+} from "./ast/types.js";
 export type { DocCommentLines, MutableDocCommentLines } from "./comments/comment-utils.js";
 export type { DocCommentNodeMetadata } from "./comments/doc-comment/node-metadata.js";
 export type { StripCommentsTransformOptions } from "./comments/strip-comments-transform.js";
 export type { FsFacade } from "./fs/io.js";
+export type { ProjectPathBoundaryMatcherOptions } from "./fs/path.js";
 export type { GmloopProjectConfig } from "./project-config/gmloop-project-config.js";
 export type { ProjectExcludeRules } from "./project-config/project-excludes.js";
 export type { FeatherDiagnostic, FeatherMetadata } from "./resources/feather-metadata.js";
@@ -71,6 +79,7 @@ export type {
     DeprecatedIdentifierMetadataEntry,
     DeprecatedIdentifierReplacementKind
 } from "./resources/gml-identifier-loading.js";
+export type { GmlBindingIdentifierContext } from "./resources/gml-identifier-reservation.js";
 export type { ProjectMetadataSchemaName } from "./resources/project-metadata.js";
 export type { StringCommentScanState } from "./text/source-text.js";
 export type { EmptyTransformOptions, ParserTransform } from "./transforms/parser-transform.js";

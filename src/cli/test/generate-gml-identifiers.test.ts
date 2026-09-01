@@ -11,7 +11,10 @@ const {
     collectManualArrayIdentifiers,
     assertManualIdentifierArray,
     extractDeprecatedReplacementFromManualHtml,
-    parseObsoleteIdentifierTableEntries
+    parseObsoleteIdentifierTableEntries,
+    resolveCanonicalManualPath,
+    createCanonicalManualUrl,
+    extractManualHoverMetadata
 } = __test__;
 
 const SAMPLE_SOURCE = `
@@ -22,6 +25,56 @@ const KEYWORDS = [
 `;
 
 void describe("generate-gml-identifiers", () => {
+    void it("extracts callable hover metadata from a manual page", () => {
+        const hover = extractManualHoverMetadata(
+            "sample_call",
+            `<html><body><h1>sample_call</h1><p>Creates a sample value.</p><h4>Syntax:</h4><p class="code">sample_call(value)</p><table><tr><th>Argument</th><th>Type</th><th>Description</th></tr><tr><td>value</td><td>Real</td><td>The input value.</td></tr></table><h4>Returns:</h4><p class="code">String</p></body></html>`
+        );
+        assert.deepEqual(hover, {
+            description: "Creates a sample value.",
+            parameters: [{ description: "The input value.", name: "value", type: "Real" }],
+            returnType: "String",
+            signature: "sample_call(value)"
+        });
+    });
+
+    void describe("resolveCanonicalManualPath", () => {
+        void it("replaces legacy metadata paths with unique current manual pages", () => {
+            const pages = new Map([
+                ["is_undefined", "GameMaker_Language/GML_Reference/Variable_Functions/is_undefined.htm"]
+            ]);
+            assert.equal(
+                resolveCanonicalManualPath("is_undefined", "3_Scripting/Checking_Data_Types/is_undefined", pages),
+                "GameMaker_Language/GML_Reference/Variable_Functions/is_undefined.htm"
+            );
+        });
+
+        void it("keeps the existing path when the current manual page is ambiguous or absent", () => {
+            assert.equal(
+                resolveCanonicalManualPath("shared", "legacy/shared", new Map([["shared", null]])),
+                "legacy/shared"
+            );
+        });
+    });
+
+    void describe("createCanonicalManualUrl", () => {
+        void it("writes exact current manual URLs into identifier metadata", () => {
+            assert.equal(
+                createCanonicalManualUrl(
+                    "is_undefined",
+                    "GameMaker_Language/GML_Reference/Variable_Functions/is_undefined.htm"
+                ),
+                "https://manual.gamemaker.io/monthly/en/#t=GameMaker_Language%2FGML_Reference%2FVariable_Functions%2Fis_undefined.htm&rhsearch=is_undefined&rhhlterm=is_undefined"
+            );
+        });
+
+        void it("writes searchable index URLs when no unique current page exists", () => {
+            assert.equal(
+                createCanonicalManualUrl("legacy_name", "3_Scripting/Legacy/legacy_name"),
+                "https://manual.gamemaker.io/monthly/en/#t=Content.htm&rhsearch=legacy_name&rhhlterm=legacy_name"
+            );
+        });
+    });
     void describe("applyFirstWin", () => {
         void it("returns incoming when incoming is defined", () => {
             assert.equal(applyFirstWin("incoming", "current"), "incoming");
@@ -209,7 +262,7 @@ void describe("generate-gml-identifiers", () => {
 
         void it("upgrades type when incoming priority is higher", () => {
             const existingEntry = {
-                type: "literal",
+                type: "variable",
                 sources: new Set<string>(),
                 tags: new Set<string>(),
                 deprecated: false
@@ -227,8 +280,32 @@ void describe("generate-gml-identifiers", () => {
                 deprecated: false
             };
             const map = Object.freeze(new Map([["foo", existingEntry]]));
-            mergeEntry(map, "foo", { type: "literal" });
+            mergeEntry(map, "foo", { type: "variable" });
             assert.equal(existingEntry.type, "function");
+        });
+
+        void it("keeps an existing core language type authoritative", () => {
+            const existingEntry = {
+                type: "literal",
+                sources: new Set<string>(),
+                tags: new Set<string>(),
+                deprecated: false
+            };
+            const map = Object.freeze(new Map([["foo", existingEntry]]));
+            mergeEntry(map, "foo", { type: "function" });
+            assert.equal(existingEntry.type, "literal");
+        });
+
+        void it("upgrades an ordinary type to an incoming core language type", () => {
+            const existingEntry = {
+                type: "function",
+                sources: new Set<string>(),
+                tags: new Set<string>(),
+                deprecated: false
+            };
+            const map = Object.freeze(new Map([["foo", existingEntry]]));
+            mergeEntry(map, "foo", { type: "literal" });
+            assert.equal(existingEntry.type, "literal");
         });
 
         void it("sets type to 'unknown' when neither incoming nor current has a defined type", () => {

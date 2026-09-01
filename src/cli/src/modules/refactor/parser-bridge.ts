@@ -2,30 +2,27 @@ import { readFile } from "node:fs/promises";
 
 import type * as Refactor from "@gmloop/refactor";
 
-import type { ParserAdapterFactory } from "./bridge-types.js";
+import type { GmlParserAdapter } from "./bridge-types.js";
 
 /**
- * Parser bridge that adapts the GML parser to the refactor engine's parser contract.
+ * Parser bridge that adapts a GML parser to the refactor engine's parser contract.
  *
- * The parser adapter is injected through the constructor so callers can supply
- * a custom parse function for testing without requiring a real GMLParser instance.
- * The default adapter factory is provided by the bridge-dependencies module, keeping
- * concrete workspace imports out of this adapter class.
+ * The parse adapter is injected through the constructor so callers can supply
+ * a stub for testing without requiring a real `Parser.GMLParser` instance.
+ * The default adapter is assembled by `bridge-factory.ts`, which is the only
+ * module in this cluster that imports the concrete parser workspace.
  */
 export class GmlParserBridge implements Refactor.ParserBridge {
-    private readonly parserAdapter: (source: string) => unknown;
+    private readonly parserAdapter: GmlParserAdapter;
 
     /**
-     * @param parserAdapterFactory - Optional factory that returns a parse function.
-     *   When omitted, the caller (typically the bridge-factory) is responsible for
-     *   providing the default adapter through the factory function so the bridge
-     *   itself remains decoupled from the parser workspace.
+     * @param parserAdapter - Optional parse function. When omitted, the
+     *   bridge falls back to a no-op adapter that returns an empty range so
+     *   the engine can still be constructed in test environments that do not
+     *   need a working parser.
      */
-    constructor(parserAdapterFactory?: ParserAdapterFactory) {
-        // The factory (if provided) is a factory-of-factories: it produces the
-        // parse function itself, allowing callers to capture custom parser
-        // configuration at the point where the concrete adapter is assembled.
-        this.parserAdapter = parserAdapterFactory ? parserAdapterFactory() : () => ({ start: 0, end: 0 });
+    constructor(parserAdapter?: GmlParserAdapter) {
+        this.parserAdapter = parserAdapter ?? (() => ({ start: 0, end: 0 }));
     }
 
     /**
@@ -42,6 +39,28 @@ export class GmlParserBridge implements Refactor.ParserBridge {
 
     /**
      * Recursively adapts parser nodes to the refactor engine's AST interface.
+     *
+     * The refactor engine works with a deliberately small, position-keyed node
+     * shape (`{ type, name, start, end, children }`) that intentionally
+     * flattens the richer GML parser AST into a uniform child list. The
+     * mapping below is the authoritative source of truth for which parser
+     * fields contribute children — keep it in sync with the parser workspace
+     * if new node shapes are introduced there.
+     *
+     * Source location handling: parser nodes expose `start`/`end` as
+     * `{ index, line, column }` records, but the refactor engine only needs
+     * the file-offset `index` for range checks, so we project to that single
+     * number. Missing offsets (e.g., synthetic nodes inserted during
+     * normalization) become `0` rather than `undefined` so downstream
+     * arithmetic stays well-typed.
+     *
+     * Field mapping (each branch corresponds to a documented parser shape):
+     *  - `body` / `declarations` cover statements, blocks, and declaration
+     *    lists (functions, enums, structs, etc.).
+     *  - The fixed `prop` list covers the binary/unary/ternary/member
+     *    expression shapes the refactor engine needs to descend into.
+     *  - `arguments` / `elements` cover call sites and array/struct
+     *    literals, both of which are variadic in GML.
      */
     private adaptNode(node: any): Refactor.AstNode {
         if (!node || typeof node !== "object") {
@@ -70,7 +89,6 @@ export class GmlParserBridge implements Refactor.ParserBridge {
             adapted.children.push(...node.declarations.map((n) => this.adaptNode(n)));
         }
 
-        // Handle common expression properties
         for (const prop of [
             "init",
             "left",
@@ -88,7 +106,6 @@ export class GmlParserBridge implements Refactor.ParserBridge {
             }
         }
 
-        // Handle arrays of arguments or elements
         if (Array.isArray(node.arguments)) {
             adapted.children.push(...node.arguments.map((n) => this.adaptNode(n)));
         }

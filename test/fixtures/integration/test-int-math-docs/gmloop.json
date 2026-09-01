@@ -2,13 +2,16 @@
   "printWidth": 120,
   "allowInlineControlFlowBlocks": false,
   "lintRules": {
+    "gml/remove-doc-function-tags": "error",
     "gml/normalize-doc-comments": "error",
+    "gml/normalize-doc-param-separators": "error",
     "gml/remove-default-comments": "error",
     "gml/optimize-math-expressions": "error"
   },
   "fixture": {
     "kind": "integration",
     "assertion": "transform",
-    "comparison": "exact"
+    "comparison": "exact",
+    "expectedTextFile": "expected.current.txt"
   }
 }

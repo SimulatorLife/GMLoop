@@ -14,7 +14,7 @@ import {
     RUNTIME_WRAPPER_ASSET_MANIFEST_FILE_NAME
 } from "./config.js";
 
-const { cloneObjectEntries, parseJsonWithContext } = Core;
+const { areNumbersApproximatelyEqual, cloneObjectEntries, parseJsonWithContext } = Core;
 
 interface RuntimeWrapperAssetManifestEntry {
     relativePath: string;
@@ -29,7 +29,7 @@ interface RuntimeWrapperAssetManifest {
 
 const HOT_RELOAD_ASSET_MANIFEST_VERSION = 3;
 const DEFAULT_RUNTIME_WRAPPER_DIST_ROOT = resolveFromRepoRoot("src", "runtime-wrapper", "dist");
-const PUBLIC_RUNTIME_WRAPPER_ASSET_DIRECTORIES = Object.freeze(["browser"]);
+const PUBLIC_RUNTIME_WRAPPER_ASSET_DIRECTORIES = Object.freeze(["src/browser"]);
 
 export interface SyncLiveReloadAssetsOptions {
     outputRoot: string;
@@ -105,6 +105,32 @@ async function readRuntimeWrapperAssetManifest(manifestPath: string): Promise<Ru
     return parseRuntimeWrapperAssetManifest(manifestContents);
 }
 
+/**
+ * Compare two runtime wrapper asset manifests for equality.
+ *
+ * Manifest entries carry an `fs.stat()`-derived `mtimeMs`, which is a
+ * floating-point number whose precision depends on the underlying
+ * filesystem (Linux ext4 reports nanosecond precision, macOS APFS
+ * historically reported microsecond precision, and FAT-family volumes
+ * truncate to whole seconds). When the source tree is built on one
+ * platform and the persisted manifest is later compared against a fresh
+ * `fs.stat()` taken on a different surface — or after a `fs.cp` round
+ * trip that pins sub-millisecond rounding — the two `mtimeMs` values
+ * can drift by a few microseconds despite pointing at the same file.
+ *
+ * Strict `===` comparison falsely flagged those manifests as "changed",
+ * which forced `syncLiveReloadAssets` to recopy the entire runtime
+ * wrapper asset tree on every invocation in affected environments,
+ * triggering redundant hot-reload bootstrap work and re-injection of
+ * file-watcher events that downstream tooling treats as noise.
+ *
+ * `relativePath` and `size` remain compared with strict equality —
+ * `size` is an integer number of bytes and paths are canonical strings,
+ * so any drift in either field reflects a genuine change to the asset.
+ * Only `mtimeMs` tolerates a floating-point epsilon via
+ * {@link Core.areNumbersApproximatelyEqual}, mirroring the policy used
+ * by the semantic project-index cache validator.
+ */
 function areRuntimeWrapperAssetManifestsEqual(
     left: RuntimeWrapperAssetManifest,
     right: RuntimeWrapperAssetManifest
@@ -118,7 +144,7 @@ function areRuntimeWrapperAssetManifestsEqual(
         return (
             entry.relativePath === candidate.relativePath &&
             entry.size === candidate.size &&
-            entry.mtimeMs === candidate.mtimeMs
+            areNumbersApproximatelyEqual(entry.mtimeMs, candidate.mtimeMs)
         );
     });
 }
@@ -193,12 +219,35 @@ function renderLiveReloadBootstrapConfigModule(config: LiveReloadBootstrapConfig
     ].join("");
 }
 
+/**
+ * Write the live-reload bootstrap config module to disk only when its contents
+ * have actually changed. The hot-reload dev pipeline re-invokes
+ * `syncLiveReloadAssets` on every session start, and the bootstrap config is
+ * typically stable across restarts. Skipping the redundant `fs.writeFile`
+ * syscall avoids an unnecessary disk write (and any subsequent file-watcher
+ * invalidation downstream) in the steady state.
+ */
 async function writeLiveReloadBootstrapConfig(
     targetRoot: string,
     bootstrapConfig: LiveReloadBootstrapConfig
 ): Promise<void> {
-    const targetConfigPath = path.join(targetRoot, "browser", "config.js");
-    await fs.writeFile(targetConfigPath, `${renderLiveReloadBootstrapConfigModule(bootstrapConfig)}\n`, "utf8");
+    const targetConfigPath = path.join(targetRoot, "src", "browser", "config.js");
+    const rendered = `${renderLiveReloadBootstrapConfigModule(bootstrapConfig)}\n`;
+
+    const existingContents = await fs.readFile(targetConfigPath, "utf8").catch((error) => {
+        const maybeFsError = error as NodeJS.ErrnoException;
+        if (maybeFsError.code === "ENOENT") {
+            return null;
+        }
+
+        throw error;
+    });
+
+    if (existingContents === rendered) {
+        return;
+    }
+
+    await fs.writeFile(targetConfigPath, rendered, "utf8");
 }
 
 export async function syncLiveReloadAssets({
@@ -268,6 +317,8 @@ export const __test__ = Object.freeze({
     DEFAULT_RUNTIME_WRAPPER_DIST_ROOT,
     HOT_RELOAD_ASSET_MANIFEST_VERSION,
     LIVE_RELOAD_BOOTSTRAP_CONFIG_RELATIVE_PATH,
+    areRuntimeWrapperAssetManifestsEqual,
     parseRuntimeWrapperAssetManifest,
-    collectRuntimeWrapperAssetManifestEntries
+    collectRuntimeWrapperAssetManifestEntries,
+    renderLiveReloadBootstrapConfigModule
 });

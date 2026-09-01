@@ -20,6 +20,7 @@ import {
     resolveLiveReloadProjectBuildSettings
 } from "./game-maker-build.js";
 import { injectLiveReloadBootstrap } from "./html-injector.js";
+import { type LiveReloadSessionStartSource, resolveLiveReloadProjectIdentity } from "./session-registry.js";
 import { resolveLiveReloadTarget } from "./target-resolution.js";
 
 export interface PrepareLiveReloadOptions {
@@ -43,6 +44,8 @@ export interface StartLiveReloadDevSessionOptions {
     bootstrapConfig: LiveReloadBootstrapConfig;
     runtimeWrapperDistRoot?: string;
     watchOptions?: WatchCommandOptions;
+    sessionId?: string;
+    startSource?: LiveReloadSessionStartSource;
     buildRunner?: typeof buildGameMakerHtml5Output;
     prepareRunner?: typeof prepareLiveReload;
     projectContextResolver?: typeof resolveCommandProjectContext;
@@ -117,6 +120,8 @@ export async function startLiveReloadDevSession({
     bootstrapConfig,
     runtimeWrapperDistRoot,
     watchOptions = {},
+    sessionId,
+    startSource = "cli",
     buildRunner = buildGameMakerHtml5Output,
     prepareRunner = prepareLiveReload,
     projectContextResolver = resolveCommandProjectContext,
@@ -126,6 +131,7 @@ export async function startLiveReloadDevSession({
     const projectContext = await projectContextResolver({
         path: targetPath
     });
+    const projectIdentity = await resolveLiveReloadProjectIdentity(targetPath, projectContextResolver);
     const projectSettings = await settingsResolver(projectContext.projectRoot, projectContext.projectConfig);
     const configuredHtml5OutputRoot = projectSettings.html5OutputRoot;
     const requestedHtml5OutputRoot = html5OutputRoot ? resolveRequestedPath(html5OutputRoot) : null;
@@ -193,6 +199,12 @@ export async function startLiveReloadDevSession({
 
     await watchRunner(targetPath, {
         ...watchOptions,
+        liveReloadSession: {
+            projectRoot: projectIdentity.projectRoot,
+            sessionId: sessionId ?? `${process.pid}-${Date.now()}`,
+            startSource,
+            yypPath: projectIdentity.yypPath
+        },
         runtimeRoot: preparation.target.outputRoot,
         runtimeServer: true
     });

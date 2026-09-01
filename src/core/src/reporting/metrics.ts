@@ -2,18 +2,18 @@ import { toArrayFromIterable } from "../utils/array.js";
 import { getOrCreateMapEntry, incrementMapValue } from "../utils/object.js";
 import { getNonEmptyString, normalizeStringList } from "../utils/string.js";
 
-const hasHrtime = typeof process?.hrtime?.bigint === "function";
+// `performance.now()` is part of the Node.js global scope (engines.node >= 22)
+// and the Web Performance API. It is monotonic, sub-millisecond, and immune to
+// wall-clock adjustments, which is exactly the property the metrics timers need.
+// We bind the time source once at module load to avoid the per-call feature
+// detection overhead — the host environment cannot change after startup.
+const nowMs: () => number =
+    typeof performance !== "undefined" && typeof performance.now === "function"
+        ? () => performance.now()
+        : () => Date.now();
 
 const DEFAULT_CACHE_KEYS = Object.freeze(["hits", "misses", "stale"]);
 const SUMMARY_SECTIONS = Object.freeze(["timings", "counters", "caches", "metadata"]);
-
-function nowMs() {
-    if (hasHrtime) {
-        const ns = process.hrtime.bigint();
-        return Number(ns / 1_000_000n);
-    }
-    return Date.now();
-}
 
 /**
  * Normalize a label string by trimming whitespace and replacing
@@ -40,6 +40,12 @@ function normalizeLabel(label) {
  * @property {(label: string) => () => void} startTimer
  * @property {(label: string, callback: () => any) => any} timeSync
  * @property {(label: string, callback: () => Promise<any>) => Promise<any>} timeAsync
+ * @property {(label: string, durationMs: number) => void} recordDuration Record a
+ *   duration measured elsewhere (for example inside a worker thread) as if it
+ *   had been captured by `startTimer`/`timeSync`. Lets callers that aggregate
+ *   pre-measured timings from another execution context (a worker thread, a
+ *   remote process) fold them into this tracker's `timings` snapshot without
+ *   re-executing the timed work.
  */
 
 /**
@@ -344,7 +350,8 @@ export function createMetricsTracker({
     const timingTools = Object.freeze({
         startTimer,
         timeSync,
-        timeAsync
+        timeAsync,
+        recordDuration: recordTiming
     });
 
     const counterTools = Object.freeze({

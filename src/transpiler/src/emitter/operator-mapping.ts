@@ -15,9 +15,11 @@
  * - Strict equality conversion (`==` → `===`, `!=` → `!==`)
  * - Bitwise operators (preserved but documented for clarity)
  *
- * NOTE: `div` is NOT in this table. GML's `div` performs integer division
+ * NOTE: `div`, `xor`, and `^^` are NOT in this table. GML's `div` performs integer division
  * truncating toward zero, which has no single JavaScript operator equivalent.
- * The emitter handles `div` as a special case, lowering it to `Math.trunc(a / b)`.
+ * GML's logical XOR (`xor`, `^^`) evaluates truthiness of both operands and
+ * requires lowering to logical inequality `(!a !== !b)`.
+ * The emitter handles these as special cases directly.
  *
  * @param operatorToken - The GML operator to map
  * @returns The equivalent JavaScript operator
@@ -35,30 +37,15 @@ export function mapBinaryOperator(operatorToken: string): string {
 }
 
 /**
- * Maps GML unary operators to their JavaScript equivalents.
- *
- * Most unary operators are the same in both languages, but GML's `not`
- * operator must be converted to JavaScript's `!`.
- *
- * @param operatorToken - The GML unary operator to map
- * @returns The equivalent JavaScript operator
- *
- * @example
- * ```typescript
- * mapUnaryOperator("not") // → "!"
- * mapUnaryOperator("-")   // → "-" (passthrough)
- * mapUnaryOperator("~")   // → "~" (passthrough)
- * ```
+ * Most unary operators are the same in both languages.
+ * Both GML and JavaScript do **not** support `not`
+ * as a built-in logical operator, only `!`.
  */
-export function mapUnaryOperator(operatorToken: string): string {
-    return operatorToken === "not" ? "!" : operatorToken;
-}
 
 const BINARY_OPERATOR_MAPPINGS: Readonly<Record<string, string>> = Object.freeze({
     mod: "%",
     and: "&&",
     or: "||",
-    xor: "^",
     "==": "===",
     "!=": "!=="
 });

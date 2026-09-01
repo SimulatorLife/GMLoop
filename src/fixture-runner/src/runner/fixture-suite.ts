@@ -6,6 +6,7 @@ import { describe, it, test } from "node:test";
 
 import { Core } from "@gmloop/core";
 
+import { FIXTURE_COMPARISONS } from "../config/index.js";
 import { discoverFixtureCases } from "../discovery/index.js";
 import {
     collectBudgetFailures,
@@ -33,7 +34,9 @@ type DirectoryComparisonStats = Readonly<{
 
 /**
  * Compare two fixture directories by path and UTF-8 file content while keeping
- * in-memory file buffering bounded to one pair of files at a time.
+ * in-memory file buffering bounded to one pair of files at a time. Equality
+ * checks use Node's strict assertion methods so fixture matching never coerces
+ * values.
  *
  * @param actualDirectoryPath Produced fixture output directory.
  * @param expectedDirectoryPath Golden expected fixture directory.
@@ -69,7 +72,7 @@ export async function compareDirectoryTrees(
             readFile(path.join(actualDirectoryPath, relativePath), "utf8"),
             readFile(path.join(expectedDirectoryPath, relativePath), "utf8")
         ]);
-        assert.equal(actualText, expectedText, `Project tree file "${relativePath}" must match expected text.`);
+        assert.strictEqual(actualText, expectedText, `Project tree file "${relativePath}" must match expected text.`);
         return 1 + (await compareNextFile(nextIndex + 1));
     }
 
@@ -82,25 +85,35 @@ export async function compareDirectoryTrees(
 }
 
 function canonicalizeFixtureText(text: string, comparison: FixtureComparison): string {
-    if (comparison === "ignore-whitespace-and-line-endings") {
-        return text.replaceAll(/\r\n?/gu, "\n").replaceAll(/\s+/gu, "");
+    switch (comparison) {
+        case FIXTURE_COMPARISONS.IGNORE_WHITESPACE_AND_LINE_ENDINGS: {
+            return text.replaceAll(/\r\n?/gu, "\n").replaceAll(/\s+/gu, "");
+        }
+        case FIXTURE_COMPARISONS.EXACT: {
+            return text;
+        }
+        default: {
+            throw new TypeError(`Unsupported fixture comparison mode: ${String(comparison)}`);
+        }
     }
-
-    return text;
 }
 
-async function compareFixtureCaseResult(fixtureCase: FixtureCase, caseResult: FixtureCaseResult): Promise<void> {
+async function compareFixtureCaseResult(
+    fixtureCase: FixtureCase,
+    caseResult: FixtureCaseResult,
+    inputText: string | null
+): Promise<void> {
     if (fixtureCase.assertion === "parse-error") {
         throw new Error(`Fixture ${fixtureCase.caseId} expected a parse error but completed successfully.`);
     }
 
     if (fixtureCase.assertion === "project-tree") {
-        assert.equal(
+        assert.strictEqual(
             caseResult.resultKind,
             "project-tree",
             `Fixture ${fixtureCase.caseId} must return a project-tree result.`
         );
-        assert.notEqual(
+        assert.notStrictEqual(
             fixtureCase.expectedDirectoryPath,
             null,
             `Fixture ${fixtureCase.caseId} is missing expected/ directory.`
@@ -109,18 +122,18 @@ async function compareFixtureCaseResult(fixtureCase: FixtureCase, caseResult: Fi
         return;
     }
 
-    assert.equal(caseResult.resultKind, "text", `Fixture ${fixtureCase.caseId} must return a text result.`);
+    assert.strictEqual(caseResult.resultKind, "text", `Fixture ${fixtureCase.caseId} must return a text result.`);
     const expectedText =
         fixtureCase.assertion === "idempotent"
-            ? await readFile(fixtureCase.inputFilePath ?? "", "utf8")
+            ? (inputText ?? "")
             : await readFile(fixtureCase.expectedFilePath ?? "", "utf8");
     const actualOutput = canonicalizeFixtureText(caseResult.outputText, fixtureCase.comparison);
     const canonicalExpected = canonicalizeFixtureText(expectedText, fixtureCase.comparison);
 
-    assert.equal(
+    assert.strictEqual(
         actualOutput,
         canonicalExpected,
-        fixtureCase.comparison === "exact"
+        fixtureCase.comparison === FIXTURE_COMPARISONS.EXACT
             ? `${fixtureCase.caseId} output must match expected text byte-for-byte.`
             : `${fixtureCase.caseId} output must match expected text for comparison mode ${fixtureCase.comparison}.`
     );
@@ -157,6 +170,20 @@ async function readFixtureInputText(fixtureCase: FixtureCase): Promise<string | 
     return fixtureCase.inputFilePath ? await readFile(fixtureCase.inputFilePath, "utf8") : null;
 }
 
+/**
+ * Read the profiling budgets declared by a fixture case, if any.
+ *
+ * Acts as a Law-of-Demeter façade so callers don't have to navigate the nested
+ * `config.fixture.profile.budgets` chain themselves. Returns `null` whenever
+ * the fixture omits a profile block, or declares one without budgets.
+ *
+ * @param fixtureCase Fixture case whose budgets should be resolved.
+ * @returns Declared budgets, or `null` when no budgets are configured.
+ */
+export function resolveFixtureCaseProfileBudgets(fixtureCase: FixtureCase): FixtureProfileBudgets | null {
+    return fixtureCase.config.fixture.profile?.budgets ?? null;
+}
+
 function assertFixtureBudgetsWithinLimits(
     fixtureCase: FixtureCase,
     budgetFailures: ReturnType<typeof collectBudgetFailures>
@@ -178,7 +205,7 @@ async function executeFixtureCase(
     profileCollector: FixtureProfileCollector
 ): Promise<FixtureCaseExecutionResult> {
     const stageTimer = createStageTimer();
-    const budgets = fixtureCase.config.fixture.profile?.budgets ?? null;
+    const budgets = resolveFixtureCaseProfileBudgets(fixtureCase);
     const inputText = await readFixtureInputText(fixtureCase);
     const runProfiledStage = <T>(
         stageName: Exclude<FixtureStageName, "load" | "compare" | "total">,
@@ -222,7 +249,7 @@ async function executeFixtureCase(
                 runProfiledStage
             });
             await stageTimer.runStage("compare", async () => {
-                await compareFixtureCaseResult(fixtureCase, caseResult);
+                await compareFixtureCaseResult(fixtureCase, caseResult, inputText);
             });
         });
 
@@ -252,7 +279,7 @@ async function executeFixtureCase(
             stageTimer.getStages()
         );
         profileCollector.addEntry(profileEntry);
-        throw error;
+        throw Core.toContextualError(`Fixture ${fixtureCase.caseId} failed in ${adapter.workspaceName}`, error);
     } finally {
         if (workingProjectDirectoryPath !== null) {
             await rm(workingProjectDirectoryPath, { recursive: true, force: true });
@@ -356,7 +383,7 @@ export async function registerNodeFixtureSuite(parameters: {
     const fixtureCases = await discoverFixtureCases(parameters.fixtureRoot);
 
     void test(`${parameters.adapter.suiteName} discovers fixture cases`, () => {
-        assert.equal(
+        assert.strictEqual(
             fixtureCases.length > 0,
             true,
             `Expected at least one fixture for ${parameters.adapter.suiteName}.`

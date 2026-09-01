@@ -1,6 +1,6 @@
 import type { MaybePromise, NamingCategory, OccurrenceKindValue, Range } from "../types.js";
 import type { WorkspaceEdit } from "../workspace-edit.js";
-import type { NamingConventionTarget } from "./refactor-engine-types.js";
+import type { NamingConventionTarget, RenameRequest } from "./refactor-engine-types.js";
 
 export interface AstNode {
     type?: string;
@@ -44,6 +44,34 @@ export interface ParserBridge {
 export interface SemanticValidationResult {
     errors?: Array<string>;
     warnings?: Array<string>;
+}
+
+/** A blocking semantic uncertainty reported during rename preflight. */
+export interface RenameSafetyGap {
+    message: string;
+    path?: string;
+}
+
+/** Tier-2 semantic query role required to report rename-safety uncertainty. */
+export interface RenameSafetyProvider {
+    getRenameSafetyGaps(symbolId: string): MaybePromise<Array<RenameSafetyGap>>;
+}
+
+/** A same-name semantic uncertainty reported during conflict detection. */
+export interface SemanticGap {
+    message: string;
+    path?: string;
+}
+
+/**
+ * Semantic query role for name-scoped uncertainty that prevents a rename.
+ *
+ * This is intentionally separate from {@link RenameSafetyProvider}: callers
+ * that have a stable symbol identity must use rename-safety queries, while
+ * name-planning codemods can only ask for conservative same-name gaps.
+ */
+export interface SemanticGapProvider {
+    checkSemanticGaps(symbolName: string, symbolKind?: string | null): Array<SemanticGap>;
 }
 
 /**
@@ -96,7 +124,7 @@ export interface DependencyAnalyzer {
 /**
  * Language keyword information.
  *
- * Provides access to reserved keywords for the language without
+ * Provides access to reserved language names without
  * coupling to symbol resolution or other semantic operations.
  */
 export interface KeywordProvider {
@@ -158,8 +186,17 @@ export interface EditValidator {
  * stale on-disk snapshot.
  */
 export interface BatchWorkspaceOverlay {
+    canPlanRenameBatchWithoutWorkspaceOverlay?(renames: ReadonlyArray<RenameRequest>): MaybePromise<boolean>;
     clearWorkspaceOverlay(): MaybePromise<void>;
     stageWorkspaceEdit(workspace: WorkspaceEdit): MaybePromise<void>;
+}
+
+/**
+ * Allows a semantic adapter to read the refactor engine's current workspace
+ * overlay while a codemod batch is being planned and applied.
+ */
+export interface SemanticWorkspaceSourceProvider {
+    setReadFile(readFile: (filePath: string) => MaybePromise<string>): void;
 }
 
 /**
@@ -174,7 +211,15 @@ export interface BatchWorkspaceOverlay {
  * interface when possible.
  */
 export interface SemanticAnalyzer
-    extends SymbolResolver, OccurrenceTracker, FileSymbolProvider, DependencyAnalyzer, KeywordProvider, EditValidator {}
+    extends
+        SymbolResolver,
+        OccurrenceTracker,
+        FileSymbolProvider,
+        DependencyAnalyzer,
+        KeywordProvider,
+        EditValidator,
+        RenameSafetyProvider,
+        SemanticGapProvider {}
 
 /**
  * Partial semantic analyzer for dependency injection.
@@ -194,6 +239,9 @@ export type PartialSemanticAnalyzer = Partial<SymbolResolver> &
     Partial<DependencyAnalyzer> &
     Partial<KeywordProvider> &
     Partial<EditValidator> &
+    Partial<RenameSafetyProvider> &
+    Partial<SemanticGapProvider> &
     Partial<BatchWorkspaceOverlay> &
+    Partial<SemanticWorkspaceSourceProvider> &
     Partial<NamingConventionTargetProvider> &
     Partial<MacroExpansionDependencyProvider>;

@@ -86,15 +86,14 @@ const NUMERIC_OPERATORS = new Map<string, (a: number, b: number) => number | boo
     ["&", (a, b) => a & b],
     ["|", (a, b) => a | b],
     ["^", (a, b) => a ^ b],
-    ["xor", (a, b) => a ^ b],
     ["<<", (a, b) => a << b],
     [">>", (a, b) => a >> b]
 ]);
 
-// Boolean operators that need short-circuit evaluation.
+// Boolean operators that need short-circuit evaluation (or logic checks).
 // Unlike numeric operators, &&/and and ||/or must be evaluated inline
 // to preserve JavaScript's short-circuit semantics (e.g., false && x returns false without evaluating x).
-const BOOLEAN_OPERATORS = new Set(["&&", "and", "||", "or"]);
+const BOOLEAN_OPERATORS = new Set(["&&", "and", "||", "or", "xor", "^^"]);
 
 // Equality operators handled by evaluateEqualityOperator.
 // Any other operator returns null from that function, signalling "cannot fold".
@@ -305,11 +304,14 @@ export function tryFoldConstantExpression(ast: BinaryExpressionNode): number | s
     const rightBoolean = toBooleanLiteral(right);
     if (leftBoolean !== null && rightBoolean !== null) {
         if (BOOLEAN_OPERATORS.has(op)) {
-            // Short-circuit evaluation for &&/and and ||/or
+            // Short-circuit evaluation for &&/and and ||/or, or logical XOR
             if (op === "&&" || op === "and") {
                 return leftBoolean && rightBoolean;
             }
-            return leftBoolean || rightBoolean;
+            if (op === "||" || op === "or") {
+                return leftBoolean || rightBoolean;
+            }
+            return leftBoolean !== rightBoolean;
         }
         // Comparison operators on boolean literals are handled here.
         // If both sides are boolean literals the equality check is meaningful;

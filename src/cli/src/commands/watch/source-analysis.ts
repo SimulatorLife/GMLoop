@@ -17,9 +17,12 @@ import { availableParallelism } from "node:os";
 
 import { Core } from "@gmloop/core";
 
-import { normalizeExtensions } from "./extension-normalizer.js";
+import {
+    getRuntimePathSegments,
+    resolveScriptFileNameFromSegments
+} from "../../modules/transpilation/runtime-identifiers.js";
 
-const { clamp, getLineBreakCount, toFiniteNumber } = Core;
+const { clamp, getLineBreakCount, normalizeExtensionSuffix, toNormalizedInteger, uniqueArray } = Core;
 
 // ---------------------------------------------------------------------------
 // Extension matching
@@ -34,12 +37,17 @@ export interface ExtensionMatcher {
 }
 
 /**
- * Creates a matcher for file extensions that normalizes case and ensures each
- * entry begins with a leading dot. The matcher exposes the normalized set for
- * logging while providing a case-insensitive predicate for incoming filenames.
+ * Creates a matcher for the command-owned extension set. Inputs are expected
+ * to be narrow internal constants, not user-provided glob patterns; watch mode
+ * deliberately keeps extension policy fixed to GameMaker-owned file types.
  */
 export function createExtensionMatcher(extensions: ReadonlyArray<string>): ExtensionMatcher {
-    const normalized = normalizeExtensions(extensions);
+    const normalized = uniqueArray(
+        extensions.map((extension) => normalizeExtensionSuffix(extension)),
+        {
+            freeze: false
+        }
+    ) as Array<string>;
     const normalizedSet = new Set(normalized);
 
     return {
@@ -117,7 +125,7 @@ export function hashSourceContent(source: string): string {
  */
 export function resolveUnknownScanConcurrency(configuredMaximum: number): number {
     const detectedParallelism = Math.max(1, availableParallelism());
-    const normalizedMaximum = toFiniteNumber(configuredMaximum) ?? detectedParallelism;
+    const normalizedMaximum = toNormalizedInteger(configuredMaximum) ?? detectedParallelism;
 
     return clamp(normalizedMaximum, 1, detectedParallelism);
 }
@@ -158,6 +166,12 @@ export function delayFileReadRetry(durationMs: number, abortSignal?: AbortSignal
  * Filesystem watch events can fire while an editor is still writing.
  * Retry briefly when the file is observed as empty so we do not treat
  * transient truncation windows as a permanent transpilation failure.
+ *
+ * @param filePath - Path to the file to read.
+ * @param retryCount - Maximum number of read attempts, including the initial read; values below one still perform the initial read without retrying.
+ * @param retryDelayMs - Delay in milliseconds between attempts after an empty read.
+ * @param abortSignal - Optional signal used to stop before the first read or during a retry delay.
+ * @returns The file content, or `null` when the signal was already aborted before the first read. An abort during a retry delay returns the current content without another read.
  */
 export async function readSourceFileWithTransientEmptyRetry(
     filePath: string,
@@ -233,29 +247,29 @@ export function computeHotReloadLatencyStats(
 // ---------------------------------------------------------------------------
 
 /**
- * Pre-read source text and AST cached during the initial startup scan.
+ * Pre-read source text and metadata cached during the initial startup scan.
  */
 export interface InitialFileData {
     content: string;
-    ast: unknown;
-    /** Cached symbol definitions extracted during the startup scan.
-     *  Reusing them avoids a second AST traversal in transpileFile. */
+    /** File modification time captured with the cached source. */
+    mtimeMs: number;
+    /** Symbol definitions extracted during the startup scan. */
     symbols: Array<string>;
-    /** Cached symbol references extracted during the startup scan.
-     *  Reusing them avoids a second AST traversal in transpileFile. */
+    /** Symbol references extracted during the startup scan. */
     references: Array<string>;
 }
 
 /**
- * Returns and removes cached startup data for a file.
+ * Returns and removes cached startup metadata for a file.
  *
- * The watch command only needs the pre-read source text and AST once during the
- * initial scan. Deleting the cache entry immediately after retrieval reduces the
- * peak memory footprint of large startup scans without changing the transpilation
- * work performed for each file.
+ * The watch command caches source text and extracted metadata between its two
+ * startup passes. Deleting each entry immediately after the initial scan reduces
+ * the peak memory footprint of large projects. Parsed ASTs are deliberately not
+ * retained here because the complete project AST set can exceed available memory
+ * before the watcher has started serving runtime patches.
  *
  * @param fileDataCache - Startup cache keyed by absolute file path.
- * @param filePath - File whose cached source text and AST should be consumed.
+ * @param filePath - File whose cached source text and metadata should be consumed.
  * @returns Cached startup data when present.
  */
 export function takeInitialFileData(
@@ -277,9 +291,8 @@ export function takeInitialFileData(
 /**
  * Clears any remaining startup file cache entries after the initial scan finishes.
  *
- * During startup, cached source text and AST objects are reused to avoid duplicate
- * reads/parses. Once the initial scan completes (or fails), retaining leftover entries
- * only increases steady-state memory usage.
+ * Once the initial scan completes (or fails), retaining leftover source and metadata
+ * entries only increases steady-state memory usage.
  *
  * @param fileDataCache - Startup cache to clear.
  */
@@ -289,4 +302,40 @@ export function clearInitialFileDataCache(fileDataCache: Map<string, InitialFile
     }
 
     fileDataCache.clear();
+}
+
+// ---------------------------------------------------------------------------
+// Script-name registration
+// ---------------------------------------------------------------------------
+
+/**
+ * Resolve the runtime script name (`gml_Script_<basename>`) for a `.gml` file
+ * located under a `scripts/` directory. Returns `null` when the path is not
+ * inside a `scripts/` directory or lacks a recognizable file stem.
+ */
+export function getScriptNameFromPath(filePath: string): string | null {
+    const segments = getRuntimePathSegments(filePath);
+    return resolveScriptFileNameFromSegments(segments);
+}
+
+/**
+ * Insert the script name derived from {@link getScriptNameFromPath} into the
+ * provided `Set`. No-op when the path does not resolve to a script name.
+ */
+export function ensureScriptNameRegistered(filePath: string, scriptNames: Set<string>): void {
+    const scriptName = getScriptNameFromPath(filePath);
+    if (scriptName) {
+        scriptNames.add(scriptName);
+    }
+}
+
+/**
+ * Remove the script name derived from {@link getScriptNameFromPath} from the
+ * provided `Set`. No-op when the path does not resolve to a script name.
+ */
+export function unregisterScriptName(filePath: string, scriptNames: Set<string>): void {
+    const scriptName = getScriptNameFromPath(filePath);
+    if (scriptName) {
+        scriptNames.delete(scriptName);
+    }
 }

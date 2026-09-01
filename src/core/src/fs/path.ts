@@ -128,6 +128,78 @@ export function resolvePortableAbsolutePath(candidate: string): string {
 }
 
 /**
+ * Resolve a project-scoped path to an absolute path while preserving portable
+ * absolute path syntax. Relative entries are interpreted from `projectRoot`.
+ *
+ * @param projectRoot Directory that relative paths are rooted at.
+ * @param inputPath Absolute or project-relative path candidate.
+ * @returns Absolute normalized path.
+ */
+export function resolveProjectPath(projectRoot: string, inputPath: string): string {
+    if (isPortableAbsolutePath(inputPath)) {
+        return resolvePortableAbsolutePath(inputPath);
+    }
+
+    return resolvePortableAbsolutePath(path.join(projectRoot, inputPath));
+}
+
+/** Options for compiling a project-rooted path boundary matcher. */
+export interface ProjectPathBoundaryMatcherOptions {
+    projectRoot: string;
+    allowedPaths: ReadonlyArray<string>;
+    deniedPaths: ReadonlyArray<string>;
+    allowAncestorDirectories?: boolean;
+}
+
+/**
+ * Compile project-relative allow/deny path lists into a cached boundary matcher.
+ *
+ * Deny entries always win. When no allow entries are provided, every
+ * non-denied path is selected. Callers that filter directory roots can enable
+ * `allowAncestorDirectories` so a parent directory is kept when it contains an
+ * allowed descendant.
+ *
+ * @param options Project root, allow/deny entries, and directory matching mode.
+ * @returns Predicate that reports whether a candidate path is selected.
+ */
+export function createProjectPathBoundaryMatcher({
+    projectRoot,
+    allowedPaths,
+    deniedPaths,
+    allowAncestorDirectories = false
+}: ProjectPathBoundaryMatcherOptions): (targetPath: string) => boolean {
+    const absoluteAllowedPaths = allowedPaths.map((selectionPath) => resolveProjectPath(projectRoot, selectionPath));
+    const absoluteDeniedPaths = deniedPaths.map((selectionPath) => resolveProjectPath(projectRoot, selectionPath));
+    const resultCache = new Map<string, boolean>();
+
+    return (targetPath: string): boolean => {
+        const cached = resultCache.get(targetPath);
+        if (cached !== undefined) {
+            return cached;
+        }
+
+        const absoluteTargetPath = resolveProjectPath(projectRoot, targetPath);
+        const isDenied = absoluteDeniedPaths.some((absoluteSelectionPath) =>
+            isPathWithinBoundary(absoluteTargetPath, absoluteSelectionPath)
+        );
+        if (isDenied) {
+            resultCache.set(targetPath, false);
+            return false;
+        }
+
+        const isAllowed =
+            absoluteAllowedPaths.length === 0 ||
+            absoluteAllowedPaths.some(
+                (absoluteSelectionPath) =>
+                    isPathWithinBoundary(absoluteTargetPath, absoluteSelectionPath) ||
+                    (allowAncestorDirectories && isPathWithinBoundary(absoluteSelectionPath, absoluteTargetPath))
+            );
+        resultCache.set(targetPath, isAllowed);
+        return isAllowed;
+    };
+}
+
+/**
  * Resolve the relative path from {@link parentPath} to {@link childPath} when
  * the child resides within the parent directory tree.
  *

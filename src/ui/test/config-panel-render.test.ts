@@ -2,11 +2,13 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
-import { GRAPH_UI_EVENT_SAVE_CONFIG } from "../src/app/components/events.js";
+import type { PropertyValues } from "lit";
+
 import { GmAppShell } from "../src/app/components/gm-app-shell.js";
 import { GmConfigPanel } from "../src/app/components/gm-config-panel.js";
 import { GmGraphToolbar } from "../src/app/components/gm-graph-toolbar.js";
 import type { GraphVisualizationUiModel } from "../src/app/contracts.js";
+import { GRAPH_UI_EVENT_CLEAR_PAGE_ERROR, GRAPH_UI_EVENT_SAVE_CONFIG } from "../src/app/events/events.js";
 import { createInitialGraphVisualizationUiState } from "../src/app/state/reducer.js";
 import type { GraphVisualizationUiState } from "../src/app/state/types.js";
 import { renderTemplateValue } from "./render-template-helpers.js";
@@ -17,7 +19,9 @@ class TestableGmConfigPanel extends GmConfigPanel {
     }
 }
 
-class TestableGmAppShell extends GmAppShell {}
+class TestableGmAppShell extends GmAppShell {
+    protected override update(_changedProperties: PropertyValues<this>): void {}
+}
 
 class TestableGmGraphToolbar extends GmGraphToolbar {
     public renderForTest(): unknown {
@@ -27,6 +31,7 @@ class TestableGmGraphToolbar extends GmGraphToolbar {
 
 function createMockModel(): GraphVisualizationUiModel {
     return {
+        autoGamePipeline: null,
         data: {
             edges: [],
             generatedAt: "2026-01-01T00:00:00.000Z",
@@ -48,6 +53,12 @@ function createMockModel(): GraphVisualizationUiModel {
                         name: "printWidth",
                         source: "configured",
                         value: 100
+                    },
+                    {
+                        description: "Indent with tabs instead of spaces.",
+                        name: "useTabs",
+                        source: "default",
+                        value: false
                     }
                 ]
             },
@@ -123,11 +134,13 @@ function createMockModel(): GraphVisualizationUiModel {
                 rulesets: [
                     {
                         name: "recommended",
-                        ruleIds: ["gml/no-globalvar", "gml/require-region-pairs"]
+                        ruleIds: ["gml/no-globalvar", "gml/require-region-pairs"],
+                        ruleLevels: { "gml/no-globalvar": "warn", "gml/require-region-pairs": "error" }
                     },
                     {
                         name: "performance",
-                        ruleIds: ["gml/no-globalvar"]
+                        ruleIds: ["gml/no-globalvar"],
+                        ruleLevels: { "gml/no-globalvar": "warn" }
                     }
                 ],
                 ruleset: "recommended"
@@ -192,16 +205,15 @@ void test("config panel defaults to rendered view and exposes configuration deta
     assert.match(rendered, /id="config-page"[\s\S]*class=page content-page active/u);
     assert.doesNotMatch(rendered, /Config Path:?/iu);
     assert.doesNotMatch(rendered, /<dt>Draft<\/dt>/u);
-    assert.match(rendered, /<gm-badge[^>]*\.label=Saved/u);
     assert.doesNotMatch(rendered, /Project Root:?/iu);
     assert.doesNotMatch(rendered, /<dt>File<\/dt>/u);
     assert.match(rendered, /id="config-format-heading"[\s\S]*Format/u);
+    assert.match(rendered, /id=config-format-useTabs/u);
+    assert.match(rendered, /Indent with tabs instead of spaces\./u);
     assert.match(rendered, /id="config-lint-heading"[\s\S]*Lint/u);
     assert.match(rendered, /id="config-refactor-heading"[\s\S]*Refactor/u);
-    assert.match(rendered, /id="config-tool-metadata-heading"[\s\S]*Tool Metadata/u);
-    assert.match(rendered, /manual read/u);
-    assert.match(rendered, /ResourceTool v2024\.14\.15/u);
-    assert.match(rendered, /configured MCP server gamemaker-resource-tool/u);
+    assert.doesNotMatch(rendered, /id="config-tool-metadata-heading"/u);
+    assert.doesNotMatch(rendered, /Tool Metadata/u);
     assert.match(rendered, /All Rules/u);
     assert.match(rendered, /All Levels/u);
     assert.match(rendered, /config-filter-reset/u);
@@ -219,12 +231,98 @@ void test("config panel defaults to rendered view and exposes configuration deta
     assert.doesNotMatch(rendered, /config-severity-badge/u);
 });
 
+void test("config panel renders a compact gm-json-viewer for a lint rule's options", () => {
+    const baseModel = createMockModel();
+    const panel = new TestableGmConfigPanel();
+    panel.model = {
+        ...baseModel,
+        projectConfigurationCatalog: {
+            ...baseModel.projectConfigurationCatalog,
+            lint: {
+                ...baseModel.projectConfigurationCatalog.lint,
+                rules: [
+                    {
+                        description: "Cap line length inside comments.",
+                        fixable: null,
+                        level: "warn",
+                        options: { max: 80 },
+                        ruleId: "gml/comment-length"
+                    }
+                ]
+            }
+        }
+    };
+    panel.state = createMockState();
+
+    const rendered = renderTemplateValue(panel.renderForTest());
+
+    assert.match(rendered, /<gm-json-viewer\s+class="config-inline-json"/u);
+    assert.match(rendered, /copyAccessibleLabel=Copy gml\/comment-length options to clipboard/u);
+    assert.match(rendered, /copyLabel="Copy JSON"/u);
+    assert.match(rendered, /gm-json-viewer[\s\S]*compact/u);
+    assert.doesNotMatch(rendered, /<pre class="config-inline-json"/u);
+});
+
+void test("config panel omits the options viewer for lint rules with no options", () => {
+    const panel = new TestableGmConfigPanel();
+    panel.model = createMockModel();
+    panel.state = createMockState();
+
+    const rendered = renderTemplateValue(panel.renderForTest());
+
+    // The default mock catalog's rules both have empty `options` objects.
+    assert.doesNotMatch(rendered, /class="config-inline-json"/u);
+});
+
+void test("config builder sections are collapsible panels and collapsed by default", () => {
+    const panel = new TestableGmConfigPanel();
+    panel.model = createMockModel();
+    panel.state = createMockState();
+
+    const rendered = renderTemplateValue(panel.renderForTest());
+
+    // Check that Format, Lint, and Refactor sections are rendered as gm-collapsible panels with class config-builder-section
+    assert.match(
+        rendered,
+        /<gm-collapsible[\s\S]*class="config-builder-section"[\s\S]*\.labelledBy=config-format-heading/u
+    );
+    assert.match(
+        rendered,
+        /<gm-collapsible[\s\S]*class="config-builder-section"[\s\S]*\.labelledBy=config-lint-heading/u
+    );
+    assert.match(
+        rendered,
+        /<gm-collapsible[\s\S]*class="config-builder-section"[\s\S]*\.labelledBy=config-refactor-heading/u
+    );
+
+    // gm-collapsible renders a native <details> that defaults to collapsed; the host template never sets `open`.
+    assert.doesNotMatch(rendered, /<gm-collapsible[^>]*\bopen\b/u);
+});
+
 void test("config toolbar restores rendered and raw JSON selector", () => {
+    // Mock global document.querySelector for this test
+    const originalDocument = (globalThis as any).document;
+    (globalThis as any).document = {
+        querySelector: (selector: string) => {
+            if (selector === "gm-config-panel") {
+                return {
+                    isDraftDirty: false,
+                    isDraftValid: true,
+                    draftValidationError: null
+                };
+            }
+            return null;
+        }
+    };
+
     const toolbar = new TestableGmGraphToolbar();
     toolbar.model = createMockModel();
     toolbar.state = createMockState();
 
     const rendered = renderTemplateValue(toolbar.renderForTest());
+
+    // Restore global document
+    (globalThis as any).document = originalDocument;
 
     assert.match(rendered, /id="toolbar-heading"[\s\S]*Config/u);
     assert.match(rendered, /id="toolbar-subheading"[\s\S]*Config path: \/tmp\/test\/gmloop\.json/u);
@@ -232,6 +330,11 @@ void test("config toolbar restores rendered and raw JSON selector", () => {
     assert.match(rendered, /id="config-view-rendered"/u);
     assert.match(rendered, /id="config-view-raw"/u);
     assert.match(rendered, /Raw JSON/u);
+
+    // Assert Save actions moved to toolbar
+    assert.match(rendered, /<gm-badge[^>]*\.label=Saved/u);
+    assert.match(rendered, /Save Config/u);
+    assert.match(rendered, /Reset Draft/u);
 });
 
 void test("config panel renders editable raw JSON view", () => {
@@ -246,8 +349,22 @@ void test("config panel renders editable raw JSON view", () => {
 
     assert.match(rendered, /id="config-raw-json"/u);
     assert.match(rendered, /class="config-raw-textarea"/u);
-    assert.match(rendered, /Save Config/u);
     assert.match(rendered, /JSON is valid/u);
+});
+
+void test("config panel renders a copy button for the raw JSON view", () => {
+    const panel = new TestableGmConfigPanel();
+    panel.model = createMockModel();
+    panel.state = {
+        ...createMockState(),
+        activeConfigView: "raw"
+    };
+
+    const rendered = renderTemplateValue(panel.renderForTest());
+
+    assert.match(rendered, /id="copy-config-raw-json"[\s\S]*class="config-raw-copy-button"/u);
+    assert.match(rendered, /accessibleLabel="Copy raw config JSON to clipboard"/u);
+    assert.match(rendered, /label="Copy JSON"/u);
 });
 
 void test("config severity selector uses severity-colored active states", () => {
@@ -255,11 +372,25 @@ void test("config severity selector uses severity-colored active states", () => 
 
     assert.match(
         source,
-        /\.config-rule-level-selector\s*>\s*\.config-rule-level-error\[aria-pressed="true"\]\s*\{[\s\S]*background:\s*var\(--gm-severity-error-bg\);/u
+        /\.config-rule-level-selector\s*>\s*\.config-rule-level-error\[aria-pressed="true"\]\s*\{[\s\S]*background:\s*var\(--gm-error-surface\);/u
     );
     assert.match(
         source,
         /\.config-rule-level-selector\s*>\s*\.config-rule-level-warn\[aria-pressed="true"\]\s*\{[\s\S]*background:\s*var\(--gm-warning-surface\);/u
+    );
+});
+
+void test("config builder sections have collapse indicator styles", () => {
+    // Config sections render through the shared gm-collapsible primitive, which owns
+    // the single collapse-indicator treatment reused by every collapsible panel in the UI.
+    const source = readFileSync(new URL("../../src/web/styles/components.css", import.meta.url), "utf8");
+
+    // Verify indicator is defined on the shared summary::before rule
+    assert.match(source, /\.gm-collapsible__summary::before\s*\{[\s\S]*content:\s*["']▶["'];/u);
+    // Verify rotation on open state
+    assert.match(
+        source,
+        /\.gm-collapsible\[open\]\s*>\s*\.gm-collapsible__summary::before\s*\{[\s\S]*transform:\s*rotate\(90deg\);/u
     );
 });
 
@@ -297,4 +428,53 @@ void test("app shell routes config save events through the host callback", async
     shell.disconnectedCallback();
 
     assert.deepEqual(savedConfig, { lintRuleset: "recommended", printWidth: 100 });
+});
+
+void test("GmConfigPanel does not override Lit lifecycle hooks for event wiring", () => {
+    // The composition refactor moved the gm-error-banner-dismiss listener
+    // into an EventBusManager registered through LifecycleParticipantsController.
+    // The host must not re-introduce lifecycle overrides that duplicate that
+    // wiring. Reading own properties (not the prototype chain) keeps this
+    // assertion stable against inherited LitElement hooks.
+    const prototype = GmConfigPanel.prototype as unknown as Record<string, unknown>;
+    const hasOwn = Object.prototype.hasOwnProperty;
+
+    assert.equal(
+        hasOwn.call(prototype, "connectedCallback"),
+        false,
+        "Expected GmConfigPanel to drop its connectedCallback override."
+    );
+    assert.equal(
+        hasOwn.call(prototype, "disconnectedCallback"),
+        false,
+        "Expected GmConfigPanel to drop its disconnectedCallback override."
+    );
+});
+
+void test("GmConfigPanel propagates gm-error-banner-dismiss via composition", () => {
+    // With the composition refactor the EventBusManager registered in the
+    // constructor owns the gm-error-banner-dismiss subscription. The panel
+    // must still translate that dismissal into a GRAPH_UI_EVENT_CLEAR_PAGE_ERROR
+    // custom event so the surrounding app shell can clear the config error state.
+    // Invoking the inherited LitElement connectedCallback/disconnectedCallback
+    // drives the LifecycleParticipantsController in the same way the DOM would.
+    const panel = new GmConfigPanel();
+    let observedPage: string | null = null;
+    const listener = (event: Event): void => {
+        const customEvent = event as CustomEvent<{ page: string }>;
+        if (customEvent.detail?.page !== undefined) {
+            observedPage = customEvent.detail.page;
+        }
+    };
+    panel.addEventListener(GRAPH_UI_EVENT_CLEAR_PAGE_ERROR, listener);
+
+    try {
+        panel.connectedCallback();
+        panel.dispatchEvent(new CustomEvent("gm-error-banner-dismiss", { bubbles: true }));
+
+        assert.equal(observedPage, "config");
+    } finally {
+        panel.disconnectedCallback();
+        panel.removeEventListener(GRAPH_UI_EVENT_CLEAR_PAGE_ERROR, listener);
+    }
 });

@@ -305,6 +305,36 @@ void describe("formatter boundaries ownership", () => {
         );
     });
 
+    void it("keeps plain comments between doc comments and functions out of doc-comment output", async () => {
+        // A plain `//` line embedded after a real doc-comment is still ordinary
+        // comment content. Moving it into the formatter's doc-comment emission
+        // path makes the formatter infer documentation structure from comment
+        // text/position, which target-state.md §2.2 assigns to lint.
+        const source = [
+            "/// @description Keep the documented summary",
+            "// Internal implementation note, not documentation",
+            "function documented() {",
+            "    return 1;",
+            "}",
+            ""
+        ].join("\n");
+
+        const formatted = await Format.format(source);
+
+        assert.match(formatted, /^\/\/\/ @description Keep the documented summary$/m);
+        assert.match(formatted, /^\/\/ Internal implementation note, not documentation$/m);
+        assert.match(
+            formatted,
+            /^\/\/\/ @description Keep the documented summary\n\/\/ Internal implementation note, not documentation\nfunction documented\(\)/m,
+            "Formatter may preserve comment placement but must not promote a plain comment to `///` doc output."
+        );
+        assert.doesNotMatch(
+            formatted,
+            /^\/\/\/ Internal implementation note/m,
+            "Formatter must not promote embedded plain comments into doc-comment lines."
+        );
+    });
+
     void it("does not normalize decorative banner comment text (banner normalization belongs in lint)", async () => {
         const source = [
             "function demo() {",

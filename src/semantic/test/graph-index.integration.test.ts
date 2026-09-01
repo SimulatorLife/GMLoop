@@ -9,6 +9,7 @@ import {
     exportGraphVisualizationData,
     getGraphContext,
     getGraphUsages,
+    GRAPH_INDEX_SCHEMA_VERSION,
     openExistingGraphIndexDatabase,
     openGraphIndexDatabase,
     resolveGraphIndexConfig,
@@ -62,10 +63,20 @@ void test("buildGraphIndex creates dual-root graphs and cross-graph toolset edge
     const fixture = await createDualRootFixture();
 
     try {
+        const progress: Array<Readonly<{ current?: number; stage: string; total?: number }>> = [];
         const result = await buildGraphIndex({
+            onProgress: (snapshot) => {
+                progress.push(snapshot);
+            },
             projectRoot: fixture.projectRoot,
             toolsetRoot: fixture.toolsetRoot
         });
+
+        assert.ok(progress.length > 0);
+        assert.equal(progress.at(-1)?.stage, "complete");
+        const parseEvents = progress.filter((event) => event.stage === "gml-parse");
+        assert.ok(parseEvents.length > 0);
+        assert.equal(parseEvents.at(-1)?.current, parseEvents.at(-1)?.total);
 
         const search = searchGraphIndex({
             projectRoot: fixture.projectRoot,
@@ -280,7 +291,7 @@ void test("buildGraphIndex honors disabled embeddings and doctor reports stale f
     }
 });
 
-void test("openExistingGraphIndexDatabase migrates a v1 database to the current schema", async () => {
+void test("openExistingGraphIndexDatabase discards incompatible derived graph facts", async () => {
     const fixture = await createTempProjectWorkspace("graph-index-migration-");
 
     try {
@@ -387,9 +398,9 @@ void test("openExistingGraphIndexDatabase migrates a v1 database to the current 
             const schemaVersion = migrated
                 .prepare("SELECT value FROM schema_meta WHERE key = 'schema_version'")
                 .get() as { value: string } | undefined;
-            assert.equal(schemaVersion?.value, "2");
+            assert.equal(schemaVersion?.value, String(GRAPH_INDEX_SCHEMA_VERSION));
             const nodeCount = migrated.prepare("SELECT COUNT(*) AS count FROM nodes").get() as { count: number };
-            assert.equal(nodeCount.count, 1);
+            assert.equal(nodeCount.count, 0);
             const foreignKeys = migrated.prepare("PRAGMA foreign_keys").get() as { foreign_keys: number };
             assert.equal(foreignKeys.foreign_keys, 1);
         } finally {
@@ -421,10 +432,23 @@ void test("buildGraphIndex preserves unchanged graph slices across incremental r
             "utf8"
         );
 
+        const incrementalProgress: Array<Readonly<{ current?: number; stage: string; total?: number }>> = [];
         await buildGraphIndex({
+            onProgress: (progress) => incrementalProgress.push(progress),
             projectRoot: fixture.projectRoot,
             toolsetRoot: fixture.toolsetRoot
         });
+        const incrementalParseEvents = incrementalProgress.filter((event) => event.stage === "gml-parse");
+        assert.deepEqual(incrementalParseEvents.at(-1), { current: 1, stage: "gml-parse", total: 1 });
+        assert.equal(incrementalProgress.at(-1)?.stage, "complete");
+
+        const warmProgress: Array<Readonly<{ current?: number; stage: string; total?: number }>> = [];
+        await buildGraphIndex({
+            onProgress: (progress) => warmProgress.push(progress),
+            projectRoot: fixture.projectRoot,
+            toolsetRoot: fixture.toolsetRoot
+        });
+        assert.deepEqual(warmProgress, [], "an unchanged graph reopen must use the persisted semantic projection");
 
         const rebuiltDatabase = openGraphIndexDatabase(result.databasePath);
         try {
@@ -1566,8 +1590,7 @@ void test("buildGraphIndex projects the project manifest as the connected projec
                     `
                 )
                 .get("InterplanetaryFootball.yyp") as
-                | { id: string; kind: string; name: string; resourcePath: string; summary: string }
-                | undefined;
+                { id: string; kind: string; name: string; resourcePath: string; summary: string } | undefined;
             assert.ok(projectNode);
             assert.equal(projectNode.id, "project::resource::InterplanetaryFootball.yyp");
             assert.equal(projectNode.kind, "project");
@@ -1649,10 +1672,6 @@ void test("buildGraphIndex projects the project manifest as the connected projec
                 [
                     {
                         toId: "project::resource::datafiles/config/config.yy",
-                        type: "contains"
-                    },
-                    {
-                        toId: "project::resource::extensions/mystery_resource/mystery_resource.yy",
                         type: "contains"
                     },
                     {
@@ -2034,23 +2053,54 @@ void test("buildGraphIndex projects room layers as distinct room_layer nodes wit
             );
             const knightObjectNodeId = "project::resource::objects/oKnight/oKnight.yy";
             const dragonObjectNodeId = "project::resource::objects/oDragon/oDragon.yy";
+            const roomInstanceNodes = database
+                .prepare(
+                    "SELECT id, kind, name, display_name AS displayName, resource_path AS resourcePath FROM nodes WHERE kind = 'room_instance' ORDER BY name"
+                )
+                .all() as Array<{
+                displayName: string;
+                id: string;
+                kind: string;
+                name: string;
+                resourcePath: string | null;
+            }>;
+            assert.equal(roomInstanceNodes.length, 2, "expected two room_instance nodes for placed instances");
+            assert.deepEqual(
+                roomInstanceNodes.map((node) => node.name),
+                ["inst_1", "inst_2"]
+            );
+            assert.deepEqual(
+                roomInstanceNodes.map((node) => node.displayName),
+                ["inst_1 (Instances)", "inst_2 (Instances)"]
+            );
+            const knightInstanceNodeId = roomInstanceNodes.find((node) => node.name === "inst_1")?.id;
+            const dragonInstanceNodeId = roomInstanceNodes.find((node) => node.name === "inst_2")?.id;
             assert.ok(
                 edgeRows.some(
                     (edge) =>
                         edge.fromId === instancesLayerNodeId &&
-                        edge.toId === knightObjectNodeId &&
-                        edge.type === "placed_in_room"
+                        edge.toId === knightInstanceNodeId &&
+                        edge.type === "contains"
                 ),
-                "expected placed_in_room edges to originate from the owning instance layer node"
+                "expected instance layer node to contain each concrete room instance"
             );
             assert.ok(
                 edgeRows.some(
                     (edge) =>
-                        edge.fromId === instancesLayerNodeId &&
+                        edge.fromId === knightInstanceNodeId &&
+                        edge.toId === knightObjectNodeId &&
+                        edge.type === "placed_in_room"
+                ),
+                "expected placed_in_room edges to originate from each concrete room instance node"
+            );
+            assert.ok(
+                edgeRows.some(
+                    (edge) =>
+                        edge.fromId === dragonInstanceNodeId &&
                         edge.toId === dragonObjectNodeId &&
                         edge.type === "placed_in_room"
                 ),
-                "expected instance layer node to place every referenced room instance object"
+                "expected every room instance node to place its referenced object"
             );
             assert.ok(
                 !edgeRows.some(
@@ -2059,10 +2109,25 @@ void test("buildGraphIndex projects room layers as distinct room_layer nodes wit
                 ),
                 "expected room-level placed_in_room edges to be replaced by layer-level placement edges"
             );
+            assert.ok(
+                !edgeRows.some(
+                    (edge) =>
+                        edge.fromId === instancesLayerNodeId &&
+                        edge.toId === knightObjectNodeId &&
+                        edge.type === "placed_in_room"
+                ),
+                "expected layer-level placed_in_room edges to be replaced by instance-level placement edges"
+            );
 
             const visualizationData = exportGraphVisualizationData(database, fixture.projectRoot);
             const vizRoomLayerNodes = visualizationData.nodes.filter((node) => node.kind === "room_layer");
+            const vizRoomInstanceNodes = visualizationData.nodes.filter((node) => node.kind === "room_instance");
             assert.equal(vizRoomLayerNodes.length, 4, "expected visualization export to include all room_layer nodes");
+            assert.equal(
+                vizRoomInstanceNodes.length,
+                2,
+                "expected visualization export to include concrete room_instance nodes"
+            );
             assert.ok(
                 vizRoomLayerNodes.every(
                     (node) =>
@@ -2078,10 +2143,12 @@ void test("buildGraphIndex projects room layers as distinct room_layer nodes wit
             const vizInstancesNode = vizRoomLayerNodes.find((node) => node.name === "Instances");
             const vizDecorNode = vizRoomLayerNodes.find((node) => node.name === "Decor");
             const vizTilesNode = vizRoomLayerNodes.find((node) => node.name === "Tiles");
+            const vizKnightInstanceNode = vizRoomInstanceNodes.find((node) => node.name === "inst_1");
             assert.ok(vizBackgroundNode, "expected Background room_layer in visualization");
             assert.ok(vizInstancesNode, "expected Instances room_layer in visualization");
             assert.ok(vizDecorNode, "expected Decor room_layer in visualization");
             assert.ok(vizTilesNode, "expected Tiles room_layer in visualization");
+            assert.ok(vizKnightInstanceNode, "expected inst_1 room_instance in visualization");
 
             assert.ok(
                 visualizationData.edges.some(
@@ -2113,10 +2180,19 @@ void test("buildGraphIndex projects room layers as distinct room_layer nodes wit
                 visualizationData.edges.some(
                     (edge) =>
                         edge.source === vizInstancesNode?.id &&
+                        edge.target === vizKnightInstanceNode?.id &&
+                        edge.type === "contains"
+                ),
+                "expected visualization to expose instance-layer→room-instance containment"
+            );
+            assert.ok(
+                visualizationData.edges.some(
+                    (edge) =>
+                        edge.source === vizKnightInstanceNode?.id &&
                         edge.target === knightObjectNodeId &&
                         edge.type === "placed_in_room"
                 ),
-                "expected visualization to expose placed_in_room edges from instance layers"
+                "expected visualization to expose room-instance→object placement"
             );
             assert.ok(
                 !visualizationData.edges.some(
@@ -2126,6 +2202,113 @@ void test("buildGraphIndex projects room layers as distinct room_layer nodes wit
                         edge.type === "placed_in_room"
                 ),
                 "expected visualization to avoid ambiguous room-level placement edges when a layer node exists"
+            );
+        } finally {
+            database.close();
+        }
+    } finally {
+        await fixture.cleanup();
+    }
+});
+
+void test("buildGraphIndex projects GameMaker folders as resource nodes for visualization", async () => {
+    const fixture = await createTempProjectWorkspace("graph-index-folder-nodes-");
+
+    try {
+        await fixture.writeProjectFile(
+            "Project.yyp",
+            JSON.stringify({
+                name: "Project",
+                resourceType: "GMProject",
+                Folders: [{ name: "Rooms", folderPath: "folders/Rooms.yy" }]
+            })
+        );
+        await fixture.writeProjectFile(
+            "folders/Rooms.yy",
+            JSON.stringify({ name: "Rooms", resourceType: "GMFolder", folderPath: "folders/Rooms.yy" })
+        );
+
+        const result = await buildGraphIndex({ projectRoot: fixture.projectRoot });
+        const database = openGraphIndexDatabase(result.databasePath);
+        try {
+            const folderNodeId = "project::resource::folders/Rooms.yy";
+            const folderNode = database
+                .prepare(
+                    "SELECT kind, name, display_name AS displayName, resource_path AS resourcePath FROM nodes WHERE id = ?"
+                )
+                .get(folderNodeId) as
+                { displayName: string; kind: string; name: string; resourcePath: string } | undefined;
+            assert.ok(folderNode, "expected graph database to include the folder resource node");
+            assert.equal(folderNode.displayName, "Rooms");
+            assert.equal(folderNode.kind, "folder");
+            assert.equal(folderNode.name, "Rooms");
+            assert.equal(folderNode.resourcePath, "folders/Rooms.yy");
+
+            const visualizationData = exportGraphVisualizationData(database, fixture.projectRoot);
+            assert.ok(
+                visualizationData.nodes.some(
+                    (node) => node.id === folderNodeId && node.kind === "folder" && node.displayName === "Rooms"
+                ),
+                "expected graph visualization export to include the folder resource node"
+            );
+            assert.ok(
+                visualizationData.edges.some(
+                    (edge) =>
+                        edge.source === "project::resource::Project.yyp" &&
+                        edge.target === folderNodeId &&
+                        edge.type === "contains"
+                ),
+                "expected graph visualization export to connect the project to its folder resource"
+            );
+        } finally {
+            database.close();
+        }
+    } finally {
+        await fixture.cleanup();
+    }
+});
+
+void test("buildGraphIndex projects texture groups with project containment for visualization", async () => {
+    const fixture = await createTempProjectWorkspace("graph-index-texture-group-");
+
+    try {
+        await fixture.writeProjectFile(
+            "Project.yyp",
+            JSON.stringify({
+                name: "Project",
+                resourceType: "GMProject",
+                TextureGroups: [{ id: { name: "Default", path: "texturegroups/Default/Default.yy" } }]
+            })
+        );
+        await fixture.writeProjectFile(
+            "texturegroups/Default/Default.yy",
+            JSON.stringify({ name: "Default", resourceType: "GMTextureGroup" })
+        );
+
+        const result = await buildGraphIndex({ projectRoot: fixture.projectRoot });
+        const database = openGraphIndexDatabase(result.databasePath);
+        try {
+            const textureGroupNodeId = "project::resource::texturegroups/Default/Default.yy";
+            const visualizationData = exportGraphVisualizationData(database, fixture.projectRoot);
+
+            assert.ok(
+                visualizationData.nodes.some(
+                    (node) =>
+                        node.id === textureGroupNodeId &&
+                        node.kind === "texture_group" &&
+                        node.displayName === "Default" &&
+                        node.resourcePath === "texturegroups/Default/Default.yy"
+                ),
+                "expected visualization to expose texture groups with their resource identity"
+            );
+            assert.ok(
+                visualizationData.edges.some(
+                    (edge) =>
+                        edge.source === "project::resource::Project.yyp" &&
+                        edge.target === textureGroupNodeId &&
+                        edge.type === "contains"
+                ),
+                "expected visualization to connect the project to its texture group"
             );
         } finally {
             database.close();

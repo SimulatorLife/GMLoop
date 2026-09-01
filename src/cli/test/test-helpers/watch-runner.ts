@@ -4,7 +4,8 @@ import path from "node:path";
 
 import * as Cli from "@gmloop/cli";
 
-import { findAvailablePort } from "./free-port.js";
+import type { StatusServerHandle } from "../../src/modules/status/server.js";
+import { waitForStatusReady } from "./status-polling.js";
 
 type WatchCommandOptions = Parameters<typeof Cli.CLI.Commands.runWatchCommand>[1];
 
@@ -28,18 +29,34 @@ export async function runWatchTest(
     let watchPromise: Promise<void> | undefined;
 
     try {
-        const statusPort = await findAvailablePort();
+        const statusServerEnabled = options.statusServer !== false;
+
+        // Resolved once the status server reports its real address via
+        // `onStatusServerReady`. We intentionally do NOT pre-probe a free port
+        // with a bind-then-close helper: closing the probe socket and later
+        // rebinding the same port number is a time-of-check/time-of-use race —
+        // another test (or process) can grab the port in between, producing a
+        // sporadic `EADDRINUSE` failure with no deterministic reproduction.
+        // Passing `statusPort: 0` lets the OS assign an ephemeral port at the
+        // moment the real listener binds, which is race-free by construction.
+        let resolveStatusUrl: ((url: string) => void) | undefined;
+        const statusUrlReady = new Promise<string>((resolve) => {
+            resolveStatusUrl = resolve;
+        });
 
         const mergedOptions = {
-            extensions: [".gml"],
             polling: false,
             verbose: false,
             quiet: true,
-            statusPort,
+            statusPort: 0,
             websocketServer: false,
             runtimeServer: false,
             abortSignal: abortController.signal,
-            ...options
+            ...options,
+            onStatusServerReady: (server: StatusServerHandle) => {
+                resolveStatusUrl?.(server.url);
+                options.onStatusServerReady?.(server);
+            }
         };
 
         // Ensure quiet is disabled if verbose is enabled
@@ -49,8 +66,27 @@ export async function runWatchTest(
 
         watchPromise = Cli.CLI.Commands.runWatchCommand(testDir, mergedOptions);
 
-        // Give the server time to start
-        await new Promise((resolve) => setTimeout(resolve, 100));
+        let statusPort = 0;
+        if (statusServerEnabled) {
+            let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
+            const timeoutPromise = new Promise<never>((_resolve, reject) => {
+                timeoutHandle = setTimeout(() => {
+                    reject(new Error("Timed out waiting for the status server to report its address."));
+                }, 5000);
+            });
+
+            let resolvedStatusUrl: string;
+            try {
+                resolvedStatusUrl = await Promise.race([statusUrlReady, timeoutPromise]);
+            } finally {
+                if (timeoutHandle !== undefined) {
+                    clearTimeout(timeoutHandle);
+                }
+            }
+
+            statusPort = Number(new URL(resolvedStatusUrl).port);
+            await waitForStatusReady(`http://127.0.0.1:${statusPort}`);
+        }
 
         await testFn({
             testDir,

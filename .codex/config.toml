@@ -3,10 +3,12 @@
 
 model_verbosity = "low"
 approval_policy = "never"
-model_supports_reasoning_summaries = true # Force reasoning summary metadata, not reasoning itself
 personality = "pragmatic"
-sandbox_mode = "workspace-write"
+sandbox_mode = "danger-full-access"
 background_terminal_max_timeout = 600000
+
+[shell_environment_policy.set]
+NODE_OPTIONS = "--disable-warning=ExperimentalWarning"
 
 [mcp_servers.gmloop]
 command = "gmloop"
@@ -32,13 +34,27 @@ args = [
 enabled = true
 default_tools_approval_mode = "approve"
 
+[mcp_servers.gm-cli.env]
+GMLOOP_EXPOSE_INTERNAL_MCP_TOOLS = "true"
+
+[mcp_servers.gmloop.env]
+GMLOOP_EXPOSE_INTERNAL_MCP_TOOLS = "true"
+
+[mcp_servers.lsp]
+command = "pnpm"
+args = ["exec", "lsp-mcp-server"]
+enabled = true
+default_tools_approval_mode = "approve"
+
 [features]
 shell_snapshot = true           # Speed up repeated commands
 unified_exec = true
 steer = true
-multi_agent = true
+multi_agent = false
+enable_fanout = false
 fast_mode = false
 image_generation = false
+memories = true
 
 [analytics]
 enabled = false
@@ -57,7 +73,37 @@ trust_level = "trusted"
 
 [sandbox_workspace_write]
 network_access = true
+writable_roots = [
+  "/Users/henrykirk/GMLoop",
+  "/Users/henrykirk/Desktop/CannonFatherSource/cannonfather",
+  "/Users/henrykirk/.npm",
+  "/private/tmp"
+]
 
 [agents]
-max_threads = 5
+max_threads = 4
 max_depth = 1
+
+[agents.explorer]
+description = "OpenAI-backed read-only explorer for locating code, tracing symbols and modules, answering codebase questions, and returning concise evidence-backed summaries."
+config_file = "./agents/explorer.toml"
+
+[agents.worker]
+description = "OpenAI-backed implementation worker for bounded coding tasks, fixes, tests, refactors, and documentation changes assigned by the parent agent."
+config_file = "./agents/worker.toml"
+
+[agents.validator]
+description = "OpenAI-backed validation agent for checking assigned changes, running required verification, and reporting failures, regressions, risks, and test gaps to the parent agent."
+config_file = "./agents/validator.toml"
+
+[agents.tester]
+description = "OpenAI-backed read-only GameMaker runtime and browser tester directed by the orchestrator; drives GMLoop live reload, gm-cli reads, and Playwright interactions only through the allowlisted MCP tools."
+config_file = "./agents/tester.toml"
+
+[agents.build-lint-test]
+description = "Strictly GMLoop-internal build, lint, and test reporter that runs commands assigned by the orchestrator and returns exact failure excerpts (and warnings only when requested)."
+config_file = "./agents/build-lint-test.toml"
+
+[agents.smart]
+description = "OpenAI-backed high-intelligence specialist reserved for complex assignments the orchestrator judges too hard for routine workers; use sparingly."
+config_file = "./agents/smart.toml"

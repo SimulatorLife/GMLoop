@@ -175,6 +175,33 @@ export function writeTextFileSync(filePath: string, content: string): void {
 }
 
 /**
+ * Read a JSON state file synchronously, normalizing the parsed payload and
+ * falling back to a default value when the file is missing, unreadable, or
+ * contains invalid JSON.
+ *
+ * Centralizes the "read + JSON.parse + normalize, swallow any failure" shape
+ * that several synchronous state stores (CLI runtime/project-operation
+ * persistence) previously reimplemented with their own `try`/`catch` blocks.
+ * Since the fallback path discards the failure entirely, callers do not need
+ * detailed parse-error context here.
+ *
+ * @param {string} filePath Absolute or relative path to the JSON state file.
+ * @param {(value: unknown) => T} normalize Converts the parsed JSON value
+ *        into the caller's canonical shape. Receives `unknown` so callers can
+ *        also reject unexpected shapes by throwing from within `normalize`.
+ * @param {T} defaultValue Value returned when the file is absent, unreadable,
+ *        not valid JSON, or `normalize` throws.
+ * @returns {T} The normalized state, or `defaultValue` on any failure.
+ */
+export function readJsonFileSyncOrDefault<T>(filePath: string, normalize: (value: unknown) => T, defaultValue: T): T {
+    try {
+        return normalize(JSON.parse(fsReadFileSync(filePath, "utf8")));
+    } catch {
+        return defaultValue;
+    }
+}
+
+/**
  * Read directory entries safely, returning an empty array when the directory
  * does not exist or is inaccessible. Errors other than "not a directory" are
  * re-thrown so callers can distinguish benign ENOENT/ENOTDIR cases from
@@ -269,13 +296,24 @@ export async function safeStat(filePath: string): Promise<Stats | null> {
 
 /**
  * Read directory entries with `withFileTypes: true`, returning an empty array
- * when the directory does not exist or is inaccessible.
+ * when the directory does not exist. Errors other than ENOENT/ENOTDIR are
+ * re-thrown so callers can distinguish benign "missing directory" cases from
+ * permission or I/O failures.
+ *
+ * Routes through the same {@link runDirectoryReadWithMissingFallback} helper
+ * as {@link safeReaddir} and {@link safeReaddirDirent} so all canonical "safe"
+ * directory reads share identical fallback semantics. Historically this
+ * helper used a bare `.catch(() => [])` which silently absorbed permission
+ * and I/O errors; it now mirrors the documented project-wide pattern.
  *
  * @param {string} directoryPath Path to the directory to read.
  * @returns {Promise<Dirent[]>} Directory entries when accessible, otherwise an empty array.
+ * @throws {NodeJS.ErrnoException} When the read fails for a reason other than
+ *         the directory being missing (`ENOENT`) or replaced by a non-directory
+ *         entry (`ENOTDIR`).
  */
-export async function safeReaddirWithFileTypes(directoryPath: string): Promise<Dirent[]> {
-    return await fsPromises.readdir(directoryPath, { withFileTypes: true }).catch(() => []);
+export function safeReaddirWithFileTypes(directoryPath: string): Promise<Dirent[]> {
+    return runDirectoryReadWithMissingFallback(() => fsPromises.readdir(directoryPath, { withFileTypes: true }));
 }
 
 /**

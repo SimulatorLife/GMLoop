@@ -6,6 +6,8 @@ import { Parser } from "@gmloop/parser";
 import { readSemanticLocationIndex } from "@gmloop/refactor";
 import { Semantic } from "@gmloop/semantic";
 
+import { pathExistsSync } from "../../shared/path-exists.js";
+
 type MacroIdentifierEntry = {
     declarations?: Array<Record<string, unknown>>;
 };
@@ -118,21 +120,18 @@ function collectMacroReferenceNamesFromAst(bodySourceText: string): Set<string> 
         {
             getComments: false,
             getLocations: true,
-            simplifyLocations: false,
-            scopeTrackerOptions: {
-                enabled: true,
-                createScopeTracker: () => new Semantic.SemanticScopeCoordinator()
-            }
+            simplifyLocations: false
         }
     );
+    Semantic.annotateSemanticBindings(ast);
     const referenceNames = new Set<string>();
 
-    Core.walkAst(ast, (node) => {
-        if (!shouldCollectMacroReferenceIdentifier(node)) {
-            return;
+    Core.traverseAst(ast, {
+        enter(node) {
+            if (shouldCollectMacroReferenceIdentifier(node)) {
+                referenceNames.add(node.name);
+            }
         }
-
-        referenceNames.add(node.name);
     });
 
     return referenceNames;
@@ -346,7 +345,7 @@ export function listMacroDeclarationReferenceRecords(
 
         parsedMacroFiles.add(declarationFilePath);
         const absoluteFilePath = path.resolve(context.projectRoot, declarationFilePath);
-        if (!fs.existsSync(absoluteFilePath)) {
+        if (!pathExistsSync(absoluteFilePath)) {
             continue;
         }
 

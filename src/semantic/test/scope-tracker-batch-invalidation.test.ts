@@ -263,6 +263,54 @@ void describe("ScopeTracker batch invalidation", () => {
         assert.strictEqual(windowsResults.length, 0, "Missing normalized path result should be empty");
     });
 
+    void it("invalidates known changed scopes without path index work", () => {
+        const tracker = new ScopeTracker({ enabled: true });
+
+        tracker.enterScope("program", { path: "/project/root.gml" });
+        const changedScope = tracker.enterScope("function", { name: "changed", path: "/project/changed.gml" });
+        tracker.declare("changedValue", { name: "changedValue" });
+        tracker.exitScope();
+
+        const dependentScope = tracker.enterScope("function", { name: "dependent", path: "/project/dependent.gml" });
+        tracker.reference("changedValue", { name: "changedValue" });
+        tracker.exitScope();
+
+        const results = tracker.getBatchInvalidationSetsForScopes([changedScope.id, changedScope.id, "missing-scope"]);
+
+        assert.strictEqual(results.size, 2, "Duplicate scope ids should not trigger duplicate invalidation work");
+        assert.deepStrictEqual(results.get("missing-scope"), [], "Missing scope ids should return an empty set");
+
+        const changedInvalidation = results.get(changedScope.id);
+        assert.ok(changedInvalidation, "Changed scope should have an invalidation set");
+        assert.deepStrictEqual(
+            normalizeInvalidationEntries(changedInvalidation),
+            normalizeInvalidationEntries([
+                { scopeId: changedScope.id, scopeKind: "function", reason: "self" },
+                { scopeId: dependentScope.id, scopeKind: "function", reason: "dependent" }
+            ]),
+            "Scope-id invalidation should include the changed scope and its transitive dependents"
+        );
+    });
+
+    void it("includes descendants for known changed scope invalidation", () => {
+        const tracker = new ScopeTracker({ enabled: true });
+
+        tracker.enterScope("program", { path: "/project/root.gml" });
+        const parentScope = tracker.enterScope("function", { name: "parent", path: "/project/parent.gml" });
+        const childScope = tracker.enterScope("block", { name: "child" });
+        tracker.exitScope();
+        tracker.exitScope();
+
+        const results = tracker.getBatchInvalidationSetsForScopes([parentScope.id], { includeDescendants: true });
+        const parentInvalidation = results.get(parentScope.id);
+
+        assert.ok(parentInvalidation, "Parent scope should have an invalidation set");
+        assert.ok(
+            parentInvalidation.some((entry) => entry.scopeId === childScope.id && entry.reason === "descendant"),
+            "Descendant scopes should be included when requested"
+        );
+    });
+
     void it("handles empty input gracefully", () => {
         const tracker = new ScopeTracker({ enabled: true });
 
@@ -282,6 +330,52 @@ void describe("ScopeTracker batch invalidation", () => {
         assert.ok(results.has("/project/valid.gml"), "Should process valid path");
         const validResults = results.get("/project/valid.gml");
         assert.ok(validResults && validResults.length > 0, "Valid path should have results");
+    });
+
+    void it("does not leak mutations across unrelated empty results from getBatchInvalidationSets", () => {
+        const tracker = new ScopeTracker({ enabled: true });
+
+        // Two calls, each asking about a different path with no known scopes. If both "empty"
+        // results were backed by the same shared array, mutating one would corrupt the other.
+        const firstCallResults = tracker.getBatchInvalidationSets(["/project/missing-a.gml"]);
+        const secondCallResults = tracker.getBatchInvalidationSets(["/project/missing-b.gml"]);
+
+        const firstEmptySet = firstCallResults.get("/project/missing-a.gml");
+        const secondEmptySet = secondCallResults.get("/project/missing-b.gml");
+        assert.ok(firstEmptySet, "First missing path should still return an empty set");
+        assert.ok(secondEmptySet, "Second missing path should still return an empty set");
+
+        firstEmptySet.push({ scopeId: "leaked", scopeKind: "function", reason: "self" });
+
+        assert.deepStrictEqual(
+            secondEmptySet,
+            [],
+            "Mutating one call's empty invalidation set must not affect another call's empty result"
+        );
+    });
+
+    void it("does not leak mutations across unrelated empty results from getBatchInvalidationSetsForScopes", () => {
+        const tracker = new ScopeTracker({ enabled: true });
+
+        const results = tracker.getBatchInvalidationSetsForScopes(["missing-scope-a", "missing-scope-b"]);
+
+        const firstEmptySet = results.get("missing-scope-a");
+        const secondEmptySet = results.get("missing-scope-b");
+        assert.ok(firstEmptySet, "First missing scope id should still return an empty set");
+        assert.ok(secondEmptySet, "Second missing scope id should still return an empty set");
+        assert.notStrictEqual(
+            firstEmptySet,
+            secondEmptySet,
+            "Distinct missing scope ids must not share the same empty array instance"
+        );
+
+        firstEmptySet.push({ scopeId: "leaked", scopeKind: "function", reason: "self" });
+
+        assert.deepStrictEqual(
+            secondEmptySet,
+            [],
+            "Mutating one missing scope id's empty invalidation set must not affect another's"
+        );
     });
 
     void it("matches individual invalidation results while keeping batch latency bounded", () => {

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { afterEach, beforeEach, describe, it } from "node:test";
 
 import { __test__ } from "../src/cli.js";
-import { DEFAULT_MAX_IN_MEMORY_SNAPSHOTS } from "../src/runtime-options/format-memory-constants.js";
+import { DEFAULT_MAX_IN_MEMORY_SNAPSHOTS } from "../src/modules/formatting/format-memory-constants.js";
 
 const {
     getMemoryManagementStatsForTests,
@@ -171,6 +171,33 @@ void describe("memory snapshot limits", () => {
 
         const statsAfter = getMemoryManagementStatsForTests();
         assert.equal(statsAfter.inMemorySnapshotCount, countBefore, "should not change count when below limit");
+    });
+
+    void it("treats a limit of 0 as disabled and never evicts snapshots", async () => {
+        setDefaultMaxInMemorySnapshotsForTests(0);
+
+        for (let i = 0; i < 8; i++) {
+            addFormattedFileSnapshotForTests(`unlimited-${i}.gml`, `contents-${i}`, null);
+        }
+        setInMemorySnapshotCountForTests(8);
+
+        const statsBefore = getMemoryManagementStatsForTests();
+        assert.equal(statsBefore.inMemorySnapshotCount, 8);
+        assert.equal(statsBefore.formattedFileOriginalContentsSize, 8);
+
+        await enforceSnapshotMemoryLimitForTests();
+
+        const statsAfter = getMemoryManagementStatsForTests();
+        assert.equal(
+            statsAfter.inMemorySnapshotCount,
+            8,
+            "a limit of 0 disables enforcement and must not evict any snapshots"
+        );
+        assert.equal(
+            statsAfter.formattedFileOriginalContentsSize,
+            8,
+            "a limit of 0 disables enforcement and must not drop any revert entries"
+        );
     });
 });
 

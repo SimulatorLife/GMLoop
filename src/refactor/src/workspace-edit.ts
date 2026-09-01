@@ -115,6 +115,38 @@ export interface WorkspaceLike {
      * descending order by start position with duplicates removed.
      */
     groupByFile(): GroupedTextEdits;
+
+    /**
+     * Return whether any pending text edits, metadata edits, or file renames
+     * are queued on this workspace.
+     *
+     * Exists to break the Law-of-Demeter violation where callers previously
+     * walked `workspace.edits.length`, `workspace.metadataEdits.length`, and
+     * `workspace.fileRenames.length` separately to answer the same question.
+     * Returning a single boolean lets collaborators talk to one immediate
+     * neighbour instead of three sub-collections.
+     *
+     * @returns `true` when any of the three sub-collections are non-empty.
+     */
+    hasChanges(): boolean;
+
+    /**
+     * Return the set of distinct file paths touched by pending text edits,
+     * metadata edits, or file renames.
+     *
+     * For file renames both the old and new paths are included so callers
+     * building a "changed files" inventory do not have to walk the rename
+     * array manually and reach into `rename.oldPath`/`rename.newPath` chains.
+     *
+     * Exists to break the Law-of-Demeter violation where callers previously
+     * walked `workspace.fileRenames` and read `.oldPath` / `.newPath` to
+     * collect the same set, often chained four segments deep through
+     * `result.plan.workspace.fileRenames`. Callers now talk to a single
+     * method on the workspace instead.
+     *
+     * @returns Read-only set of distinct paths touched by any pending operation.
+     */
+    collectChangedFilePaths(): ReadonlySet<string>;
 }
 
 export interface TextEdit {
@@ -153,6 +185,9 @@ type WorkspaceEditMutableState = {
     groupedEditsRevision: number;
     revision: number;
     duplicateCheckSetDisabled: boolean;
+    touchedFilePaths: Set<string>;
+    totalTextBytes: number;
+    highWaterTextBytes: number;
 };
 
 const workspaceEditExactKeyState = new WeakMap<WorkspaceEdit, Set<string>>();
@@ -176,20 +211,51 @@ function getExactEditKeys(workspace: WorkspaceEdit): Set<string> {
     return created;
 }
 
+function createWorkspaceEditMutableState(workspace: WorkspaceEdit): WorkspaceEditMutableState {
+    const touchedFilePaths = new Set<string>();
+    let totalTextBytes = 0;
+
+    for (const edit of workspace.edits) {
+        touchedFilePaths.add(edit.path);
+        totalTextBytes += Buffer.byteLength(edit.newText, "utf8");
+    }
+
+    for (const metadataEdit of workspace.metadataEdits) {
+        touchedFilePaths.add(metadataEdit.path);
+        totalTextBytes += Buffer.byteLength(metadataEdit.content, "utf8");
+    }
+
+    for (const fileRename of workspace.fileRenames) {
+        touchedFilePaths.add(fileRename.oldPath);
+        touchedFilePaths.add(fileRename.newPath);
+    }
+
+    return {
+        groupedEditsCache: null,
+        groupedEditsRevision: -1,
+        revision: 0,
+        duplicateCheckSetDisabled: false,
+        touchedFilePaths,
+        totalTextBytes,
+        highWaterTextBytes: totalTextBytes
+    };
+}
+
 function getMutableState(workspace: WorkspaceEdit): WorkspaceEditMutableState {
     const existing = workspaceEditMutableState.get(workspace);
     if (existing) {
         return existing;
     }
 
-    const created: WorkspaceEditMutableState = {
-        groupedEditsCache: null,
-        groupedEditsRevision: -1,
-        revision: 0,
-        duplicateCheckSetDisabled: false
-    };
+    const created = createWorkspaceEditMutableState(workspace);
     workspaceEditMutableState.set(workspace, created);
     return created;
+}
+
+function recordWorkspaceTextPayload(mutableState: WorkspaceEditMutableState, path: string, content: string): void {
+    mutableState.touchedFilePaths.add(path);
+    mutableState.totalTextBytes += Buffer.byteLength(content, "utf8");
+    mutableState.highWaterTextBytes = Math.max(mutableState.highWaterTextBytes, mutableState.totalTextBytes);
 }
 
 function markWorkspaceEditChanged(workspace: WorkspaceEdit): void {
@@ -262,6 +328,7 @@ export class WorkspaceEdit implements WorkspaceLike {
      */
     constructor(initialEdits: Iterable<TextEdit> = []) {
         this.edits = Array.from(initialEdits);
+        workspaceEditMutableState.set(this, createWorkspaceEditMutableState(this));
     }
 
     addEdit(path: string, start: number, end: number, newText: string): void {
@@ -281,13 +348,26 @@ export class WorkspaceEdit implements WorkspaceLike {
         }
 
         this.edits.push({ path, start, end, newText });
+        recordWorkspaceTextPayload(mutableState, path, newText);
         mutableState.revision += 1;
         mutableState.groupedEditsCache = null;
         mutableState.groupedEditsRevision = -1;
     }
 
     addFileRename(oldPath: string, newPath: string): void {
+        if (oldPath === newPath) {
+            return;
+        }
+        const alreadyExists = this.fileRenames.some(
+            (rename) => rename.oldPath === oldPath && rename.newPath === newPath
+        );
+        if (alreadyExists) {
+            return;
+        }
         this.fileRenames.push({ oldPath, newPath });
+        const mutableState = getMutableState(this);
+        mutableState.touchedFilePaths.add(oldPath);
+        mutableState.touchedFilePaths.add(newPath);
         markWorkspaceEditChanged(this);
     }
 
@@ -296,6 +376,8 @@ export class WorkspaceEdit implements WorkspaceLike {
      */
     addMetadataEdit(path: string, content: string): void {
         this.metadataEdits.push({ path, content });
+        const mutableState = getMutableState(this);
+        recordWorkspaceTextPayload(mutableState, path, content);
         markWorkspaceEditChanged(this);
     }
 
@@ -331,6 +413,14 @@ export class WorkspaceEdit implements WorkspaceLike {
         return grouped;
     }
 
+    hasChanges(): boolean {
+        return this.edits.length > 0 || this.metadataEdits.length > 0 || this.fileRenames.length > 0;
+    }
+
+    collectChangedFilePaths(): ReadonlySet<string> {
+        return new Set<string>(getMutableState(this).touchedFilePaths);
+    }
+
     /**
      * Implement the {@link WorkspaceRevisionProvider} contract so that
      * {@link getWorkspaceEditRevision} can retrieve the revision via a
@@ -347,31 +437,15 @@ export class WorkspaceEdit implements WorkspaceLike {
  * Return size/counter telemetry collected while building a workspace edit.
  */
 export function getWorkspaceEditTelemetry(workspace: WorkspaceEdit): WorkspaceEditTelemetry {
-    const touchedFiles = new Set<string>();
-    let totalTextBytes = 0;
-
-    for (const edit of workspace.edits) {
-        touchedFiles.add(edit.path);
-        totalTextBytes += Buffer.byteLength(edit.newText, "utf8");
-    }
-
-    for (const metadataEdit of workspace.metadataEdits) {
-        touchedFiles.add(metadataEdit.path);
-        totalTextBytes += Buffer.byteLength(metadataEdit.content, "utf8");
-    }
-
-    for (const fileRename of workspace.fileRenames) {
-        touchedFiles.add(fileRename.oldPath);
-        touchedFiles.add(fileRename.newPath);
-    }
+    const mutableState = getMutableState(workspace);
 
     return {
         textEditCount: workspace.edits.length,
         fileRenameCount: workspace.fileRenames.length,
         metadataEditCount: workspace.metadataEdits.length,
-        touchedFileCount: touchedFiles.size,
-        totalTextBytes,
-        highWaterTextBytes: totalTextBytes
+        touchedFileCount: mutableState.touchedFilePaths.size,
+        totalTextBytes: mutableState.totalTextBytes,
+        highWaterTextBytes: mutableState.highWaterTextBytes
     };
 }
 
@@ -425,7 +499,9 @@ export function isWorkspaceEditLike(value?: unknown): boolean {
         typeof candidate.addEdit === "function" &&
         typeof candidate.addMetadataEdit === "function" &&
         typeof candidate.addFileRename === "function" &&
-        typeof candidate.groupByFile === "function"
+        typeof candidate.groupByFile === "function" &&
+        typeof candidate.hasChanges === "function" &&
+        typeof candidate.collectChangedFilePaths === "function"
     );
 }
 

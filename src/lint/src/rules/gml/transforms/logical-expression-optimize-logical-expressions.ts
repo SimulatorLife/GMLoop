@@ -45,13 +45,41 @@ function processStatementListForTempReturnElimination(statements: StatementList)
         visitStatementChildrenForTempReturnElimination(statement);
     }
 
-    for (let index = 0; index < statements.length - 1; index += 1) {
-        const replacement = maybeBuildRedundantTempReturnReplacement(statements[index], statements[index + 1]);
-        if (!replacement) {
+    // Walk a stable snapshot of `statements` so the splice below cannot shift
+    // the inspection index out from under us. The previous implementation
+    // relied on a forward index loop with an in-place splice and an explicit
+    // `continue` to advance past the merged pair. That coupling was correct
+    // but fragile: a future edit that dropped the `continue` (or spliced
+    // elsewhere in the loop body) would silently start skipping the sibling
+    // that shifted into the removed slot, because every later element would
+    // be re-inspected at the wrong pair position. Accumulating the rewrite
+    // into a fresh array and swapping it back keeps the inspection index
+    // anchored to the original pair positions regardless of how many slots
+    // the accumulator absorbs per iteration, so the rewrite can no longer
+    // skip a sibling even if the loop body changes in the future.
+    const snapshot = statements.slice();
+    const rewritten: StatementList = [];
+    let changed = false;
+
+    let index = 0;
+    while (index < snapshot.length) {
+        const current = snapshot[index];
+        const next = index + 1 < snapshot.length ? snapshot[index + 1] : undefined;
+        const replacement = maybeBuildRedundantTempReturnReplacement(current, next);
+        if (replacement !== null) {
+            rewritten.push(replacement);
+            index += 2;
+            changed = true;
             continue;
         }
 
-        statements.splice(index, 2, replacement);
+        rewritten.push(current);
+        index += 1;
+    }
+
+    if (changed) {
+        statements.length = 0;
+        statements.push(...rewritten);
     }
 }
 
@@ -65,7 +93,7 @@ function visitStatementChildrenWithStatementListProcessor(
     if (Array.isArray(nodeRecord.body)) {
         processStatementList(nodeRecord.body as StatementList);
     } else if (Core.isObjectLike(nodeRecord.body)) {
-        visitStatementChildren(nodeRecord.body);
+        visitStatementChildren(nodeRecord.body as MutableGameMakerAstNode);
     }
 
     if (statement.type === "IfStatement") {

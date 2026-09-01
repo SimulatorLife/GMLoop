@@ -32,7 +32,8 @@ export class GraphVisualizationUiStore {
         }
 
         this.#state = nextState;
-        for (const listener of this.#listeners) {
+        const listeners = [...this.#listeners];
+        for (const listener of listeners) {
             listener(this.#state);
         }
     }

@@ -1,14 +1,32 @@
 import path from "node:path";
 
 import { Core } from "@gmloop/core";
-import { Command } from "commander";
+import { Argument, Command } from "commander";
 
+import { wrapInvalidArgumentResolver } from "../cli-core/command-parsing.js";
 import { applyStandardCommandOptions } from "../cli-core/command-standard-options.js";
 import { handleCliError } from "../cli-core/errors.js";
 import { createPathOption } from "../cli-core/shared-command-options.js";
-import { getRunnerController, getRunnerStateStore } from "../modules/runtime/index.js";
+import {
+    getRunnerController,
+    type RunnerLifecycleStateController,
+    type RunnerLogClearer,
+    type RunnerLogReader,
+    type RunnerProcessLauncher,
+    type RunnerProcessStatusReader,
+    type RunnerProcessStopper,
+    type RunnerProjectBinder,
+    type RunnerRoomController,
+    type RunnerSnapshotReader
+} from "../modules/runtime/index.js";
+import {
+    coerceRunnerLifecycleAction,
+    RUNNER_LIFECYCLE_ACTIONS,
+    type RunnerLifecycleAction
+} from "../modules/runtime/lifecycle.js";
 import { isRecord } from "../shared/error-guards.js";
 import { discoverProjectRoot } from "../workflow/project-root.js";
+import { followRunnerLogs, type FollowRunnerLogsReadOptions, resolveBoundRunnerState } from "./runner-context.js";
 
 type RunnerOptions = Readonly<{
     debug?: boolean;
@@ -32,21 +50,67 @@ function printRunnerPayload(payload: unknown): void {
     console.log(JSON.stringify(payload, null, 2));
 }
 
+/**
+ * Parse the `GMLOOP_RUNNER_ARGS` environment variable into an ordered array
+ * of process arguments for the runtime runner backend.
+ *
+ * Two input shapes are accepted:
+ *
+ * - A JSON array of strings — exactly what the runner controller forwards to
+ *   `child_process.spawn`, so a hand-curated list can be expressed inline
+ *   (e.g. `GMLOOP_RUNNER_ARGS='["-e","setInterval(...)"]'`).
+ * - A whitespace-delimited string of arguments, split on runs of `\s+` and
+ *   filtered to drop empty entries produced by leading or trailing whitespace.
+ *
+ * Malformed input — non-JSON syntax, a top-level JSON value that is not an
+ * array, or an array containing any non-string entry — must surface as a
+ * `TypeError` carrying both the diagnostic reason and the offending payload.
+ * The previous implementation let the raw `SyntaxError` from `JSON.parse`
+ * escape through; that crashed the CLI with an opaque "Unexpected token"
+ * message whenever a user supplied truncated JSON. Wrapping the parse in a
+ * structured guard keeps the failure mode predictable and self-documenting.
+ *
+ * @param value Raw environment variable value, exactly as supplied by the
+ *              caller. Leading and trailing whitespace is tolerated.
+ * @returns Ordered array of runner arguments.
+ * @throws {TypeError} When the payload does not conform to the documented
+ *                     shape. The error message always identifies the field
+ *                     name and includes the offending input for context.
+ */
 function parseRunnerArgsInput(value: string): Array<string> {
     const trimmed = value.trim();
     if (trimmed.length === 0) {
         return [];
     }
 
-    if (trimmed.startsWith("[")) {
-        const parsed = JSON.parse(trimmed) as unknown;
-        if (!Array.isArray(parsed) || parsed.some((entry) => typeof entry !== "string")) {
-            throw new TypeError("GMLOOP_RUNNER_ARGS JSON must be an array of strings.");
-        }
-        return parsed;
+    if (!trimmed.startsWith("[")) {
+        return trimmed.split(/\s+/u).filter((entry) => entry.length > 0);
     }
 
-    return trimmed.split(/\s+/u).filter((entry) => entry.length > 0);
+    let parsed: unknown;
+    try {
+        parsed = JSON.parse(trimmed);
+    } catch (error) {
+        const reason = Core.isErrorLike(error) ? error.message : String(error);
+        throw new TypeError(`GMLOOP_RUNNER_ARGS JSON is malformed (${reason}): ${trimmed}`, {
+            cause: error
+        });
+    }
+
+    if (!Array.isArray(parsed)) {
+        const actualKind = parsed === null ? "null" : typeof parsed;
+        throw new TypeError(`GMLOOP_RUNNER_ARGS JSON must be an array of strings, received ${actualKind}: ${trimmed}`);
+    }
+
+    const nonStringIndex = parsed.findIndex((entry) => typeof entry !== "string");
+    if (nonStringIndex !== -1) {
+        const actualKind = parsed[nonStringIndex] === null ? "null" : typeof parsed[nonStringIndex];
+        throw new TypeError(
+            `GMLOOP_RUNNER_ARGS JSON entry at index ${nonStringIndex} must be a string, received ${actualKind}: ${trimmed}`
+        );
+    }
+
+    return parsed;
 }
 
 function resolveRunnerArgsFromConfig(config: unknown): Array<string> {
@@ -116,14 +180,29 @@ async function resolveRunnerLaunchConfiguration(options: RunnerOptions): Promise
     };
 }
 
+/**
+ * Normalise the read options shared by the `runner logs` and
+ * `runner logs --follow` actions. Pulled out so the two orchestrators stay
+ * byte-for-byte consistent and the orchestrator bodies remain free of
+ * inline defaults like `options.kind ?? "all"`.
+ */
+function resolveRunnerLogsReadOptions(options: RunnerOptions): FollowRunnerLogsReadOptions {
+    return {
+        errorsOnly: options.errorsOnly === true,
+        filter: options.filter,
+        kind: options.kind ?? "all"
+    };
+}
+
 async function runRunnerStatusAction(options: RunnerOptions): Promise<void> {
-    const projectRoot = await discoverProjectRoot({
-        explicitProjectPath: options.project ?? options.path
-    });
-    const runnerStateStore = getRunnerStateStore();
-    runnerStateStore.bindProjectRoot(projectRoot);
+    const bound = await resolveBoundRunnerState(options);
+    // The status action only reads a snapshot and hands the project root to
+    // the controller; it never mutates lifecycle, room, or log state, so we
+    // narrow the binding to the read-only role interface.
+    const runnerStateStore: RunnerSnapshotReader = bound.runnerStateStore;
     const snapshot = runnerStateStore.readSnapshot();
-    const processStatus = getRunnerController().status(projectRoot);
+    const processStatusReader: RunnerProcessStatusReader = getRunnerController();
+    const processStatus = processStatusReader.status(bound.projectRoot);
     printRunnerPayload({
         command: "runner status",
         payload: {
@@ -134,16 +213,12 @@ async function runRunnerStatusAction(options: RunnerOptions): Promise<void> {
 }
 
 async function runRunnerLogsAction(options: RunnerOptions): Promise<void> {
-    const projectRoot = await discoverProjectRoot({
-        explicitProjectPath: options.project ?? options.path
-    });
-    const runnerStateStore = getRunnerStateStore();
-    runnerStateStore.bindProjectRoot(projectRoot);
-    const logs = runnerStateStore.readLogs({
-        errorsOnly: options.errorsOnly === true,
-        filter: options.filter,
-        kind: options.kind ?? "all"
-    });
+    const bound = await resolveBoundRunnerState(options);
+    // The logs action only reads the persisted log stream; narrowing to the
+    // log-reader role documents that this handler does not mutate logs,
+    // lifecycle, or room state.
+    const runnerStateStore: RunnerLogReader = bound.runnerStateStore;
+    const logs = runnerStateStore.readLogs(resolveRunnerLogsReadOptions(options));
     printRunnerPayload({
         command: "runner logs",
         payload: logs
@@ -151,52 +226,34 @@ async function runRunnerLogsAction(options: RunnerOptions): Promise<void> {
 }
 
 async function runRunnerLogsFollowAction(options: RunnerOptions): Promise<void> {
-    const projectRoot = await discoverProjectRoot({
-        explicitProjectPath: options.project ?? options.path
-    });
-    const runnerStateStore = getRunnerStateStore();
-    runnerStateStore.bindProjectRoot(projectRoot);
-    const startTimestamp = Date.now();
-    const followWindowMs = 750;
-    let lastTimestamp = startTimestamp - 1;
+    const bound = await resolveBoundRunnerState(options);
+    // The follow loop re-binds the project root on every tick and reads the
+    // log stream; narrowing to those two roles keeps the closure signatures
+    // honest and prevents accidental coupling to lifecycle or room mutation.
+    const runnerStateStore: RunnerProjectBinder & RunnerLogReader = bound.runnerStateStore;
+    const readOptions = resolveRunnerLogsReadOptions(options);
 
-    await new Promise<void>((resolve) => {
-        const interval = setInterval(() => {
-            runnerStateStore.bindProjectRoot(projectRoot);
-            const entries = runnerStateStore
-                .readLogs({
-                    errorsOnly: options.errorsOnly === true,
-                    filter: options.filter,
-                    kind: options.kind ?? "all"
-                })
-                .filter((entry) => entry.timestamp > lastTimestamp);
-
-            if (entries.length > 0) {
-                const nextLast = entries.at(-1);
-                if (nextLast) {
-                    lastTimestamp = nextLast.timestamp;
-                }
-                printRunnerPayload({
-                    command: "runner logs",
-                    follow: true,
-                    payload: entries
-                });
-            }
-
-            if (Date.now() - startTimestamp >= followWindowMs) {
-                clearInterval(interval);
-                resolve();
-            }
-        }, 100);
+    await followRunnerLogs({
+        emit: (entries) => {
+            printRunnerPayload({
+                command: "runner logs",
+                follow: true,
+                payload: entries
+            });
+        },
+        readLogs: () => runnerStateStore.readLogs(readOptions),
+        rebind: () => {
+            runnerStateStore.bindProjectRoot(bound.projectRoot);
+        }
     });
 }
 
 async function runRunnerClearLogsAction(options: RunnerOptions): Promise<void> {
-    const projectRoot = await discoverProjectRoot({
-        explicitProjectPath: options.project ?? options.path
-    });
-    const runnerStateStore = getRunnerStateStore();
-    runnerStateStore.bindProjectRoot(projectRoot);
+    const bound = await resolveBoundRunnerState(options);
+    // The clear-logs action only drops the persisted log stream; narrowing
+    // to the log-clearer role makes the absence of any read or write
+    // dependency explicit.
+    const runnerStateStore: RunnerLogClearer = bound.runnerStateStore;
     runnerStateStore.clearLogs();
     printRunnerPayload({
         command: "runner clear-logs",
@@ -205,11 +262,9 @@ async function runRunnerClearLogsAction(options: RunnerOptions): Promise<void> {
 }
 
 async function runRunnerPauseAction(options: RunnerOptions): Promise<void> {
-    const projectRoot = await discoverProjectRoot({
-        explicitProjectPath: options.project ?? options.path
-    });
-    const runnerStateStore = getRunnerStateStore();
-    runnerStateStore.bindProjectRoot(projectRoot);
+    const bound = await resolveBoundRunnerState(options);
+    // Lifecycle-only action; narrow to the lifecycle controller role.
+    const runnerStateStore: RunnerLifecycleStateController = bound.runnerStateStore;
     runnerStateStore.setState("paused");
     printRunnerPayload({
         command: "runner pause",
@@ -218,11 +273,9 @@ async function runRunnerPauseAction(options: RunnerOptions): Promise<void> {
 }
 
 async function runRunnerResumeAction(options: RunnerOptions): Promise<void> {
-    const projectRoot = await discoverProjectRoot({
-        explicitProjectPath: options.project ?? options.path
-    });
-    const runnerStateStore = getRunnerStateStore();
-    runnerStateStore.bindProjectRoot(projectRoot);
+    const bound = await resolveBoundRunnerState(options);
+    // Lifecycle-only action; narrow to the lifecycle controller role.
+    const runnerStateStore: RunnerLifecycleStateController = bound.runnerStateStore;
     runnerStateStore.setState("running");
     printRunnerPayload({
         command: "runner resume",
@@ -231,11 +284,9 @@ async function runRunnerResumeAction(options: RunnerOptions): Promise<void> {
 }
 
 async function runRunnerRoomSetAction(roomName: string, options: RunnerOptions): Promise<void> {
-    const projectRoot = await discoverProjectRoot({
-        explicitProjectPath: options.project ?? options.path
-    });
-    const runnerStateStore = getRunnerStateStore();
-    runnerStateStore.bindProjectRoot(projectRoot);
+    const bound = await resolveBoundRunnerState(options);
+    // Room-only mutating action; narrow to the room controller role.
+    const runnerStateStore: RunnerRoomController = bound.runnerStateStore;
     runnerStateStore.setRoom(roomName);
     printRunnerPayload({
         command: "runner room set",
@@ -244,11 +295,10 @@ async function runRunnerRoomSetAction(roomName: string, options: RunnerOptions):
 }
 
 async function runRunnerRoomCurrentAction(options: RunnerOptions): Promise<void> {
-    const projectRoot = await discoverProjectRoot({
-        explicitProjectPath: options.project ?? options.path
-    });
-    const runnerStateStore = getRunnerStateStore();
-    runnerStateStore.bindProjectRoot(projectRoot);
+    const bound = await resolveBoundRunnerState(options);
+    // Read-only snapshot to surface the active room; no mutation should be
+    // possible through this binding.
+    const runnerStateStore: RunnerSnapshotReader = bound.runnerStateStore;
     const snapshot = runnerStateStore.readSnapshot();
     printRunnerPayload({
         command: "runner room current",
@@ -258,7 +308,8 @@ async function runRunnerRoomCurrentAction(options: RunnerOptions): Promise<void>
 
 async function runRunnerStartAction(options: RunnerOptions): Promise<void> {
     const launch = await resolveRunnerLaunchConfiguration(options);
-    const payload = getRunnerController().start({
+    const processLauncher: RunnerProcessLauncher = getRunnerController();
+    const payload = processLauncher.start({
         args: launch.args,
         command: launch.command,
         debug: options.debug,
@@ -274,7 +325,8 @@ async function runRunnerStopAction(options: RunnerOptions): Promise<void> {
     const projectRoot = await discoverProjectRoot({
         explicitProjectPath: options.project ?? options.path
     });
-    const payload = getRunnerController().stop(projectRoot);
+    const processStopper: RunnerProcessStopper = getRunnerController();
+    const payload = processStopper.stop(projectRoot);
     printRunnerPayload({
         command: "runner stop",
         payload
@@ -283,7 +335,8 @@ async function runRunnerStopAction(options: RunnerOptions): Promise<void> {
 
 async function runRunnerRestartAction(options: RunnerOptions): Promise<void> {
     const launch = await resolveRunnerLaunchConfiguration(options);
-    const payload = getRunnerController().restart({
+    const processLauncher: RunnerProcessLauncher = getRunnerController();
+    const payload = processLauncher.restart({
         args: launch.args,
         command: launch.command,
         debug: options.debug,
@@ -327,50 +380,41 @@ export function createRunnerCommand(): Command {
         "Control runtime runner lifecycle and logs."
     );
 
-    const start = addRunnerSharedOptions(
-        applyStandardCommandOptions(new Command("start"))
-            .description("Start the runner process.")
-            .option("--debug", "Start in debug mode.")
+    const lifecycle = addRunnerSharedOptions(
+        applyStandardCommandOptions(new Command("lifecycle"))
+            .description("Manage the runner process lifecycle (start, stop, restart, pause, resume).")
+            .addArgument(
+                new Argument("<action>", "Lifecycle action to perform.")
+                    .choices(Object.values(RUNNER_LIFECYCLE_ACTIONS))
+                    .argParser(wrapInvalidArgumentResolver(coerceRunnerLifecycleAction))
+            )
+            .option("--debug", "Start/restart in debug mode.")
     );
-    start.action(async function runnerStartAction() {
-        await runRunnerCommandAction(() => {
-            return runRunnerStartAction(this.opts<RunnerOptions>());
-        });
-    });
-
-    const stop = addRunnerSharedOptions(
-        applyStandardCommandOptions(new Command("stop")).description("Stop the runner process.")
-    );
-    stop.action(async function runnerStopAction() {
-        await runRunnerCommandAction(() => {
-            return runRunnerStopAction(this.opts<RunnerOptions>());
-        });
-    });
-
-    const restart = addRunnerSharedOptions(
-        applyStandardCommandOptions(new Command("restart")).description("Restart the runner process.")
-    );
-    restart.action(async function runnerRestartAction() {
-        await runRunnerCommandAction(() => {
-            return runRunnerRestartAction(this.opts<RunnerOptions>());
-        });
-    });
-
-    const pause = addRunnerSharedOptions(
-        applyStandardCommandOptions(new Command("pause")).description("Pause runner execution.")
-    );
-    pause.action(async function runnerPauseAction() {
-        await runRunnerCommandAction(() => {
-            return runRunnerPauseAction(this.opts<RunnerOptions>());
-        });
-    });
-
-    const resume = addRunnerSharedOptions(
-        applyStandardCommandOptions(new Command("resume")).description("Resume runner execution.")
-    );
-    resume.action(async function runnerResumeAction() {
-        await runRunnerCommandAction(() => {
-            return runRunnerResumeAction(this.opts<RunnerOptions>());
+    lifecycle.action(async function runnerLifecycleAction(action: RunnerLifecycleAction) {
+        await runRunnerCommandAction(async () => {
+            const options = this.opts<RunnerOptions>();
+            switch (action) {
+                case RUNNER_LIFECYCLE_ACTIONS.start: {
+                    await runRunnerStartAction(options);
+                    break;
+                }
+                case RUNNER_LIFECYCLE_ACTIONS.stop: {
+                    await runRunnerStopAction(options);
+                    break;
+                }
+                case RUNNER_LIFECYCLE_ACTIONS.restart: {
+                    await runRunnerRestartAction(options);
+                    break;
+                }
+                case RUNNER_LIFECYCLE_ACTIONS.pause: {
+                    await runRunnerPauseAction(options);
+                    break;
+                }
+                case RUNNER_LIFECYCLE_ACTIONS.resume: {
+                    await runRunnerResumeAction(options);
+                    break;
+                }
+            }
         });
     });
 
@@ -424,11 +468,7 @@ export function createRunnerCommand(): Command {
     room.addCommand(roomSet);
     room.addCommand(roomCurrent);
 
-    command.addCommand(start);
-    command.addCommand(stop);
-    command.addCommand(restart);
-    command.addCommand(pause);
-    command.addCommand(resume);
+    command.addCommand(lifecycle);
     command.addCommand(status);
     command.addCommand(logs);
     command.addCommand(clearLogs);
@@ -436,3 +476,10 @@ export function createRunnerCommand(): Command {
 
     return command;
 }
+
+// `parseRunnerArgsInput` is exported separately (rather than only through a
+// test-only helper) so that direct unit tests can exercise the malformed-JSON
+// guard without having to spawn the `runner` command with a hand-crafted
+// environment. The function is not part of the CLI's public surface, but the
+// inline `export` keeps the test reachable without adding a new barrel entry.
+export { parseRunnerArgsInput };

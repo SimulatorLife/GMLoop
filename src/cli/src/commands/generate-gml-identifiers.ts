@@ -23,13 +23,13 @@ import { getManualRootMetadataPath, readManualText, resolveManualSourceCommitHas
 import { type ManualWorkflowOptions, prepareManualWorkflow } from "../modules/manual/workflow.js";
 import { getDefaultVmEvalTimeoutMs, resolveVmEvalTimeout } from "../runtime-options/vm-eval-timeout.js";
 import { writeJsonArtifact } from "../shared/fs-artifacts.js";
-import { createVerboseDurationLogger, timeSync } from "../shared/timing/verbose-timing.js";
+import { createVerboseDurationLogger, resolveVerboseFlag, timeSync } from "../shared/timing/verbose-timing.js";
 import { resolveFromRepoRoot } from "../shared/workspace-paths.js";
 
 const {
     describeValueWithArticle,
-    getErrorMessageOrFallback,
     normalizeIdentifierMetadataEntries,
+    toContextualError,
     toMutableArray,
     toNormalizedLowerCaseSet,
     toPosixPath,
@@ -90,6 +90,14 @@ type DeprecatedReplacementKind = "direct-rename" | "manual-migration" | "none";
 type DeprecatedLegacyUsage = "call" | "identifier" | "indexed-identifier" | "call-or-identifier";
 type DeprecatedDiagnosticOwner = "gml" | "feather";
 
+type ManualHoverParameter = Readonly<{ description: string; name: string; type: string }>;
+type ManualHoverMetadata = Readonly<{
+    description: string;
+    parameters: ReadonlyArray<ManualHoverParameter>;
+    returnType: string;
+    signature: string;
+}>;
+
 type IdentifierMapEntry = {
     type: string;
     sources: Set<string>;
@@ -101,6 +109,7 @@ type IdentifierMapEntry = {
     legacyCategory?: string;
     legacyUsage?: DeprecatedLegacyUsage;
     diagnosticOwner?: DeprecatedDiagnosticOwner;
+    hover?: ManualHoverMetadata;
 };
 
 type IdentifierMapMergeData = Readonly<{
@@ -114,6 +123,7 @@ type IdentifierMapMergeData = Readonly<{
     legacyCategory?: string;
     legacyUsage?: DeprecatedLegacyUsage;
     diagnosticOwner?: DeprecatedDiagnosticOwner;
+    hover?: ManualHoverMetadata;
 }>;
 
 type LegacySupplement = Readonly<{
@@ -299,8 +309,7 @@ function parseArrayLiteral(source: string, identifier: string, { timeoutMs }: Pa
     try {
         return vm.runInNewContext(literal, {}, vmOptions);
     } catch (error) {
-        const message = getErrorMessageOrFallback(error);
-        throw new Error(`Failed to evaluate array literal for ${identifier}: ${message}`, { cause: error });
+        throw toContextualError(`Failed to evaluate array literal for ${identifier}`, error);
     }
 }
 
@@ -449,6 +458,10 @@ function normalizeDeprecatedReplacementKind(
     return typeof replacement === "string" && replacement.length > 0 ? DIRECT_RENAME_REPLACEMENT_KIND : "none";
 }
 
+function isCoreIdentifierType(type: string): boolean {
+    return type === "keyword" || type === "literal" || type === "symbol";
+}
+
 function getReplacementPriority(replacementKind: DeprecatedReplacementKind | undefined): number {
     return REPLACEMENT_PRIORITY.get(replacementKind ?? "none") ?? 0;
 }
@@ -477,7 +490,8 @@ function mergeEntry(map: Map<string, IdentifierMapEntry>, identifier: string, da
             replacementKind: normalizeDeprecatedReplacementKind(data.replacementKind, data.replacement),
             legacyCategory: data.legacyCategory,
             legacyUsage: data.legacyUsage,
-            diagnosticOwner: data.diagnosticOwner
+            diagnosticOwner: data.diagnosticOwner,
+            hover: data.hover
         });
         return;
     }
@@ -496,6 +510,7 @@ function mergeEntry(map: Map<string, IdentifierMapEntry>, identifier: string, da
     current.legacyCategory = applyFirstWin(data.legacyCategory, current.legacyCategory);
     current.legacyUsage = applyFirstWin(data.legacyUsage, current.legacyUsage);
     current.diagnosticOwner = applyFirstWin(data.diagnosticOwner, current.diagnosticOwner);
+    current.hover = applyFirstWin(data.hover, current.hover);
 
     // Upgrade replacement / replacementKind if incoming has higher priority.
     const incomingKind = normalizeDeprecatedReplacementKind(data.replacementKind, data.replacement);
@@ -513,7 +528,13 @@ function mergeEntry(map: Map<string, IdentifierMapEntry>, identifier: string, da
     const incomingType = data.type ?? "unknown";
     const incomingTypePriority = TYPE_PRIORITY.get(incomingType) ?? 0;
     const currentTypePriority = TYPE_PRIORITY.get(current.type) ?? 0;
-    if (incomingTypePriority > currentTypePriority) {
+
+    if (isCoreIdentifierType(current.type)) {
+        // Current is already a core type, keep it.
+    } else if (isCoreIdentifierType(incomingType)) {
+        // Incoming is a core type, it wins.
+        current.type = incomingType;
+    } else if (incomingTypePriority > currentTypePriority) {
         current.type = incomingType;
     }
 }
@@ -827,6 +848,166 @@ async function collectManualHtmlBasenames(
     return basenames;
 }
 
+function resolveCanonicalManualPath(
+    identifier: string,
+    currentPath: string | undefined,
+    manualBasenames: ReadonlyMap<string, string | null>
+): string | undefined {
+    const canonicalPath = manualBasenames.get(identifier);
+    return canonicalPath === null || canonicalPath === undefined ? currentPath : canonicalPath;
+}
+
+function createCanonicalManualUrl(identifier: string, manualPath: string): string {
+    const targetPath = manualPath.endsWith(".htm") ? manualPath : "Content.htm";
+    const fragment = new URLSearchParams({ t: targetPath, rhsearch: identifier, rhhlterm: identifier });
+    return `https://manual.gamemaker.io/monthly/en/#${fragment.toString()}`;
+}
+
+function normalizeManualHoverText(value: string | null | undefined): string {
+    return (value ?? "").replaceAll("\u00A0", " ").replaceAll(/\s+/gu, " ").trim();
+}
+
+function findManualSectionHeading(document: Document, label: string): Element | null {
+    return (
+        [...document.querySelectorAll("h2, h3, h4, h5")].find(
+            (heading) => normalizeManualHoverText(heading.textContent).toLowerCase() === `${label.toLowerCase()}:`
+        ) ?? null
+    );
+}
+
+function findFollowingManualElement(heading: Element | null, selector: string): Element | null {
+    let candidate = heading?.nextElementSibling ?? null;
+    while (candidate !== null && !/^H[2-5]$/u.test(candidate.tagName)) {
+        if (candidate.matches(selector)) {
+            return candidate;
+        }
+        candidate = candidate.nextElementSibling;
+    }
+    return null;
+}
+
+/** Extract structured hover facts from one canonical GameMaker manual page. */
+function extractManualHoverMetadata(identifier: string, html: string): ManualHoverMetadata | null {
+    const document = parseManualDocument(html);
+    const title = document.querySelector("h1");
+    let descriptionElement = title?.nextElementSibling ?? null;
+    while (
+        descriptionElement !== null &&
+        (descriptionElement.tagName !== "P" || normalizeManualHoverText(descriptionElement.textContent).length === 0)
+    ) {
+        descriptionElement = descriptionElement.nextElementSibling;
+    }
+    const syntaxHeading = findManualSectionHeading(document, "Syntax");
+    const signature = normalizeManualHoverText(findFollowingManualElement(syntaxHeading, ".code")?.textContent);
+    if (!signature.startsWith(`${identifier}(`)) {
+        return null;
+    }
+    const parameterTable = findFollowingManualElement(syntaxHeading, "table");
+    const parameters = parameterTable
+        ? [...parameterTable.querySelectorAll("tr")].flatMap((row) => {
+              const cells = [...row.querySelectorAll("td")];
+              const name = normalizeManualHoverText(cells[0]?.textContent);
+              if (name.length === 0) {
+                  return [];
+              }
+              return [
+                  Object.freeze({
+                      description: normalizeManualHoverText(cells[2]?.textContent),
+                      name,
+                      type: normalizeManualHoverText(cells[1]?.textContent)
+                  })
+              ];
+          })
+        : [];
+    const returnsHeading = findManualSectionHeading(document, "Returns");
+    return Object.freeze({
+        description: normalizeManualHoverText(descriptionElement?.textContent),
+        parameters: Object.freeze(parameters),
+        returnType: normalizeManualHoverText(findFollowingManualElement(returnsHeading, ".code")?.textContent),
+        signature
+    });
+}
+
+async function mergeManualHoverMetadata(
+    identifierMap: Map<string, IdentifierMapEntry>,
+    manualRoot: string
+): Promise<void> {
+    const candidates = [...identifierMap.entries()].filter(
+        ([, entry]) => entry.hover === undefined && entry.manualPath?.endsWith(".htm") === true
+    );
+    const extractedEntries = await Core.runInParallelWithLimit(
+        candidates,
+        async ([identifier, entry]) => {
+            const html = await readManualText(manualRoot, path.posix.join("Manual/contents", entry.manualPath ?? ""));
+            const hover = extractManualHoverMetadata(identifier, html);
+            if (hover === null) {
+                return null;
+            }
+            return { entry, hover };
+        },
+        8
+    );
+    for (const extractedEntry of extractedEntries) {
+        if (extractedEntry === null) {
+            continue;
+        }
+        const { entry, hover } = extractedEntry;
+        entry.hover = hover;
+        entry.type = "function";
+        entry.legacyUsage = "call";
+    }
+}
+
+async function mergeCallableManualPages(
+    identifierMap: Map<string, IdentifierMapEntry>,
+    manualRoot: string,
+    manualBasenames: ReadonlyMap<string, string | null>
+): Promise<void> {
+    const manualPaths = Core.uniqueArray(
+        [...manualBasenames.values()].flatMap((value) => (value === null ? [] : [value]))
+    );
+    const callablePages = await Core.runInParallelWithLimit(
+        manualPaths,
+        async (manualPath) => {
+            const html = await readManualText(manualRoot, path.posix.join("Manual/contents", manualPath));
+            const document = parseManualDocument(html);
+            const identifier = normalizeManualHoverText(document.querySelector("h1")?.textContent);
+            if (!IDENTIFIER_PATTERN.test(identifier)) {
+                return null;
+            }
+            const hover = extractManualHoverMetadata(identifier, html);
+            return hover === null ? null : { hover, identifier, manualPath };
+        },
+        8
+    );
+    for (const callablePage of callablePages) {
+        if (callablePage === null) {
+            continue;
+        }
+        mergeEntry(identifierMap, callablePage.identifier, {
+            deprecated: false,
+            hover: callablePage.hover,
+            legacyUsage: "call",
+            manualPath: callablePage.manualPath,
+            sources: ["manual:pages"],
+            tags: [callablePage.identifier],
+            type: "function"
+        });
+    }
+}
+
+async function canonicalizeIdentifierManualPaths(
+    identifierMap: Map<string, IdentifierMapEntry>,
+    manualRoot: string
+): Promise<Map<string, string | null>> {
+    const manualContentsPath = path.join(manualRoot, "Manual", "contents");
+    const manualBasenames = await collectManualHtmlBasenames(manualContentsPath);
+    for (const [identifier, entry] of identifierMap) {
+        entry.manualPath = resolveCanonicalManualPath(identifier, entry.manualPath, manualBasenames);
+    }
+    return manualBasenames;
+}
+
 function extractDeprecatedReplacementFromManualHtml(html: string): ManualDeprecatedReplacement | null {
     const directReplacementMatch = /replaced by\s+(?:<span[^>]*>\s*)?<a[^>]*>([A-Za-z_][A-Za-z0-9_]*)\(\)<\/a>/iu.exec(
         html
@@ -938,10 +1119,10 @@ function mergeObsoleteIdentifierEntries(
 
 async function mergeDeprecatedReplacementMetadataFromManualPages(
     identifierMap: Map<string, IdentifierMapEntry>,
-    manualRoot: string
+    manualRoot: string,
+    manualBasenames: ReadonlyMap<string, string | null>
 ) {
     const manualContentsPath = path.join(manualRoot, "Manual", "contents");
-    const manualBasenames = await collectManualHtmlBasenames(manualContentsPath);
     const pageCache = new Map<string, string>();
     const unresolvedDeprecatedEntries = Array.from(identifierMap.entries()).reduce<
         Array<{
@@ -1148,7 +1329,10 @@ async function buildIdentifierArtifact({ payloads, manualSource, manualCommitHas
         verbose,
         formatMessage: (duration) => `  Resolving deprecated replacement metadata completed in ${duration}.`
     });
-    await mergeDeprecatedReplacementMetadataFromManualPages(identifierMap, manualSource.root);
+    const manualBasenames = await canonicalizeIdentifierManualPaths(identifierMap, manualSource.root);
+    await mergeCallableManualPages(identifierMap, manualSource.root, manualBasenames);
+    await mergeManualHoverMetadata(identifierMap, manualSource.root);
+    await mergeDeprecatedReplacementMetadataFromManualPages(identifierMap, manualSource.root, manualBasenames);
     logReplacementMetadataCompletion();
 
     return createIdentifierArtifactPayload({
@@ -1179,6 +1363,7 @@ function sortIdentifierEntries(identifierMap) {
                 sources: data.sources ? [...data.sources].toSorted() : [],
                 tags: data.tags ? [...data.tags].toSorted() : [],
                 ...(data.manualPath ? { manualPath: data.manualPath } : {}),
+                ...(data.manualPath ? { manualUrl: createCanonicalManualUrl(identifier, data.manualPath) } : {}),
                 deprecated: data.deprecated,
                 ...(data.replacement ? { replacement: data.replacement } : {}),
                 ...(data.replacementKind && data.replacementKind !== "none"
@@ -1186,7 +1371,8 @@ function sortIdentifierEntries(identifierMap) {
                     : {}),
                 ...(data.legacyCategory ? { legacyCategory: data.legacyCategory } : {}),
                 ...(data.legacyUsage ? { legacyUsage: data.legacyUsage } : {}),
-                ...(data.diagnosticOwner ? { diagnosticOwner: data.diagnosticOwner } : {})
+                ...(data.diagnosticOwner ? { diagnosticOwner: data.diagnosticOwner } : {}),
+                ...(data.hover ? { hover: data.hover } : {})
             }
         ])
         .toSorted(([a], [b]) => a.localeCompare(b));
@@ -1241,7 +1427,7 @@ export async function runGenerateGmlIdentifiers({ command, workflow }: RunGenera
         quiet
     } = resolveGenerateIdentifierOptions(command);
 
-    const verboseState = quiet ? {} : { parsing: true };
+    const verboseState = resolveVerboseFlag({ quiet });
     const { workflowPathFilter, manualSource } = await prepareManualWorkflow({
         workflow,
         outputPath,
@@ -1289,7 +1475,10 @@ export const __test__ = Object.freeze({
     collectManualArrayIdentifiers,
     assertManualIdentifierArray,
     extractDeprecatedReplacementFromManualHtml,
-    parseObsoleteIdentifierTableEntries
+    parseObsoleteIdentifierTableEntries,
+    resolveCanonicalManualPath,
+    createCanonicalManualUrl,
+    extractManualHoverMetadata
 });
 
 if (isMainModule(import.meta.url)) {

@@ -86,7 +86,7 @@ void test("detectRenameConflicts detects invalid identifier names", async () => 
     assert.ok(conflicts[0].message.includes("not a valid GML identifier"));
 });
 
-void test("detectRenameConflicts detects reserved keyword conflicts", async () => {
+void test("detectRenameConflicts detects reserved GameMaker identifier conflicts", async () => {
     const engine = new RefactorEngineClass();
     const conflicts = await engine.detectRenameConflicts({
         oldName: "myVar",
@@ -96,7 +96,7 @@ void test("detectRenameConflicts detects reserved keyword conflicts", async () =
 
     assert.equal(conflicts.length, 1);
     assert.equal(conflicts[0].type, "reserved");
-    assert.ok(conflicts[0].message.includes("reserved keyword"));
+    assert.ok(conflicts[0].message.includes("reserved GameMaker identifier"));
 });
 
 void test("detectRenameConflicts detects shadowing with semantic analyzer", async () => {
@@ -144,7 +144,7 @@ void test("detectRenameConflicts allows rename to same symbol in scope", async (
     assert.equal(conflicts.length, 0);
 });
 
-void test("detectRenameConflicts uses semantic analyzer reserved keywords", async () => {
+void test("detectRenameConflicts uses semantic analyzer reserved GameMaker identifiers", async () => {
     const mockSemantic = {
         getReservedKeywords: async () => ["customKeyword", "anotherReserved"]
     };
@@ -158,7 +158,7 @@ void test("detectRenameConflicts uses semantic analyzer reserved keywords", asyn
 
     assert.equal(conflicts.length, 1);
     assert.equal(conflicts[0].type, "reserved");
-    assert.ok(conflicts[0].message.includes("reserved keyword"));
+    assert.ok(conflicts[0].message.includes("reserved GameMaker identifier"));
 });
 
 void test("detectRenameConflicts works without semantic analyzer", async () => {

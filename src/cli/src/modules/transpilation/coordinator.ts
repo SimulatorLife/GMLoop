@@ -9,11 +9,12 @@
 import path from "node:path";
 
 import { Core } from "@gmloop/core";
-import { Parser } from "@gmloop/parser";
-import { type Transpiler, TranspilerErrorCode } from "@gmloop/transpiler";
+import type * as TranspilerTypes from "@gmloop/transpiler";
+import { Transpiler } from "@gmloop/transpiler";
 
 import { formatCliError } from "../../cli-core/index.js";
 import type { PatchBroadcaster } from "../websocket/server.js";
+import { createGmlParserAdapter, type createGmlTranspilerAdapter, type GmlParserAdapter } from "./adapters.js";
 import {
     getRuntimePathSegments,
     resolveObjectEventPartsFromSegments,
@@ -21,10 +22,53 @@ import {
 } from "./runtime-identifiers.js";
 import { extractReferencesFromAst, extractSymbolsFromAst } from "./symbol-extraction.js";
 
-type RuntimeTranspiler = InstanceType<typeof Transpiler.GmlTranspiler>;
+/**
+ * Default parser adapter used by the coordinator when no override is supplied.
+ *
+ * The adapter is built once at module load time and re-used for every
+ * `parseAstAndExtractMetadata` call. Centralising the construction here keeps
+ * the rest of the coordinator from importing the concrete `Parser.GMLParser`
+ * class, which is the dependency-inversion boundary this module is
+ * responsible for.
+ */
+const defaultParserAdapter: GmlParserAdapter = createGmlParserAdapter();
+
+type RuntimeTranspiler = GmlTranspilerInstance;
+type GmlTranspilerInstance = ReturnType<typeof createGmlTranspilerAdapter>;
 export type RuntimeTranspilerPatch =
-    | ReturnType<RuntimeTranspiler["transpileScript"]>
-    | ReturnType<RuntimeTranspiler["transpileEvent"]>;
+    ReturnType<GmlTranspilerInstance["transpileScript"]> | ReturnType<GmlTranspilerInstance["transpileEvent"]>;
+
+export interface ResourceLayerUpdate {
+    layerName: string;
+    layerType: "GMRBackgroundLayer" | "GMRInstanceLayer";
+    properties: Record<string, unknown>;
+}
+
+export interface ResourcePatch {
+    kind: "resource";
+    id: string;
+    resourceType: "GMRoom";
+    resourceName: string;
+    layerUpdates: Array<ResourceLayerUpdate>;
+    metadata: { sourcePath: string; sourceHash: string; timestamp: number };
+}
+
+/** Creates a deterministic room resource patch for the live-reload protocol. */
+export function createResourcePatch(
+    filePath: string,
+    resourceName: string,
+    layerUpdates: Array<ResourceLayerUpdate>,
+    sourceHash: string
+): ResourcePatch {
+    return {
+        kind: "resource",
+        id: `resource/room/${resourceName}`,
+        resourceType: "GMRoom",
+        resourceName,
+        layerUpdates,
+        metadata: { sourcePath: filePath, sourceHash, timestamp: Date.now() }
+    };
+}
 
 export interface TranspilationMetrics {
     timestamp: number;
@@ -42,6 +86,12 @@ export interface TranspilationMetrics {
      * the initial scan, where no change event fires).
      */
     hotReloadLatencyMs?: number;
+    patchResult?: {
+        delivered: boolean;
+        failureCount: number;
+        successCount: number;
+        totalClients: number;
+    };
 }
 
 export type ErrorCategory = "syntax" | "validation" | "internal" | "unknown";
@@ -124,7 +174,7 @@ function classifyTranspilationError(error: unknown): {
     // Classify using structured error codes when available.
     // This avoids fragile string matching and provides reliable categorization
     // for errors thrown by the transpiler workspace.
-    if (Core.isErrorWithCode(error, TranspilerErrorCode.PARSE_ERROR)) {
+    if (Core.isErrorWithCode(error, Transpiler.TranspilerErrorCode.PARSE_ERROR)) {
         // Extract line/column from the cause if it's a GML parse error.
         if (Core.isGmlParseError(targetError)) {
             return {
@@ -143,7 +193,7 @@ function classifyTranspilationError(error: unknown): {
         };
     }
 
-    if (Core.isErrorWithCode(error, TranspilerErrorCode.VALIDATION_ERROR)) {
+    if (Core.isErrorWithCode(error, Transpiler.TranspilerErrorCode.VALIDATION_ERROR)) {
         return {
             category: "validation",
             message: Core.getErrorMessage(error),
@@ -152,7 +202,7 @@ function classifyTranspilationError(error: unknown): {
         };
     }
 
-    if (Core.isErrorWithCode(error, TranspilerErrorCode.REQUEST_ERROR)) {
+    if (Core.isErrorWithCode(error, Transpiler.TranspilerErrorCode.REQUEST_ERROR)) {
         return {
             category: "validation",
             message: Core.getErrorMessage(error),
@@ -160,7 +210,7 @@ function classifyTranspilationError(error: unknown): {
         };
     }
 
-    if (Core.isErrorWithCode(error, TranspilerErrorCode.INTERNAL_ERROR)) {
+    if (Core.isErrorWithCode(error, Transpiler.TranspilerErrorCode.INTERNAL_ERROR)) {
         // If the cause is a GML parse error, classify as syntax error.
         // This handles the common case where the transpiler wraps a parse error.
         if (Core.isGmlParseError(targetError)) {
@@ -324,10 +374,22 @@ export interface ScriptRegistry {
 }
 
 /**
+ * Optional project-wide macro state used by watch-mode transpilation.
+ *
+ * Standalone callers may omit this registry when they transpile an isolated
+ * source file. The watch command supplies it after its project-wide parse so
+ * split function patches see macros declared by other resources as well.
+ */
+export interface ProjectMacroRegistry {
+    macroDefinitionsBySourcePath?: TranspilerTypes.MacroDefinitionsBySourcePath;
+    macroDefinitions?: Map<string, TranspilerTypes.MacroDefinition>;
+}
+
+/**
  * Metrics snapshot for display purposes.
  *
  * Provides a read-only view of transpilation metrics without coupling to
- * patch history, error tracking, or broadcasting operations.
+ * patch history, error tracking, or broadcasting.
  */
 export interface MetricsSnapshot {
     readonly metrics: ReadonlyArray<TranspilationMetrics>;
@@ -337,7 +399,7 @@ export interface MetricsSnapshot {
  * Errors snapshot for display purposes.
  *
  * Provides a read-only view of transpilation errors without coupling to
- * metrics, patch history, or broadcasting operations.
+ * metrics, patch history, or broadcasting.
  */
 export interface ErrorsSnapshot {
     readonly errors: ReadonlyArray<TranspilationError>;
@@ -359,7 +421,8 @@ export interface TranspilationContext
         MetricsCollector,
         ErrorCollector,
         PatchBroadcastService,
-        ScriptRegistry {}
+        ScriptRegistry,
+        ProjectMacroRegistry {}
 
 export interface TranspilationOptions {
     verbose: boolean;
@@ -403,10 +466,29 @@ export interface TranspilationOptions {
 export interface TranspilationResult {
     success: boolean;
     patch?: RuntimeTranspilerPatch;
+    /**
+     * Every runtime patch produced for the source file, in source order.
+     *
+     * A GameMaker script can contain more than one top-level function. The
+     * browser runtime binds one patch to one generated function, so those
+     * functions must be delivered as a batch instead of being left as local
+     * declarations inside the primary patch body.
+     */
+    patches?: Array<RuntimeTranspilerPatch>;
     metrics?: TranspilationMetrics;
     error?: TranspilationError;
     symbols?: Array<string>;
     references?: Array<string>;
+    /** Effective macro symbols whose definitions changed during this transpilation. */
+    macroDefinitionChanges?: Array<string>;
+}
+
+/** Result of building dependency metadata without emitting runtime JavaScript. */
+export interface FileMetadataAnalysisResult {
+    readonly success: boolean;
+    readonly symbols: Array<string>;
+    readonly references: Array<string>;
+    readonly error?: TranspilationError;
 }
 
 interface ParsedAstExtractionResult {
@@ -418,11 +500,13 @@ interface ParsedAstExtractionResult {
 
 /**
  * Adds an item to a bounded collection, removing the oldest item if the
- * collection exceeds its maximum size.
+ * collection exceeds its maximum size. A non-positive `maxSize` is treated as
+ * "unbounded" — items are appended without trimming — matching the
+ * documented contract for CLI options such as `--max-patch-history`.
  */
 function addToBoundedCollection<T>(collection: Array<T>, item: T, maxSize: number): void {
     collection.push(item);
-    if (collection.length > maxSize) {
+    if (maxSize > 0 && collection.length > maxSize) {
         collection.shift();
     }
 }
@@ -458,6 +542,59 @@ function extractMetadataFromAst(
 }
 
 /**
+ * Parses one source file and extracts dependency metadata without running the
+ * emitter. Watch startup uses this path because the native HTML5 build already
+ * contains the initial JavaScript; startup only needs the dependency graph.
+ */
+export function analyzeFileMetadata(
+    context: ProjectMacroRegistry,
+    filePath: string,
+    content: string,
+    parseAdapter: GmlParserAdapter = defaultParserAdapter
+): FileMetadataAnalysisResult {
+    try {
+        const { ast, parseError, parsedSymbols, parsedReferences } = parseAstAndExtractMetadata(
+            content,
+            filePath,
+            undefined,
+            undefined,
+            undefined,
+            parseAdapter
+        );
+        if (parseError !== null) {
+            throw parseError;
+        }
+
+        const { effectiveSymbols, effectiveReferences } = prepareMacroTranspilation(
+            context,
+            ast,
+            filePath,
+            content,
+            parsedSymbols,
+            parsedReferences
+        );
+        return { success: true, symbols: effectiveSymbols, references: effectiveReferences };
+    } catch (error) {
+        const classified = classifyTranspilationError(error);
+        return {
+            success: false,
+            symbols: [],
+            references: [],
+            error: {
+                timestamp: Date.now(),
+                filePath,
+                error: classified.message,
+                sourceSize: content.length,
+                category: classified.category,
+                line: classified.line,
+                column: classified.column,
+                recoveryHint: classified.recoveryHint
+            }
+        };
+    }
+}
+
+/**
  * Parses GML content into an AST, then extracts symbol declarations and
  * reference identifiers from it.
  *
@@ -467,24 +604,21 @@ function extractMetadataFromAst(
  *
  * Accepts pre-parsed AST and pre-extracted values to skip redundant work
  * when the caller has already produced them (e.g., during the initial
- * startup scan).
+ * startup scan). The `parseAdapter` parameter is the dependency-inversion
+ * seam — by default it delegates to `createGmlParserAdapter` from
+ * `./adapters.js`, but tests can pass a stub that returns a pre-baked AST
+ * without instantiating the concrete `Parser.GMLParser`.
  */
 function parseAstAndExtractMetadata(
     content: string,
     filePath: string,
     preParseAst?: unknown,
     preExtractedSymbols?: ReadonlyArray<string>,
-    preExtractedReferences?: ReadonlyArray<string>
+    preExtractedReferences?: ReadonlyArray<string>,
+    parseAdapter: GmlParserAdapter = defaultParserAdapter
 ): ParsedAstExtractionResult {
     try {
-        const ast =
-            preParseAst ??
-            new Parser.GMLParser(content, {
-                getComments: false,
-                getLocations: true,
-                simplifyLocations: true,
-                attachFunctionDocComments: false
-            }).parse();
+        const ast = preParseAst ?? parseAdapter(content);
         const { parsedSymbols, parsedReferences } = extractMetadataFromAst(
             ast,
             filePath,
@@ -524,11 +658,7 @@ function validatePatch(patch: RuntimeTranspilerPatch): boolean {
         return false;
     }
 
-    if (!patch.js_body || typeof patch.js_body !== "string") {
-        return false;
-    }
-
-    if (patch.js_body.trim().length === 0) {
+    if (patch.js_body === undefined || patch.js_body === null || typeof patch.js_body !== "string") {
         return false;
     }
 
@@ -604,7 +734,7 @@ function clearStalePatchesForSourcePath(
     lastSuccessfulPatches: Map<string, RuntimeTranspilerPatch>,
     sourcePathToPatchIds: Map<string, Set<string>>,
     sourcePath: string,
-    nextPatchId: string
+    nextPatchIds: ReadonlySet<string>
 ): void {
     const stalePatchIds = sourcePathToPatchIds.get(sourcePath);
     if (!stalePatchIds) {
@@ -612,11 +742,257 @@ function clearStalePatchesForSourcePath(
     }
 
     for (const patchId of stalePatchIds) {
-        if (patchId !== nextPatchId) {
+        if (!nextPatchIds.has(patchId)) {
             lastSuccessfulPatches.delete(patchId);
         }
     }
     stalePatchIds.clear();
+}
+
+interface ScriptAstNode {
+    readonly type?: string;
+    readonly id?: string | ScriptAstNode | null;
+    readonly name?: string;
+}
+
+interface ScriptProgramAst {
+    readonly type?: string;
+    readonly body?: ReadonlyArray<ScriptAstNode>;
+}
+
+interface TranspilationPatchPlan {
+    readonly patch: RuntimeTranspilerPatch;
+    readonly ast: unknown;
+}
+
+interface MacroTranspilationResult {
+    readonly effectiveAst: unknown;
+    readonly effectiveSymbols: Array<string>;
+    readonly effectiveReferences: Array<string>;
+    readonly macroDefinitionChanges: Array<string>;
+    readonly candidateDefinitionsBySourcePath: TranspilerTypes.MacroDefinitionsBySourcePath | null;
+    readonly macroDefinitions: Map<string, TranspilerTypes.MacroDefinition>;
+}
+
+function prepareMacroTranspilation(
+    context: ProjectMacroRegistry,
+    ast: unknown,
+    filePath: string,
+    content: string,
+    parsedSymbols: ReadonlyArray<string>,
+    parsedReferences: ReadonlyArray<string>
+): MacroTranspilationResult {
+    const localMacroDefinitions = Core.isObjectLike(ast)
+        ? Transpiler.extractMacroDefinitionsFromAst(ast, filePath, content)
+        : new Map<string, TranspilerTypes.MacroDefinition>();
+    const previousMacroDefinitions = context.macroDefinitions ?? new Map<string, TranspilerTypes.MacroDefinition>();
+    let candidateDefinitionsBySourcePath: TranspilerTypes.MacroDefinitionsBySourcePath | null = null;
+    let macroDefinitions: Map<string, TranspilerTypes.MacroDefinition>;
+
+    // Watch mode populates `macroDefinitionsBySourcePath` after the project-wide
+    // startup walk and transpiles each file through that index on every change.
+    // In that path the simpler copy + merge below would be thrown away: the
+    // `createProjectMacroDefinitions` call rebuilds the merged macro map from the
+    // candidate source-path index, so we skip the redundant allocation entirely.
+    // Standalone callers (e.g. the `transpile` command) without a source-path
+    // index fall back to merging the local definitions into a copy of the
+    // previous project map, preserving the original behavior.
+    if (context.macroDefinitionsBySourcePath && Core.isObjectLike(ast)) {
+        candidateDefinitionsBySourcePath = new Map(context.macroDefinitionsBySourcePath);
+        candidateDefinitionsBySourcePath.set(filePath, localMacroDefinitions);
+        macroDefinitions = Transpiler.createProjectMacroDefinitions(candidateDefinitionsBySourcePath);
+    } else {
+        macroDefinitions = new Map(previousMacroDefinitions);
+        for (const [name, definition] of localMacroDefinitions) {
+            macroDefinitions.set(name, definition);
+        }
+    }
+
+    const effectiveAst = Transpiler.expandProjectMacros(ast, macroDefinitions, filePath);
+    const macroReferences = Transpiler.extractMacroReferencesFromAst(ast, macroDefinitions).map(
+        (name) => `gml/macro/${name}`
+    );
+    const effectiveReferences = Array.from(
+        new Set(
+            effectiveAst === ast
+                ? [...parsedReferences, ...macroReferences]
+                : [...extractReferencesFromAst(effectiveAst), ...macroReferences]
+        )
+    );
+    const effectiveSymbols = Array.from(
+        new Set([...parsedSymbols, ...[...localMacroDefinitions.keys()].map((name) => `gml/macro/${name}`)])
+    );
+    const macroDefinitionChanges = Transpiler.findChangedMacroDefinitionNames(
+        previousMacroDefinitions,
+        macroDefinitions
+    ).map((name) => `gml/macro/${name}`);
+
+    return {
+        effectiveAst,
+        effectiveSymbols,
+        effectiveReferences,
+        macroDefinitionChanges,
+        candidateDefinitionsBySourcePath,
+        macroDefinitions
+    };
+}
+
+function commitMacroTranspilation(
+    context: ProjectMacroRegistry,
+    candidateDefinitionsBySourcePath: TranspilerTypes.MacroDefinitionsBySourcePath | null,
+    macroDefinitions: Map<string, TranspilerTypes.MacroDefinition>
+): void {
+    if (candidateDefinitionsBySourcePath && context.macroDefinitionsBySourcePath) {
+        context.macroDefinitionsBySourcePath.clear();
+        for (const [source, definitions] of candidateDefinitionsBySourcePath) {
+            context.macroDefinitionsBySourcePath.set(source, definitions);
+        }
+    }
+
+    if (context.macroDefinitions === undefined && candidateDefinitionsBySourcePath === null) {
+        return;
+    }
+
+    context.macroDefinitions = macroDefinitions;
+}
+
+function asScriptProgramAst(ast: unknown): ScriptProgramAst | null {
+    if (!Core.isObjectLike(ast)) {
+        return null;
+    }
+
+    const record = ast as Record<string, unknown>;
+    if (record.type !== "Program" || !Array.isArray(record.body)) {
+        return null;
+    }
+
+    return {
+        type: "Program",
+        body: record.body.filter((node): node is ScriptAstNode => Core.isObjectLike(node))
+    };
+}
+
+function getScriptFunctionName(node: ScriptAstNode): string | null {
+    if (typeof node.id === "string") {
+        return node.id;
+    }
+    if (!Core.isObjectLike(node.id)) {
+        return null;
+    }
+
+    const idRecord = node.id as Record<string, unknown>;
+    return typeof idRecord.name === "string" ? idRecord.name : null;
+}
+
+function isScriptCompileTimeNode(node: ScriptAstNode): boolean {
+    return (
+        node.type === "MacroDeclaration" ||
+        node.type === "DefineStatement" ||
+        node.type === "RegionStatement" ||
+        node.type === "EndRegionStatement" ||
+        node.type === "EnumDeclaration"
+    );
+}
+
+function createExecutableProgramAst(ast: unknown): unknown {
+    const program = asScriptProgramAst(ast);
+    if (program === null) {
+        return ast;
+    }
+
+    return {
+        type: "Program",
+        body: program.body?.filter((node) => !isScriptCompileTimeNode(node)) ?? []
+    };
+}
+
+/**
+ * Emits one script patch for each top-level function in a multi-function GML
+ * script. The transpiler unwraps a program containing exactly one function,
+ * which gives the runtime a body it can bind directly to that function's
+ * generated GameMaker symbol. Executable top-level statements are kept in a
+ * separate file-level patch so they remain bound to the generated global
+ * script function instead of being accidentally attached to a helper.
+ */
+function transpileScriptPatches(
+    context: TranspilationContext,
+    sourceText: string,
+    sourcePath: string,
+    ast: unknown,
+    parsedSymbols: ReadonlyArray<string>
+): Array<TranspilationPatchPlan> {
+    const program = asScriptProgramAst(ast);
+    const body = program?.body ?? [];
+    const executableNodes = body.filter((node) => !isScriptCompileTimeNode(node));
+    const executableAst = program === null ? ast : { type: "Program", body: executableNodes };
+    const functionNodes = executableNodes.filter((node) => node.type === "FunctionDeclaration");
+    const topLevelNodes = executableNodes.filter((node) => node.type !== "FunctionDeclaration");
+
+    if (functionNodes.length === 0 || (functionNodes.length === 1 && topLevelNodes.length === 0)) {
+        const fileName = path.basename(sourcePath, path.extname(sourcePath));
+        const defaultSymbolId = `gml/script/${fileName}`;
+        const scriptSymbolId = getPrimaryScriptPatchId(parsedSymbols);
+        const symbolId = scriptSymbolId ?? defaultSymbolId;
+
+        return [
+            {
+                patch: context.transpiler.transpileScript({
+                    sourceText,
+                    symbolId,
+                    ast: executableAst
+                }),
+                ast: executableAst
+            }
+        ];
+    }
+
+    const patchIds = new Set<string>();
+    const functionPatches = functionNodes.map((functionNode) => {
+        const functionName = getScriptFunctionName(functionNode);
+        if (!functionName) {
+            throw new TypeError("A top-level script function is missing its identifier");
+        }
+
+        const symbolId = `gml/script/${functionName}`;
+        if (patchIds.has(symbolId)) {
+            throw new TypeError(`A source file defines the script function ${functionName} more than once`);
+        }
+        patchIds.add(symbolId);
+
+        const functionAst = { type: "Program", body: [functionNode] };
+        return {
+            patch: context.transpiler.transpileScript({
+                sourceText,
+                symbolId,
+                ast: functionAst
+            }),
+            ast: functionAst
+        };
+    });
+
+    if (topLevelNodes.length === 0) {
+        return functionPatches;
+    }
+
+    const fileName = path.basename(sourcePath, path.extname(sourcePath));
+    const topLevelAst = { type: "Program", body: topLevelNodes };
+    const defaultTopLevelPatchId = `gml/script/${fileName}`;
+    if (patchIds.has(defaultTopLevelPatchId)) {
+        throw new TypeError(
+            `Script ${sourcePath} contains top-level executable statements and a function named ${fileName}; split the initialization code into a differently named script`
+        );
+    }
+    const topLevelPatchId = defaultTopLevelPatchId;
+    const topLevelPatch = {
+        patch: context.transpiler.transpileScript({
+            sourceText,
+            symbolId: topLevelPatchId,
+            ast: topLevelAst
+        }),
+        ast: topLevelAst
+    };
+
+    return [topLevelPatch, ...functionPatches];
 }
 
 /**
@@ -655,41 +1031,61 @@ export function transpileFile(
             cachedReferences
         );
 
-        let patch: RuntimeTranspilerPatch;
+        const {
+            effectiveAst,
+            effectiveSymbols,
+            effectiveReferences,
+            macroDefinitionChanges,
+            candidateDefinitionsBySourcePath,
+            macroDefinitions
+        } = prepareMacroTranspilation(context, ast, filePath, content, parsedSymbols, parsedReferences);
 
-        if (fileKind.kind === "event") {
-            patch = context.transpiler.transpileEvent({
-                sourceText: content,
-                symbolId: fileKind.symbolId,
-                ast
-            });
-        } else {
-            const fileName = path.basename(filePath, path.extname(filePath));
-            const defaultSymbolId = `gml/script/${fileName}`;
-            const scriptSymbolId = getPrimaryScriptPatchId(parsedSymbols);
-            const symbolId = scriptSymbolId ?? defaultSymbolId;
+        const transpilationAst = fileKind.kind === "event" ? createExecutableProgramAst(effectiveAst) : effectiveAst;
+        const patchPlans: Array<TranspilationPatchPlan> =
+            fileKind.kind === "event"
+                ? [
+                      {
+                          patch: context.transpiler.transpileEvent({
+                              sourceText: content,
+                              symbolId: fileKind.symbolId,
+                              ast: transpilationAst
+                          }),
+                          ast: transpilationAst
+                      }
+                  ]
+                : transpileScriptPatches(context, content, filePath, transpilationAst, parsedSymbols);
 
-            patch = context.transpiler.transpileScript({
-                sourceText: content,
-                symbolId,
-                ast
-            });
-        }
+        const patchPayloads = patchPlans.map(({ patch, ast: patchAst }) => {
+            const patchWithMetadata = {
+                ...patch,
+                metadata: {
+                    ...patch.metadata,
+                    sourcePath: filePath,
+                    dependencies: resolvePatchDependencies(
+                        extractReferencesFromAst(patchAst),
+                        patch.id,
+                        parsedSymbols,
+                        context.scriptNames
+                    )
+                }
+            };
+            const patchPayload =
+                fileKind.runtimeId === null
+                    ? patchWithMetadata
+                    : { ...patchWithMetadata, runtimeId: fileKind.runtimeId };
 
-        const patchWithMetadata = {
-            ...patch,
-            metadata: {
-                ...patch.metadata,
-                sourcePath: filePath,
-                dependencies: resolvePatchDependencies(parsedReferences, patch.id)
+            if (!validatePatch(patchPayload)) {
+                throw new Error(`Generated patch failed validation: ${patch.id}`);
             }
-        };
-        const patchPayload =
-            fileKind.runtimeId === null ? patchWithMetadata : { ...patchWithMetadata, runtimeId: fileKind.runtimeId };
 
-        if (!validatePatch(patchPayload)) {
-            throw new Error("Generated patch failed validation");
+            return patchPayload;
+        });
+        const [patchPayload] = patchPayloads;
+        if (!patchPayload) {
+            throw new Error("Transpilation produced no runtime patches");
         }
+
+        commitMacroTranspilation(context, candidateDefinitionsBySourcePath, macroDefinitions);
 
         const durationMs = performance.now() - startTime;
 
@@ -699,23 +1095,25 @@ export function transpileFile(
             patchId: patchPayload.id,
             durationMs,
             sourceSize: content.length,
-            outputSize: patchPayload.js_body.length,
+            outputSize: patchPayloads.reduce((total, nextPatch) => total + nextPatch.js_body.length, 0),
             linesProcessed: lines
         };
 
         addToBoundedCollection(context.metrics, metrics, context.bounds.maxEntries);
 
         if (context.scriptNames && fileKind.kind === "script") {
-            registerScriptNamesFromSymbols(parsedSymbols, context.scriptNames);
+            registerScriptNamesFromSymbols(effectiveSymbols, context.scriptNames);
         }
 
         if (!deliverRuntimePatch) {
             return {
                 success: true,
                 patch: patchPayload,
+                patches: patchPayloads,
                 metrics,
-                symbols: parsedSymbols,
-                references: parsedReferences
+                symbols: effectiveSymbols,
+                references: effectiveReferences,
+                macroDefinitionChanges
             };
         }
 
@@ -723,24 +1121,33 @@ export function transpileFile(
             context.lastSuccessfulPatches,
             context.sourcePathToPatchIds,
             filePath,
-            patchPayload.id
+            new Set(patchPayloads.map((nextPatch) => nextPatch.id))
         );
-        const previousPatch = context.lastSuccessfulPatches.get(patchPayload.id);
-        const runtimePatchChanged = hasRuntimePatchChanged(previousPatch, patchPayload);
-
-        context.lastSuccessfulPatches.set(patchPayload.id, patchPayload);
+        const changedPatches: Array<RuntimeTranspilerPatch> = [];
+        for (const nextPatch of patchPayloads) {
+            const previousPatch = context.lastSuccessfulPatches.get(nextPatch.id);
+            if (hasRuntimePatchChanged(previousPatch, nextPatch)) {
+                changedPatches.push(nextPatch);
+            }
+            context.lastSuccessfulPatches.set(nextPatch.id, nextPatch);
+        }
 
         let patchIdsForSource = context.sourcePathToPatchIds.get(filePath);
         if (!patchIdsForSource) {
             patchIdsForSource = new Set();
             context.sourcePathToPatchIds.set(filePath, patchIdsForSource);
         }
-        patchIdsForSource.add(patchPayload.id);
-        if (runtimePatchChanged) {
-            addToBoundedCollection(context.patches, createPatchSummary(patchPayload), context.bounds.maxEntries);
-            context.totalPatchCount += 1;
+        for (const nextPatch of patchPayloads) {
+            patchIdsForSource.add(nextPatch.id);
+        }
+        if (changedPatches.length > 0) {
+            for (const changedPatch of changedPatches) {
+                addToBoundedCollection(context.patches, createPatchSummary(changedPatch), context.bounds.maxEntries);
+            }
+            context.totalPatchCount += changedPatches.length;
 
-            const broadcastResult = context.websocketServer?.broadcast(patchPayload);
+            const broadcastPayload = changedPatches.length === 1 ? changedPatches[0] : changedPatches;
+            const broadcastResult = context.websocketServer?.broadcast(broadcastPayload);
 
             // Record end-to-end hot-reload latency after the patch has been broadcast.
             // This captures the full pipeline delay (file-change detection → broadcast)
@@ -759,6 +1166,13 @@ export function transpileFile(
                     console.log(`  ↳ Streamed to ${broadcastResult.successCount} client(s)`);
                 }
             }
+
+            metrics.patchResult = {
+                delivered: (broadcastResult?.successCount ?? 0) > 0,
+                failureCount: broadcastResult?.failureCount ?? 0,
+                successCount: broadcastResult?.successCount ?? 0,
+                totalClients: broadcastResult?.totalClients ?? 0
+            };
         } else if (verbose && !quiet) {
             console.log("  ↳ Runtime patch unchanged; skipping patch broadcast");
         }
@@ -766,17 +1180,20 @@ export function transpileFile(
         if (!quiet) {
             if (verbose) {
                 console.log(
-                    `  ↳ Transpiled to JavaScript (${patchPayload.js_body.length} chars in ${durationMs.toFixed(2)}ms)`
+                    `  ↳ Transpiled to JavaScript (${metrics.outputSize} chars across ${patchPayloads.length} patch(es) in ${durationMs.toFixed(2)}ms)`
                 );
                 console.log(`  ↳ Patch ID: ${patchPayload.id}`);
+                if (patchPayloads.length > 1) {
+                    console.log(`  ↳ Patch IDs: ${patchPayloads.map((nextPatch) => nextPatch.id).join(", ")}`);
+                }
                 if (patchPayload.metadata?.timestamp) {
                     console.log(`  ↳ Generated at: ${new Date(patchPayload.metadata.timestamp).toISOString()}`);
                 }
-                if (parsedSymbols.length > 0) {
-                    console.log(`  ↳ Extracted symbols: ${parsedSymbols.join(", ")}`);
+                if (effectiveSymbols.length > 0) {
+                    console.log(`  ↳ Extracted symbols: ${effectiveSymbols.join(", ")}`);
                 }
-                if (parsedReferences.length > 0) {
-                    console.log(`  ↳ Extracted references: ${parsedReferences.join(", ")}`);
+                if (effectiveReferences.length > 0) {
+                    console.log(`  ↳ Extracted references: ${effectiveReferences.join(", ")}`);
                 }
                 if (parseError) {
                     const message = Core.getErrorMessage(parseError, {
@@ -784,7 +1201,7 @@ export function transpileFile(
                     });
                     console.log(`  ↳ Warning: Could not extract symbols/references from AST: ${message}`);
                 }
-            } else if (runtimePatchChanged) {
+            } else if (changedPatches.length > 0) {
                 console.log(`  ↳ Generated patch: ${patchPayload.id}`);
             }
         }
@@ -792,9 +1209,11 @@ export function transpileFile(
         return {
             success: true,
             patch: patchPayload,
+            patches: patchPayloads,
             metrics,
-            symbols: parsedSymbols,
-            references: parsedReferences
+            symbols: effectiveSymbols,
+            references: effectiveReferences,
+            macroDefinitionChanges
         };
     } catch (error) {
         const classified = classifyTranspilationError(error);
@@ -973,12 +1392,30 @@ function getPrimaryScriptPatchId(symbols: ReadonlyArray<string>): string | null 
     return null;
 }
 
-function resolvePatchDependencies(references: ReadonlyArray<string>, patchId: string): Array<string> {
+function resolvePatchDependencies(
+    references: ReadonlyArray<string>,
+    patchId: string,
+    definedSymbols: ReadonlyArray<string>,
+    registeredScriptNames: ReadonlySet<string> | undefined
+): Array<string> {
     const dependencies = new Set<string>();
+    const definedPatchIds = new Set(
+        definedSymbols
+            .map((symbol) => runtimeSymbolToPatchId(symbol))
+            .filter((symbolId): symbolId is string => symbolId !== null)
+    );
 
     for (const reference of references) {
+        const referencedScriptName = symbolIdToScriptName(reference);
+        if (
+            referencedScriptName === null ||
+            (registeredScriptNames !== undefined && !registeredScriptNames.has(referencedScriptName))
+        ) {
+            continue;
+        }
+
         const dependencyPatchId = runtimeSymbolToPatchId(reference);
-        if (!dependencyPatchId || dependencyPatchId === patchId) {
+        if (!dependencyPatchId || dependencyPatchId === patchId || definedPatchIds.has(dependencyPatchId)) {
             continue;
         }
 

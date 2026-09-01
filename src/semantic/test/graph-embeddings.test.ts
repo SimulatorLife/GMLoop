@@ -3,8 +3,8 @@ import { describe, it } from "node:test";
 
 import {
     cosineSimilarity,
-    createGraphEmbeddingProvider,
     deserializeEmbeddingVector,
+    LocalTokenHashEmbeddingProvider,
     serializeEmbeddingVector
 } from "../src/graph-index/embeddings.js";
 
@@ -48,9 +48,9 @@ void describe("cosineSimilarity", () => {
     });
 });
 
-void describe("createGraphEmbeddingProvider", () => {
+void describe("LocalTokenHashEmbeddingProvider", () => {
     void it("produces consistent embeddings for the same input", () => {
-        const provider = createGraphEmbeddingProvider({
+        const provider = new LocalTokenHashEmbeddingProvider({
             provider: "local-token-hash",
             dimensions: 64,
             modelCacheDir: "/tmp/gml-test-embeddings",
@@ -62,5 +62,17 @@ void describe("createGraphEmbeddingProvider", () => {
 
         assert.deepEqual(vectorA, vectorB);
         assert.equal(vectorA.length, 64);
+    });
+
+    void it("clamps requested dimensions to a minimum of 8", () => {
+        const provider = new LocalTokenHashEmbeddingProvider({
+            provider: "local-token-hash",
+            dimensions: 2,
+            modelCacheDir: "/tmp/gml-test-embeddings",
+            enabled: true
+        });
+
+        assert.equal(provider.dimensions, 8);
+        assert.equal(provider.embedText("scr_player_move").length, 8);
     });
 });

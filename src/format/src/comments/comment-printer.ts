@@ -700,7 +700,7 @@ function handleCommentInEmptyBody(comment /*, text, options, ast, isLastComment 
     return attachDanglingCommentToEmptyNode(comment, EMPTY_BODY_TARGETS);
 }
 
-function handleDetachedOwnLineComment(comment /*, text, options, ast */) {
+function handleDetachedOwnLineComment(comment, _text, options /*, ast */) {
     const { precedingNode, followingNode } = comment;
 
     if (!precedingNode || !followingNode) {
@@ -723,6 +723,14 @@ function handleDetachedOwnLineComment(comment /*, text, options, ast */) {
         return false;
     }
 
+    if (attachTrailingDocLineInsideExistingDocBlock(comment, followingNode, options?.originalText)) {
+        return true;
+    }
+
+    if (markPlainCommentInsideDocBlockAsPrinted(comment, followingNode)) {
+        return true;
+    }
+
     addLeadingComment(followingNode, comment);
     comment.leading = true;
     comment.trailing = false;
@@ -734,6 +742,75 @@ function handleDetachedOwnLineComment(comment /*, text, options, ast */) {
         comment.leadingWS = `${leadingWhitespace}\n`;
     }
     comment.trailingWS = "\n";
+    return true;
+}
+
+function attachTrailingDocLineInsideExistingDocBlock(comment, followingNode, originalText) {
+    if (!Core.isNonEmptyArray(followingNode?.docComments) || typeof originalText !== "string") {
+        return false;
+    }
+
+    if (comment?.type !== "CommentLine") {
+        return false;
+    }
+
+    const rawText = Core.getLineCommentRawText(comment, { originalText });
+    if (!/^\s*\/\/\//u.test(rawText)) {
+        return false;
+    }
+
+    if (!followingNode.docComments.includes(comment)) {
+        followingNode.docComments.push(comment);
+    }
+    comment._gmlAttachedDocComment = true;
+    comment.printed = true;
+    return true;
+}
+
+/**
+ * Tracks a non-doc comment that sits between existing doc comments and the
+ * following node so the doc-comment output path can render it in source order
+ * without Prettier emitting it as a duplicate leading comment. Returns true
+ * to signal that the caller should skip the default leading-comment placement
+ * for this comment.
+ *
+ * Without this guard, plain `//` or block-style comments interleaved between
+ * `///` doc comments appear twice in the formatted output: once as a Prettier
+ * leading comment and again inside the doc-comment block.
+ */
+function markPlainCommentInsideDocBlockAsPrinted(comment, followingNode) {
+    if (!Core.isNonEmptyArray(followingNode?.docComments)) {
+        return false;
+    }
+
+    if (followingNode.docComments.includes(comment)) {
+        return false;
+    }
+
+    const commentStartIndex = getCommentStartIndex(comment);
+    const followingNodeStartIndex = Core.getNodeStartIndex(followingNode);
+    if (
+        !Number.isInteger(commentStartIndex) ||
+        typeof followingNodeStartIndex !== "number" ||
+        commentStartIndex >= followingNodeStartIndex
+    ) {
+        return false;
+    }
+
+    const docCommentStarts = followingNode.docComments
+        .map(getCommentStartIndex)
+        .filter((startIndex) => Number.isInteger(startIndex));
+    if (docCommentStarts.length === 0 || commentStartIndex < Math.min(...docCommentStarts)) {
+        return false;
+    }
+
+    if (!Array.isArray(followingNode._gmlEmbeddedLeadingComments)) {
+        followingNode._gmlEmbeddedLeadingComments = [];
+    }
+    if (!followingNode._gmlEmbeddedLeadingComments.includes(comment)) {
+        followingNode._gmlEmbeddedLeadingComments.push(comment);
+    }
+    comment.printed = true;
     return true;
 }
 
@@ -1084,6 +1161,10 @@ function handleCommentInEmptyLiteral(comment /*, text, options, ast, isLastComme
 
 function handleOnlyComments(comment, options, ast /*, isLastComment */) {
     if (attachDocCommentToFollowingNode(comment, options, ast)) {
+        return true;
+    }
+
+    if (markPlainCommentInsideDocBlockAsPrinted(comment, comment.followingNode)) {
         return true;
     }
 

@@ -1,4 +1,4 @@
-import { strictEqual } from "node:assert";
+import assert, { strictEqual } from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import type { CallExpressionNode, IdentifierMetadata } from "../src/emitter/ast.js";
@@ -137,6 +137,54 @@ void describe("EventContextOracle", () => {
             const oracle = new EventContextOracle(base, new Set());
 
             strictEqual(oracle.callTargetKind(makeCallExpr("unknown_fn")), "unknown");
+        });
+    });
+
+    void describe("nested scope tracking", () => {
+        void it("classifies names in a pushed scope as local", () => {
+            const oracle = new EventContextOracle(createSemanticOracle(), new Set());
+
+            oracle.pushScope(new Set(["inner_param", "inner_local"]));
+            try {
+                strictEqual(oracle.kindOfIdent(makeIdent("inner_param")), "local");
+                strictEqual(oracle.kindOfIdent(makeIdent("inner_local")), "local");
+                strictEqual(oracle.kindOfIdent(makeIdent("health")), "self_field");
+            } finally {
+                oracle.popScope();
+            }
+        });
+
+        void it("retains outer-event locals after a nested scope is pushed and popped", () => {
+            const oracle = new EventContextOracle(createSemanticOracle(), new Set(["event_local"]));
+
+            oracle.pushScope(new Set(["inner_local"]));
+            try {
+                strictEqual(oracle.kindOfIdent(makeIdent("inner_local")), "local");
+                strictEqual(oracle.kindOfIdent(makeIdent("event_local")), "local");
+            } finally {
+                oracle.popScope();
+            }
+
+            strictEqual(oracle.kindOfIdent(makeIdent("inner_local")), "self_field");
+            strictEqual(oracle.kindOfIdent(makeIdent("event_local")), "local");
+        });
+
+        void it("keeps shadowed names local in inner and outer scopes", () => {
+            const oracle = new EventContextOracle(createSemanticOracle(), new Set(["shared"]));
+
+            oracle.pushScope(new Set(["shared"]));
+            try {
+                strictEqual(oracle.kindOfIdent(makeIdent("shared")), "local");
+            } finally {
+                oracle.popScope();
+            }
+            strictEqual(oracle.kindOfIdent(makeIdent("shared")), "local");
+        });
+
+        void it("throws when popScope has no matching pushScope", () => {
+            const oracle = new EventContextOracle(createSemanticOracle(), new Set());
+
+            assert.throws(() => oracle.popScope(), /without a matching pushScope/);
         });
     });
 });

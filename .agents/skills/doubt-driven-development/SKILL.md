@@ -1,65 +1,70 @@
 ---
 name: doubt-driven-development
-description: Apply adversarial verification to non-trivial decisions before they stand. Use when correctness matters more than speed, especially for parser/core/plugin boundary changes, AST invariants, formatting correctness, and irreversible repo operations.
+description: Apply adversarial verification during any meaningful code change before the approach hardens. Use for medium or larger changes where regressions, hidden coupling, ownership mistakes, or invalid assumptions are plausible. Skip only for trivial mechanical edits.
 ---
 
 # Doubt-Driven Development
 
 ## Overview
 
-Use structured skepticism for non-trivial decisions. The goal is to disprove your own approach early, while fixes are still cheap.
+Doubt-Driven Development is a coding workflow for meaningful changes where the first reasonable solution may still be wrong.
 
-This is an in-flight method, not only final review.
+Challenge ownership, assumptions, abstractions, edge cases, and test coverage before the implementation hardens.
+
+Make the smallest correct change, prove the real behavior, and avoid unnecessary complexity.
 
 ## When to Use
 
-Use for decisions that:
+Use for meaningful code changes where the first correct-looking solution may hide risk:
 
-- Change control flow or invariants
-- Cross workspace boundaries (`core`/`parser`/`plugin`)
-- Affect AST shape, node typing, or traversal semantics
-- Alter formatter behavior in ways that may shift output broadly
-- Could create hard-to-revert regressions
+- Medium or larger implementation changes
+- Refactors that move behavior, ownership, or responsibility
+- Changes that affect shared helpers, public APIs, fixtures, generated output, or many call sites
+- Bug fixes where the root cause is uncertain
+- Changes that add new state, configuration, abstractions, or systems
+- Changes where existing tests may pass without proving the intended behavior
 
-Skip for trivial mechanical edits (rename, formatting-only movement, obvious one-line fixes).
+Skip for trivial mechanical edits, such as renames, comment changes, formatting-only movement, or obvious one-line fixes.
 
 ## Core Loop
 
-1. **Claim**: write the decision and why it matters.
-2. **Extract**: isolate artifact + contract.
-3. **Adversarial Review**: seek breakage, not validation.
-4. **Reconcile**: classify findings and update code/tests.
-5. **Stop**: finish when findings are resolved or no longer substantive.
+1. **Frame the Change**: identify the bug, feature, refactor, or design pressure being addressed. State the smallest useful outcome.
+2. **Inspect Current Repo State**: verify relevant files, existing systems, tests, imports, and patterns from the actual repository. Do not rely on memory, prior assumptions, or stale summaries.
+3. **Find the Existing Owner**: check whether an existing system, helper, workspace, or pattern should handle this before adding anything new.
+4. **State the Risky Assumption**: name the assumption most likely to be wrong, such as ownership, abstraction level, edge-case behavior, or test coverage.
+5. **Try to Disprove the Approach**: look for counterexamples, boundary violations, hidden coupling, duplicated paths, and cases where existing tests would pass but behavior would still be wrong.
+6. **Make the Smallest Correct Change**: implement only what survives the adversarial check. Prefer improving an existing path over creating a parallel one.
+7. **Prove the Behavior**: add or update focused tests for the real invariant, then run targeted validation.
+8. **Check System Fit**: verify that the final change did not add unnecessary state, configuration, ownership confusion, or cross-workspace compensation.
+9. **Run Full Validation**: run required build(s), linting, and test commands before considering the change complete.
 
-### Claim Template
+## Before Implementing
 
-```text
-CLAIM: <what should be true>
-WHY IT MATTERS: <failure impact>
-```
+Run a design pass before writing code:
 
-### Artifact + Contract Template
+- What existing system should own this?
+- What invariant should become simpler after the change?
+- What behavior should not change?
+- What tests or fixtures would prove the approach is safe?
+- What would make this design obviously wrong?
 
-```text
-ARTIFACT:
-- minimal diff/function/design decision
+## After Implementing
 
-CONTRACT:
-- required behavior
-- invariants that must remain true
-- boundary constraints (workspace ownership, import rules, fixture rules)
-```
+After code exists, challenge the actual artifact, not the intention.
 
-### Adversarial Prompt Template (tool-agnostic)
+Check:
 
-```text
-Find what is wrong with this artifact against the contract.
-Prioritize: incorrect assumptions, edge cases, boundary violations,
-regressions, hidden coupling, and test gaps.
-Do not summarize positives. Report concrete failure risks.
-```
+- Did the implementation match the claim?
+- Did it introduce a second path for the same behavior?
+- Did tests prove the important edge case or only the happy path?
+- Did validation pass for the relevant workspace and the whole project?
+- Is the final code simpler, or only more capable?
 
-Pass only `ARTIFACT + CONTRACT` to the reviewer. Do not pass your conclusion.
+## Non-Goals
+
+This skill does not authorize broad rewrites, opportunistic cleanup, or speculative architecture changes.
+
+Use doubt to make the current change safer. Do not use it to justify replacing working systems unless the existing system clearly violates the contract.
 
 ## GMLoop-Specific Checks
 
@@ -74,29 +79,76 @@ For each non-trivial decision, challenge:
 
 ## Evidence Requirements
 
-Doubt is incomplete without executable evidence.
+Doubt is incomplete without evidence from the current repo state.
 
-Run:
+Before changing code, inspect the actual files, tests, imports, and existing patterns involved. Do not rely on memory, prior conversations, old summaries, or assumed architecture when the repository can be checked directly.
 
-```bash
-pnpm run build:ts
-pnpm run lint:quiet
-pnpm run test
-```
+Use targeted validation while iterating, then run full validation before completion.
 
-Use targeted tests while iterating, then run full validation before completion.
+Validation should include the relevant checks for the current project, such as:
+
+* The smallest test, fixture, or reproduction that proves the changed behavior
+* Build, typecheck, lint, formatting, or test commands required by the repo
+* The actual affected surface, such as the UI, CLI, plugin command, generated output, or runtime workflow
+* Any before/after comparison needed to prove the change did not regress surrounding behavior
+
+Do not treat passing tests as complete evidence if the changed behavior is normally exercised through a UI, CLI, editor integration, generated artifact, or other runtime path.
+
+## Evidence may include:
+
+- A focused regression test
+- A before/after fixture comparison
+- A failing command that now passes
+- A code path walkthrough tied to the contract
+- A type/lint/build check
+- A documented trade-off with a reason it is acceptable
+
+Do not count intuition, reviewer agreement, or passing unrelated tests as evidence.
 
 ## Red Flags
 
 - Treating confidence as proof
-- Accepting reviewer feedback without checking artifact text
+- Relying on memory instead of inspecting the current repo state
+- Accepting reviewer feedback / assumptions without checking artifacts or code
 - Repeating cycles without changing artifact/contract
-- Skipping tests for behavior-affecting edits
-- “Passing” by weakening assertions instead of fixing source logic
+- Skipping adding tests for behavior-affecting edits
+- Making tests "Pass" by weakening assertions instead of fixing source logic
+
+## Assume the first solution may be wrong because it:
+
+* Places behavior in the most convenient workspace instead of the correct owner
+* Fixes the observed failure but not the underlying invariant
+* Builds a new system when an existing system should be extended, simplified, or made more capable
+* Adds coupling that future features will depend on accidentally
+* Passes existing tests while leaving the real edge case uncovered
+* Treats formatting, linting, parsing, and refactoring responsibilities as interchangeable
+* Overcomplicates a simple problem instead of simplifying the underlying constraint
+* Assumes the current failure is the whole problem
+* Adds a special case where a general rule is missing
+* Solves the problem at the wrong abstraction level
+* Introduces state where a derived value would be safer
+* Adds configuration where convention would be clearer
+* Makes the implementation more flexible than the contract requires
+* Relies on ordering, timing, or side effects that are not part of the contract
+* Assumes existing tests cover the behavior they appear to cover
+* Fixes one workspace by making another workspace compensate for it
+* Adds a new helper instead of making the existing helper correct
+* Creates a parallel path that future changes must keep in sync
+* Makes the change pass validation without explaining why the behavior is correct
+* Prioritizes convenience at the cost of project clarity
+* Makes the easy path correct while leaving edge cases undefined
+* Preserves an old boundary that should be simplified
+* Moves behavior without proving the new owner is better
+* Couples behavior to a fixture, filename, or test shape instead of the real invariant
+* Relies on stale memory of the codebase instead of the current files, tests, and dependency graph
+* Adds a new helper, utility, or abstraction before checking whether an existing one should be improved
+* Adds a new file when the behavior belongs with existing co-owned or closely related logic
 
 ## Completion Criteria
 
-- Non-trivial claims were explicit
-- At least one adversarial pass challenged each non-trivial artifact
-- Findings were resolved, accepted as explicit trade-offs, or disproven with evidence
-- Build, lint, and relevant tests validate the final state
+* The change solves the real problem, not only the observed symptom
+* The behavior is owned by the right system, helper, or workspace
+* No unnecessary new system, state, configuration, or parallel path was added
+* Focused tests or fixtures prove the important behavior and edge cases
+* Any remaining risks are explicit trade-offs, not hidden assumptions
+* Build, lint, and relevant tests validate the final state

@@ -1,7 +1,115 @@
 import { isObjectLike } from "../utils/object.js";
-import { isNode } from "./node-helpers/index.js";
+import type { GameMakerAstNode } from "./types.js";
 
 type ObjectRecord = Record<string, unknown>;
+const AST_TRAVERSAL_LINK_KEYS = new Set(["declaration", "enclosingNode", "followingNode", "precedingNode"]);
+
+/** Location of a node within a typed AST traversal. */
+export type GameMakerAstTraversalContext = Readonly<{
+    index: number | null;
+    key: string | null;
+    parent: GameMakerAstNode | null;
+}>;
+
+/** Callbacks invoked while traversing a typed GameMaker AST. */
+export type GameMakerAstTraversalVisitor = Readonly<{
+    enter?: (node: GameMakerAstNode, context: GameMakerAstTraversalContext) => boolean | void;
+    leave?: (node: GameMakerAstNode, context: GameMakerAstTraversalContext) => void;
+}>;
+
+type AstTraversalFrame = Readonly<{
+    context: GameMakerAstTraversalContext;
+    leaving: boolean;
+    node: GameMakerAstNode;
+}>;
+
+function isTypedGameMakerAstNode(value: unknown): value is GameMakerAstNode & { type: string } {
+    return isObjectLike(value) && typeof (value as { type?: unknown }).type === "string";
+}
+
+function shouldSkipAstChildKey(node: GameMakerAstNode, key: string): boolean {
+    if (key === "parent") {
+        return node.type !== "ConstructorDeclaration";
+    }
+    return AST_TRAVERSAL_LINK_KEYS.has(key);
+}
+
+/**
+ * Visit each direct typed AST child in deterministic property and array order.
+ *
+ * Traversal links and semantic declaration back-references are excluded. The
+ * constructor `parent` clause remains a syntax child despite sharing the
+ * historical traversal-link property name.
+ */
+export function forEachAstChild(
+    node: GameMakerAstNode,
+    callback: (child: GameMakerAstNode, context: GameMakerAstTraversalContext) => void
+): void {
+    for (const key of Object.keys(node)) {
+        if (shouldSkipAstChildKey(node, key)) {
+            continue;
+        }
+
+        const childValue = (node as Record<string, unknown>)[key];
+        if (Array.isArray(childValue)) {
+            for (const [index, child] of childValue.entries()) {
+                if (isTypedGameMakerAstNode(child)) {
+                    callback(child, { index, key, parent: node });
+                }
+            }
+            continue;
+        }
+
+        if (isTypedGameMakerAstNode(childValue)) {
+            callback(childValue, { index: null, key, parent: node });
+        }
+    }
+}
+
+/**
+ * Traverse a typed GameMaker AST depth-first with balanced enter/leave events.
+ *
+ * Returning `false` from `enter` skips that node's children while still
+ * invoking `leave`. Shared or cyclic nodes are visited once.
+ */
+export function traverseAst(root: unknown, visitor: GameMakerAstTraversalVisitor): void {
+    if (!isTypedGameMakerAstNode(root)) {
+        return;
+    }
+
+    const rootContext: GameMakerAstTraversalContext = { index: null, key: null, parent: null };
+    const stack: AstTraversalFrame[] = [{ context: rootContext, leaving: false, node: root }];
+    const seen = new WeakSet<object>();
+
+    while (stack.length > 0) {
+        const frame = stack.pop();
+        if (frame === undefined) {
+            continue;
+        }
+
+        if (frame.leaving) {
+            visitor.leave?.(frame.node, frame.context);
+            continue;
+        }
+
+        if (seen.has(frame.node)) {
+            continue;
+        }
+        seen.add(frame.node);
+
+        stack.push({ ...frame, leaving: true });
+        if (visitor.enter?.(frame.node, frame.context) === false) {
+            continue;
+        }
+
+        const children: Array<{ child: GameMakerAstNode; context: GameMakerAstTraversalContext }> = [];
+        forEachAstChild(frame.node, (child, context) => children.push({ child, context }));
+        for (let index = children.length - 1; index >= 0; index -= 1) {
+            const child = children[index];
+            stack.push({ context: child.context, leaving: false, node: child.child });
+        }
+    }
+}
 
 export type WalkObjectGraphOptions = {
     enterObject?: (
@@ -99,41 +207,4 @@ export function walkObjectGraph(root: unknown, options: WalkObjectGraphOptions =
             stackKeys.push(childKey);
         }
     }
-}
-
-/**
- * Simplified AST walker that visits each AST node with a single callback.
- *
- * This helper wraps `walkObjectGraph` to provide a simpler interface for AST
- * traversal where the visitor function receives each node along with its parent
- * and key context. The visitor can return `false` to prevent descending into
- * child nodes.
- *
- * Unlike `walkObjectGraph`, which separates object and array handling, this
- * function filters to AST nodes (via `isNode`) and provides a unified callback
- * signature that matches the common pattern used throughout the plugin layer.
- *
- * @param root The root node or value to start traversal from.
- * @param visitor Callback invoked for each AST node. Receives the node, its
- *                parent (object or array), and the key (string or number) by
- *                which it's referenced. Return `false` to skip descending into
- *                this node's children.
- */
-export function walkAst(
-    root: unknown,
-    visitor: (node: any, parent: unknown, key: string | number | null) => void | boolean
-): void {
-    walkObjectGraph(root, {
-        enterObject(value, parent, key) {
-            if (!isNode(value)) {
-                return;
-            }
-
-            return visitor(value, parent, key);
-        },
-        enterArray() {
-            // Arrays themselves are not AST nodes, but we need to traverse
-            // them to reach the nodes they contain. Always descend into arrays.
-        }
-    });
 }

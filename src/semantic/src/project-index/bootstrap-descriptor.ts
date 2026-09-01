@@ -1,5 +1,7 @@
 import { Core } from "@gmloop/core";
 
+import type { ProjectIndexBuildOptions } from "./build-options.js";
+
 type ProjectIndexConcurrencySettings = {
     gml: number;
     gmlParsing: number;
@@ -7,17 +9,19 @@ type ProjectIndexConcurrencySettings = {
 
 export type { ProjectIndexConcurrencySettings };
 
-type ProjectIndexBuildOptions = {
-    logger?: { debug?: (message?: string, payload?: unknown) => void } | null;
+type ProjectIndexBuildOptionsInput = Readonly<{
+    concurrency?: unknown;
+    logger?: ProjectIndexBuildOptions["logger"];
     logMetrics?: boolean;
-    concurrency?: ProjectIndexConcurrencySettings | null;
-    parseGml?: (text: string, filePath?: string) => unknown;
-};
-
-export type { ProjectIndexBuildOptions };
+    parseGml?: unknown;
+}>;
 
 function isPositiveInteger(value: unknown): value is number {
     return typeof value === "number" && Number.isInteger(value) && value > 0;
+}
+
+function isProjectIndexParser(value: unknown): value is NonNullable<ProjectIndexBuildOptions["parseGml"]> {
+    return typeof value === "function";
 }
 
 export function createProjectIndexBuildOptions({
@@ -25,11 +29,9 @@ export function createProjectIndexBuildOptions({
     logMetrics = false,
     concurrency,
     parseGml
-}: ProjectIndexBuildOptions = {}) {
-    const buildOptions: ProjectIndexBuildOptions = {
-        logger,
-        logMetrics
-    };
+}: ProjectIndexBuildOptionsInput = {}): ProjectIndexBuildOptions {
+    let normalizedConcurrency: ProjectIndexBuildOptions["concurrency"];
+    let normalizedParser: ProjectIndexBuildOptions["parseGml"];
 
     Core.withDefinedValue(
         concurrency,
@@ -49,7 +51,7 @@ export function createProjectIndexBuildOptions({
                 return;
             }
 
-            buildOptions.concurrency = {
+            normalizedConcurrency = {
                 gml: rawGml,
                 gmlParsing: rawGmlParsing
             };
@@ -58,47 +60,30 @@ export function createProjectIndexBuildOptions({
     );
 
     Core.withDefinedValue(parseGml, (fn) => {
-        if (typeof fn !== "function") {
+        if (!isProjectIndexParser(fn)) {
             return;
         }
-        buildOptions.parseGml = fn;
+        normalizedParser = fn;
     });
 
-    return buildOptions;
+    return {
+        logger,
+        logMetrics,
+        ...(normalizedConcurrency === undefined ? {} : { concurrency: normalizedConcurrency }),
+        ...(normalizedParser === undefined ? {} : { parseGml: normalizedParser })
+    };
 }
 
 type ProjectIndexDescriptor = {
     projectRoot?: string | null;
-    cacheMaxSizeBytes?: number | null;
-    cacheFilePath?: string | null;
-    formatterVersion?: string | null;
-    pluginVersion?: string | null;
     buildOptions?: ProjectIndexBuildOptions | null;
 };
 
-export function createProjectIndexDescriptor({
-    projectRoot,
-    cacheMaxSizeBytes,
-    cacheFilePath = null,
-    formatterVersion,
-    pluginVersion,
-    buildOptions
-}: ProjectIndexDescriptor = {}) {
+export function createProjectIndexDescriptor({ projectRoot, buildOptions }: ProjectIndexDescriptor = {}) {
     const descriptor: ProjectIndexDescriptor = {
         projectRoot,
-        cacheFilePath,
-        formatterVersion,
-        pluginVersion,
         buildOptions: Core.isObjectLike(buildOptions) ? buildOptions : undefined
     };
-
-    Core.withDefinedValue(
-        cacheMaxSizeBytes,
-        (value) => {
-            descriptor.cacheMaxSizeBytes = value;
-        },
-        () => {}
-    );
 
     return descriptor;
 }

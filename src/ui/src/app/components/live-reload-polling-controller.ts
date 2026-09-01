@@ -4,7 +4,8 @@ import type {
     GraphVisualizationLiveReloadRecentError,
     GraphVisualizationLiveReloadRecentPatch,
     GraphVisualizationLiveReloadStatusSnapshot
-} from "../../graph/types.js";
+} from "../../graph/index.js";
+import { getUiNetworkErrorMessage } from "../error-message.js";
 
 const DEFAULT_POLL_INTERVAL_MS = 2000;
 const MIN_POLL_INTERVAL_MS = 500;
@@ -35,13 +36,15 @@ function readRecentPatches(value: unknown): ReadonlyArray<GraphVisualizationLive
         return [];
     }
 
-    return value.filter(isUnknownRecord).map((entry) => ({
-        durationMs: readNumber(entry, "durationMs") ?? 0,
-        filePath: readString(entry, "filePath") ?? "unknown",
-        hotReloadLatencyMs: readNumber(entry, "hotReloadLatencyMs"),
-        id: readString(entry, "id") ?? "unknown",
-        timestamp: readNumber(entry, "timestamp") ?? 0
-    }));
+    return value
+        .filter((entry): entry is UnknownRecord => isUnknownRecord(entry))
+        .map((entry) => ({
+            durationMs: readNumber(entry, "durationMs") ?? 0,
+            filePath: readString(entry, "filePath") ?? "unknown",
+            hotReloadLatencyMs: readNumber(entry, "hotReloadLatencyMs"),
+            id: readString(entry, "id") ?? "unknown",
+            timestamp: readNumber(entry, "timestamp") ?? 0
+        }));
 }
 
 function readRecentErrors(value: unknown): ReadonlyArray<GraphVisualizationLiveReloadRecentError> {
@@ -49,12 +52,14 @@ function readRecentErrors(value: unknown): ReadonlyArray<GraphVisualizationLiveR
         return [];
     }
 
-    return value.filter(isUnknownRecord).map((entry) => ({
-        error: readString(entry, "error") ?? "Unknown error",
-        filePath: readString(entry, "filePath") ?? "unknown",
-        recoveryHint: readString(entry, "recoveryHint"),
-        timestamp: readNumber(entry, "timestamp") ?? 0
-    }));
+    return value
+        .filter((entry): entry is UnknownRecord => isUnknownRecord(entry))
+        .map((entry) => ({
+            error: readString(entry, "error") ?? "Unknown error",
+            filePath: readString(entry, "filePath") ?? "unknown",
+            recoveryHint: readString(entry, "recoveryHint"),
+            timestamp: readNumber(entry, "timestamp") ?? 0
+        }));
 }
 
 function resolveWatcherStatus(
@@ -107,6 +112,18 @@ function normalizeStatusSnapshot(
 
 interface LiveReloadPollingControllerOptions {
     pollIntervalMs?: number;
+    /**
+     * Optional callback that returns the polling configuration from the host.
+     * Read lazily on every Lit host update so the controller can restart
+     * polling when the relevant properties change without the host having
+     * to override `updated()` to forward the values.
+     */
+    getStatusConfig?: () => LiveReloadPollingStatusConfig | null;
+}
+
+interface LiveReloadPollingStatusConfig {
+    statusUrl: string | null;
+    pollIntervalMs?: number;
 }
 
 export interface LiveReloadPollingControllerState {
@@ -129,6 +146,7 @@ export class LiveReloadPollingController implements ReactiveController {
         polledStatus: null
     };
     #pollIntervalMs: number;
+    #getStatusConfig: (() => LiveReloadPollingStatusConfig | null) | null;
 
     public constructor(
         host: ReactiveControllerHost,
@@ -137,6 +155,7 @@ export class LiveReloadPollingController implements ReactiveController {
     ) {
         this.#callbacks = callbacks;
         this.#pollIntervalMs = options.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS;
+        this.#getStatusConfig = options.getStatusConfig ?? null;
         host.addController(this);
     }
 
@@ -151,6 +170,28 @@ export class LiveReloadPollingController implements ReactiveController {
     public hostDisconnected(): void {
         this.stopPolling();
         document.removeEventListener("visibilitychange", this.#onVisibilityChange);
+    }
+
+    /**
+     * Called by Lit on every render. When the host supplied a
+     * {@link LiveReloadPollingControllerOptions.getStatusConfig} callback,
+     * this forwards any status-URL or interval change into the existing
+     * short-circuited {@link restartPollingIfNeeded} helper. Hosts that
+     * drive polling from outside the controller can simply omit the
+     * callback and keep using the imperative method directly.
+     */
+    public hostUpdate(): void {
+        const getStatusConfig = this.#getStatusConfig;
+        if (getStatusConfig === null) {
+            return;
+        }
+
+        const statusConfig = getStatusConfig();
+        if (statusConfig === null) {
+            return;
+        }
+
+        this.restartPollingIfNeeded(statusConfig.statusUrl, statusConfig.pollIntervalMs);
     }
 
     public stopPolling(): void {
@@ -173,13 +214,22 @@ export class LiveReloadPollingController implements ReactiveController {
         }
 
         const effectivePollIntervalMs = Math.max(configPollIntervalMs ?? this.#pollIntervalMs, MIN_POLL_INTERVAL_MS);
-        void this.#pollStatusUrl(statusUrl);
+        void this.#pollStatusUrl(statusUrl, false);
         this.#pollTimer = globalThis.setInterval(() => {
-            void this.#pollStatusUrl(statusUrl);
+            void this.#pollStatusUrl(statusUrl, false);
         }, effectivePollIntervalMs);
     }
 
-    async #pollStatusUrl(statusUrl: string): Promise<void> {
+    /**
+     * Fetch the live-reload status snapshot for {@link statusUrl}.
+     *
+     * @param silent - When `true`, transient poll failures (HTTP errors,
+     *   malformed payloads, network errors) are dropped without updating
+     *   `pollErrorMessage`. Scheduled polls report failures so the host can
+     *   surface an error banner; visibility-triggered polls stay quiet so
+     *   a momentary hiccup does not flash one.
+     */
+    async #pollStatusUrl(statusUrl: string, silent: boolean): Promise<void> {
         try {
             const response = await fetch(statusUrl, {
                 headers: { Accept: "application/json" }
@@ -199,43 +249,20 @@ export class LiveReloadPollingController implements ReactiveController {
                 polledStatus: snapshot
             };
         } catch (error) {
-            const message = error instanceof Error ? error.message : String(error);
-            this.#state = {
-                pollErrorMessage: message,
-                polledStatus: this.#state.polledStatus
-            };
-        }
-
-        this.#callbacks.onStatusChange(this.#state.polledStatus);
-        this.#callbacks.onErrorMessageChange(this.#state.pollErrorMessage);
-        this.#callbacks.requestUpdate();
-    }
-
-    async #pollStatusUrlIfNeeded(): Promise<void> {
-        if (this.#lastStatusUrl === null) {
-            return;
-        }
-
-        try {
-            const response = await fetch(this.#lastStatusUrl, {
-                headers: { Accept: "application/json" }
-            });
-            if (!response.ok) {
-                return;
+            // Visibility-triggered polls stay quiet on transient errors so
+            // a momentary hiccup does not flash an error banner; scheduled
+            // polls still surface the failure.
+            if (!silent) {
+                const message = getUiNetworkErrorMessage(
+                    error,
+                    `the live-reload status server at ${statusUrl}`,
+                    "Unknown polling error."
+                );
+                this.#state = {
+                    pollErrorMessage: message,
+                    polledStatus: this.#state.polledStatus
+                };
             }
-
-            const payload: unknown = await response.json();
-            const snapshot = normalizeStatusSnapshot(payload, true);
-            if (snapshot === null) {
-                return;
-            }
-
-            this.#state = {
-                pollErrorMessage: null,
-                polledStatus: snapshot
-            };
-        } catch {
-            // Silently ignore focus-triggered poll errors.
         }
 
         this.#callbacks.onStatusChange(this.#state.polledStatus);
@@ -244,8 +271,9 @@ export class LiveReloadPollingController implements ReactiveController {
     }
 
     #onVisibilityChange = (): void => {
-        if (document.visibilityState === "visible") {
-            void this.#pollStatusUrlIfNeeded();
+        const statusUrl = this.#lastStatusUrl;
+        if (document.visibilityState === "visible" && statusUrl !== null) {
+            void this.#pollStatusUrl(statusUrl, true);
         }
     };
 }

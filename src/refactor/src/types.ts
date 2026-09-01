@@ -43,23 +43,6 @@ export type CodemodResult = Readonly<{
 }>;
 
 /**
- * Options for the doc-comment-alignment codemod.
- *
- * No options are currently supported.
- */
-export type DocCommentAlignmentCodemodOptions = Readonly<Record<string, never>>;
-
-/**
- * A single text edit produced by the doc-comment-alignment codemod.
- */
-export type DocCommentAlignmentEdit = CodemodEdit;
-
-/**
- * Per-file result returned by `applyDocCommentAlignmentCodemod`.
- */
-export type DocCommentAlignmentResult = CodemodResult;
-
-/**
  * A single edit produced by the loop-length hoisting codemod.
  */
 export type LoopLengthHoistingEdit = CodemodEdit;
@@ -118,6 +101,118 @@ export type LoopLengthHoistingCodemodOptions = Readonly<Record<string, never>>;
 export type ScientificNotationCodemodOptions = Readonly<Record<string, never>>;
 
 /**
+ * Options for the repair-logical-not codemod.
+ */
+export type RepairLogicalNotCodemodOptions = Readonly<Record<string, never>>;
+
+/**
+ * Options for the repair-argument-separators codemod.
+ */
+export type RepairArgumentSeparatorsCodemodOptions = Readonly<Record<string, never>>;
+
+/**
+ * Options for the texture-prefetch guard repair codemod.
+ */
+export type RepairTexturePrefetchGuardCodemodOptions = Readonly<Record<string, never>>;
+
+/**
+ * A single text edit produced by the texture-prefetch guard repair codemod.
+ */
+export type RepairTexturePrefetchGuardEdit = CodemodEdit;
+
+/**
+ * Per-file result returned by the texture-prefetch guard repair codemod.
+ */
+export type RepairTexturePrefetchGuardResult = CodemodResult;
+
+/**
+ * Options for the invalid-texture-pointer guard repair codemod.
+ */
+export type RepairInvalidTexturePointerGuardCodemodOptions = Readonly<Record<string, never>>;
+
+/**
+ * A single text edit produced by the invalid-texture-pointer guard repair codemod.
+ */
+export type RepairInvalidTexturePointerGuardEdit = CodemodEdit;
+
+/**
+ * Per-file result returned by `applyRepairInvalidTexturePointerGuardCodemod`.
+ */
+export type RepairInvalidTexturePointerGuardResult = CodemodResult;
+
+/**
+ * Options for the audio-emitter creation guard codemod.
+ */
+export type RepairAudioEmitterCreationGuardCodemodOptions = Readonly<Record<string, never>>;
+
+/**
+ * A single text edit produced by the audio-emitter creation guard codemod.
+ */
+export type RepairAudioEmitterCreationGuardEdit = CodemodEdit;
+
+/**
+ * Per-file result returned by `applyRepairAudioEmitterCreationGuardCodemod`.
+ */
+export type RepairAudioEmitterCreationGuardResult = CodemodResult;
+
+/**
+ * Options for the sprite-texture UV resolution repair codemod.
+ */
+export type RepairSpriteTextureUvResolutionCodemodOptions = Readonly<Record<string, never>>;
+
+/**
+ * A single text edit produced by the sprite-texture UV resolution repair codemod.
+ */
+export type RepairSpriteTextureUvResolutionEdit = CodemodEdit;
+
+/**
+ * Per-file result returned by `applyRepairSpriteTextureUvResolutionCodemod`.
+ */
+export type RepairSpriteTextureUvResolutionResult = CodemodResult;
+
+/**
+ * Options for the event-callback other-keyword repair codemod.
+ *
+ * The codemod only runs on event files (paths that match
+ * `objects/<objectName>/<eventName>.gml`); the `sourcePath` is used to
+ * determine the file kind and to keep the codemod a no-op on
+ * script/library files that may legitimately use `other.<name>`.
+ */
+export type RepairEventCallbackOtherCodemodOptions = Readonly<{
+    readonly sourcePath?: string;
+}>;
+
+/**
+ * A single text edit produced by the event-callback other-keyword repair codemod.
+ */
+export type RepairEventCallbackOtherEdit = CodemodEdit;
+
+/**
+ * Per-file result returned by `applyRepairEventCallbackOtherCodemod`.
+ */
+export type RepairEventCallbackOtherResult = CodemodResult;
+
+/**
+ * A single text edit produced by the repair-logical-not codemod.
+ */
+export type RepairLogicalNotEdit = CodemodEdit;
+
+/**
+ * Per-file result returned by `applyRepairLogicalNotCodemod`.
+ */
+export type RepairLogicalNotResult = CodemodResult;
+
+/**
+ * A single text edit produced by the repair-argument-separators codemod.
+ */
+export type RepairArgumentSeparatorsEdit = CodemodEdit;
+
+/**
+ * Per-file result returned by `applyRepairArgumentSeparatorsCodemod`.
+ */
+export type RepairArgumentSeparatorsResult = CodemodResult;
+
+/**
  * A single text edit produced by the scientific-notation codemod.
  */
 export type ScientificNotationEdit = CodemodEdit;
@@ -140,9 +235,89 @@ export type Range = { start: number; end: number };
 const { createEnumeratedOptionHelpers } = Core;
 
 /**
- * Allowed naming case styles for naming-convention policy rules.
+ * Enumerated constants for naming case styles accepted by
+ * naming-convention policy rules.
+ *
+ * Naming case styles are the canonical identifier casing used by the refactor
+ * engine's naming policy. Centralising the valid values as a frozen constant
+ * object removes raw string literals (e.g. `"camel"`, `"lower_snake"`) from
+ * the dispatch logic in `formatNamingCaseStyle` and gives callers a single
+ * source of truth for runtime validation. The string values are deliberately
+ * preserved as the wire format used in user-authored config so existing
+ * policies keep working without translation.
+ *
+ * @example
+ * // Use typed constants instead of raw strings
+ * if (rule.caseStyle === NamingCaseStyle.LOWER_SNAKE) { ... }
+ *
+ * // Validate runtime strings
+ * const style = requireNamingCaseStyle(rawInput, "naming rule");
  */
-export type NamingCaseStyle = "lower" | "upper" | "camel" | "lower_snake" | "upper_snake" | "pascal";
+export const NamingCaseStyle = Object.freeze({
+    LOWER: "lower",
+    UPPER: "upper",
+    CAMEL: "camel",
+    LOWER_SNAKE: "lower_snake",
+    UPPER_SNAKE: "upper_snake",
+    PASCAL: "pascal"
+} as const);
+
+/**
+ * Allowed naming case styles for naming-convention policy rules.
+ *
+ * Derived from {@link NamingCaseStyle} so the union stays in lock-step with
+ * the runtime constant map; adding a new style only requires updating the
+ * `NamingCaseStyle` object.
+ */
+export type NamingCaseStyle = (typeof NamingCaseStyle)[keyof typeof NamingCaseStyle];
+
+const namingCaseStyleHelpers = createEnumHelpers(NamingCaseStyle, "naming case style");
+
+/**
+ * Check whether a value is a valid naming case style.
+ *
+ * @param value - Candidate value to test
+ * @returns True if value matches a known NamingCaseStyle constant
+ *
+ * @example
+ * if (isNamingCaseStyle(rawString)) {
+ *   // Safe to use as NamingCaseStyle
+ * }
+ */
+export function isNamingCaseStyle(value: unknown): value is NamingCaseStyle {
+    return namingCaseStyleHelpers.is(value);
+}
+
+/**
+ * Parse and validate a naming case style string.
+ *
+ * @param value - Raw string to parse
+ * @returns Valid NamingCaseStyle or null if invalid
+ *
+ * @example
+ * const style = parseNamingCaseStyle(rawInput);
+ * if (style === null) {
+ *   // Handle invalid style
+ * }
+ */
+export function parseNamingCaseStyle(value: unknown): NamingCaseStyle | null {
+    return namingCaseStyleHelpers.parse(value);
+}
+
+/**
+ * Parse and validate a naming case style string, throwing on invalid input.
+ *
+ * @param value - Raw string to parse
+ * @param context - Optional context for error message
+ * @returns Valid NamingCaseStyle
+ * @throws {TypeError} If value is not a valid naming case style
+ *
+ * @example
+ * const style = requireNamingCaseStyle(rawInput, "naming rule caseStyle");
+ */
+export function requireNamingCaseStyle(value: unknown, context?: string): NamingCaseStyle {
+    return namingCaseStyleHelpers.require(value, context);
+}
 
 /**
  * Category keys that can be targeted by naming-convention policy rules.
@@ -209,29 +384,40 @@ export interface NamingConventionPolicy {
  * Stable identifiers for codemods exposed through project configuration and the CLI.
  */
 export type RefactorCodemodId =
-    | "docCommentAlignment"
     | "scientificNotation"
     | "globalvarToGlobal"
     | "loopLengthHoisting"
-    | "namingConvention";
+    | "namingConvention"
+    | "repairLogicalNot"
+    | "repairArgumentSeparators"
+    | "repairTexturePrefetchGuard"
+    | "repairInvalidTexturePointerGuard"
+    | "repairAudioEmitterCreationGuard"
+    | "repairSpriteTextureUvResolution"
+    | "repairEventCallbackOther";
 
 /**
  * Normalized config payloads keyed by registered codemod id.
  */
 export interface RefactorCodemodConfigMap {
-    docCommentAlignment: DocCommentAlignmentCodemodOptions;
     scientificNotation: ScientificNotationCodemodOptions;
     globalvarToGlobal: GlobalvarToGlobalCodemodOptions;
     loopLengthHoisting: LoopLengthHoistingCodemodOptions;
     namingConvention: NamingConventionPolicy;
+    repairLogicalNot: RepairLogicalNotCodemodOptions;
+    repairArgumentSeparators: RepairArgumentSeparatorsCodemodOptions;
+    repairTexturePrefetchGuard: RepairTexturePrefetchGuardCodemodOptions;
+    repairInvalidTexturePointerGuard: RepairInvalidTexturePointerGuardCodemodOptions;
+    repairAudioEmitterCreationGuard: RepairAudioEmitterCreationGuardCodemodOptions;
+    repairSpriteTextureUvResolution: RepairSpriteTextureUvResolutionCodemodOptions;
+    repairEventCallbackOther: RepairEventCallbackOtherCodemodOptions;
 }
 
 /**
  * Config payload for a single registered codemod.
  */
 export type RefactorCodemodConfigEntry<T extends RefactorCodemodId = RefactorCodemodId> =
-    | RefactorCodemodConfigMap[T]
-    | false;
+    RefactorCodemodConfigMap[T] | false;
 
 /**
  * Refactor-specific configuration loaded from the `refactor` section of `gmloop.json`.
@@ -266,7 +452,7 @@ export type ResolvedNamingConventionRules = Partial<Record<NamingCategory, Resol
  * @param typeName - Human-readable name for error messages
  * @returns Helper object with is, parse, and require methods
  */
-function createEnumHelpers<T extends Record<string, string>>(enumObj: T, typeName: string) {
+export function createEnumHelpers<T extends Record<string, string>>(enumObj: T, typeName: string) {
     type EnumValue = T[keyof T];
     const values = Object.values(enumObj);
     const validValues = values.join(", ");
@@ -317,7 +503,8 @@ export const SymbolKind = Object.freeze({
     VAR: "var",
     EVENT: "event",
     MACRO: "macro",
-    ENUM: "enum"
+    ENUM: "enum",
+    ENUM_MEMBER: "enum-member"
 } as const);
 
 export type SymbolKindValue = (typeof SymbolKind)[keyof typeof SymbolKind];
@@ -392,7 +579,8 @@ export const ConflictType = Object.freeze({
     MISSING_SYMBOL: "missing_symbol",
     LARGE_RENAME: "large_rename",
     MANY_DEPENDENTS: "many_dependents",
-    ANALYSIS_ERROR: "analysis_error"
+    ANALYSIS_ERROR: "analysis_error",
+    SEMANTIC_GAP: "semantic_gap"
 } as const);
 
 export type ConflictTypeValue = (typeof ConflictType)[keyof typeof ConflictType];
@@ -513,6 +701,80 @@ export function parseOccurrenceKind(value: unknown): OccurrenceKindValue | null 
  */
 export function requireOccurrenceKind(value: unknown, context?: string): OccurrenceKindValue {
     return occurrenceKindHelpers.require(value, context);
+}
+
+/**
+ * Enumerated constants for refactor conflict severity levels.
+ *
+ * Severity is reported alongside each `ConflictEntry` so callers can decide
+ * whether to surface the issue as a hard failure, an advisory warning, or
+ * background context. This enum centralizes the valid severity strings,
+ * replacing raw literals (e.g. `"error"`, `"warning"`, `"info"`) that used to
+ * live inline on conflict records and were compared with `===` in branching
+ * logic. Using typed constants prevents typo-induced mismatches and gives
+ * callers a single source of truth for validation.
+ *
+ * @example
+ * // Use typed constants instead of raw strings
+ * conflicts.push({ type: ConflictType.LARGE_RENAME, severity: ConflictSeverity.WARNING, ... });
+ *
+ * // Validate runtime strings
+ * const severity = parseConflictSeverity(rawInput);
+ */
+export const ConflictSeverity = Object.freeze({
+    ERROR: "error",
+    WARNING: "warning",
+    INFO: "info"
+} as const);
+
+export type ConflictSeverityValue = (typeof ConflictSeverity)[keyof typeof ConflictSeverity];
+
+const conflictSeverityHelpers = createEnumHelpers(ConflictSeverity, "conflict severity");
+
+/**
+ * Check whether a value is a valid conflict severity.
+ *
+ * @param value - Candidate value to test
+ * @returns True if value matches a known ConflictSeverity constant
+ *
+ * @example
+ * if (isConflictSeverity(rawString)) {
+ *   // Safe to use as ConflictSeverityValue
+ * }
+ */
+export function isConflictSeverity(value: unknown): value is ConflictSeverityValue {
+    return conflictSeverityHelpers.is(value);
+}
+
+/**
+ * Parse and validate a conflict severity string.
+ *
+ * @param value - Raw string to parse
+ * @returns Valid ConflictSeverityValue or null if invalid
+ *
+ * @example
+ * const severity = parseConflictSeverity(conflict.severity);
+ * if (severity === null) {
+ *   // Handle unknown severity
+ * }
+ */
+export function parseConflictSeverity(value: unknown): ConflictSeverityValue | null {
+    return conflictSeverityHelpers.parse(value);
+}
+
+/**
+ * Parse and validate a conflict severity string, throwing on invalid input.
+ *
+ * @param value - Raw string to parse
+ * @param context - Optional context for error message
+ * @returns Valid ConflictSeverityValue
+ * @throws {TypeError} If value is not a valid conflict severity
+ *
+ * @example
+ * const severity = requireConflictSeverity(conflict.severity, "rename validation");
+ */
+export function requireConflictSeverity(value: unknown, context?: string): ConflictSeverityValue {
+    return conflictSeverityHelpers.require(value, context);
 }
 
 export * from "./types/index.js";

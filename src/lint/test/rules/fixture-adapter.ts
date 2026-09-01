@@ -1,4 +1,5 @@
-import type { FixtureAdapter } from "@gmloop/fixture-runner";
+import { type FixtureAdapter, FixtureRunner } from "@gmloop/fixture-runner";
+import { Codemods } from "@gmloop/refactor";
 import { ESLint } from "eslint";
 
 import { createLintRuleEntriesFromProjectConfig } from "../../src/configs/index.js";
@@ -10,11 +11,11 @@ function createRuleEntriesCacheKey(ruleEntries: Record<string, unknown>): string
     return JSON.stringify(serializedEntries);
 }
 
-function createSingleRuleFixtureConfig(config: Record<string, unknown>) {
+function createFixtureRuleConfig(config: Record<string, unknown>) {
     const ruleEntries = createLintRuleEntriesFromProjectConfig(config);
     const enabledRuleIds = Object.keys(ruleEntries);
-    if (enabledRuleIds.length !== 1) {
-        throw new Error(`Lint fixture config must enable exactly one rule, received ${enabledRuleIds.length}.`);
+    if (enabledRuleIds.length === 0) {
+        throw new Error("Lint fixture config must enable at least one rule.");
     }
 
     return ruleEntries;
@@ -36,7 +37,7 @@ export function createLintFixtureAdapter(): FixtureAdapter {
             return kind === "lint";
         },
         async run({ fixtureCase, config, inputText, runProfiledStage }) {
-            const ruleEntries = createSingleRuleFixtureConfig(config);
+            const ruleEntries = createFixtureRuleConfig(config);
             const cacheKey = createRuleEntriesCacheKey(ruleEntries);
             const cachedEslint = eslintByRuleConfigKey.get(cacheKey);
             const eslint =
@@ -69,7 +70,38 @@ export function createLintFixtureAdapter(): FixtureAdapter {
                     filePath: `${fixtureCase.caseId}.gml`
                 })
             );
-            const lintedOutput = result.output ?? inputText ?? "";
+            let lintedOutput = result.output ?? inputText ?? "";
+
+            if (
+                ruleEntries["gml/require-argument-separators"] &&
+                ruleEntries["gml/require-argument-separators"] !== "off"
+            ) {
+                const repairResult =
+                    Codemods.RepairArgumentSeparators.applyRepairArgumentSeparatorsCodemod(lintedOutput);
+                if (repairResult.changed) {
+                    lintedOutput = repairResult.outputText;
+                }
+            }
+
+            if (
+                ruleEntries["gml/normalize-operator-aliases"] &&
+                ruleEntries["gml/normalize-operator-aliases"] !== "off"
+            ) {
+                const repairLogicalNotResult = await Codemods.RepairLogicalNot.applyRepairLogicalNotCodemod(
+                    lintedOutput,
+                    null
+                );
+                if (repairLogicalNotResult.changed) {
+                    lintedOutput = repairLogicalNotResult.outputText;
+                }
+            }
+
+            if (ruleEntries["gml/no-scientific-notation"] && ruleEntries["gml/no-scientific-notation"] !== "off") {
+                const repairScientificResult = Codemods.ScientificNotation.applyScientificNotationCodemod(lintedOutput);
+                if (repairScientificResult.changed) {
+                    lintedOutput = repairScientificResult.outputText;
+                }
+            }
 
             return {
                 resultKind: "text" as const,
@@ -77,5 +109,23 @@ export function createLintFixtureAdapter(): FixtureAdapter {
                 changed: lintedOutput !== (inputText ?? "")
             };
         }
+    });
+}
+
+/**
+ * Create the canonical lint fixture suite definition shared by workspace and
+ * aggregate fixture runs.
+ *
+ * @returns Lint fixture suite registration metadata.
+ */
+export function createLintFixtureSuiteDefinition() {
+    return FixtureRunner.createFixtureSuiteDefinition({
+        workspaceName: "lint",
+        suiteName: "lint rule fixtures",
+        compiledWorkspaceTestFilePath: "src/lint/dist/test/rules/rule-fixtures.test.js",
+        moduleUrl: import.meta.url,
+        sourceRelativeSegments: ["..", "fixtures"],
+        distRelativeSegments: ["..", "..", "..", "test", "fixtures"],
+        adapter: createLintFixtureAdapter()
     });
 }

@@ -9,8 +9,7 @@ import {
     type ParserListenerPrototype,
     type ParseTreeListenerMethod
 } from "./generated-bindings.js";
-import { collectPrototypeMethodNames, deriveListenerMethodNames } from "./method-reflection.js";
-import { definePrototypeMethods } from "./prototype-builder.js";
+import { collectPrototypeMethodNames, definePrototypeMethods, deriveListenerMethodNames } from "./prototype-methods.js";
 import { createWrapperSymbols, ensureHasInstancePatched } from "./symbol-patching.js";
 
 const DEFAULT_LISTENER_DELEGATE: ListenerDelegate = ({ fallback = Core.noop }) => fallback();
@@ -58,7 +57,13 @@ function createListenerDelegate(options: ListenerOptions = {}): ListenerDelegate
         handlerMap[methodName] = candidate;
     }
 
-    if (Object.keys(handlerMap).length === 0) {
+    // Delegate to the established `Core.isEmptyRecord` helper instead of
+    // re-implementing the `Object.keys(x).length === 0` pattern here. The
+    // helper delegates to `isPlainObject` for the type guard, so callers
+    // benefit from the same null-prototype / non-object filtering the rest of
+    // the codebase relies on, and future tweaks (for example, switching to
+    // `Object.hasOwn` for non-enumerable-key safety) land in one place.
+    if (Core.isEmptyRecord(handlerMap)) {
         return baseDelegate;
     }
 

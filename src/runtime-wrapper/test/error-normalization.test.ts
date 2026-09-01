@@ -5,7 +5,7 @@ import {
     DEFAULT_RUNTIME_ERROR_MESSAGE,
     resolveRuntimeErrorFallbackMessage,
     resolveRuntimeErrorMessage
-} from "../browser/runtime/error-normalization.js";
+} from "../src/browser/runtime/error-normalization.js";
 
 void test("resolveRuntimeErrorMessage uses default fallback for nullish errors", () => {
     assert.strictEqual(resolveRuntimeErrorMessage(null), DEFAULT_RUNTIME_ERROR_MESSAGE);

@@ -1,19 +1,11 @@
 import type { ParserRuleContext, Token, TokenStream } from "antlr4";
 
-import { DEFAULT_SLL_PREDICTION_MAX_SOURCE_LENGTH } from "../config/parser-constants.js";
-import type { ScopeTrackerOptions } from "./scope-tracker.js";
-
 export type ParserContext =
     | (ParserRuleContext & {
           [methodName: string]: (...args: Array<unknown>) => unknown;
       })
     | null
     | undefined;
-
-export type ParserContextMethod = (
-    this: ParserRuleContext,
-    ...args: Array<unknown>
-) => ParserContext | ParserContext[] | null | undefined;
 
 export type ParserContextWithMethods = ParserRuleContext & {
     [methodName: string]: (...args: Array<unknown>) => unknown;
@@ -22,20 +14,6 @@ export type ParserContextWithMethods = ParserRuleContext & {
 export interface ParserToken extends Token {
     symbol?: Token | null;
 }
-
-// Re-export scope tracker types from the parser's type surface. These
-// contracts are parser-owned because they define the parser/semantic boundary,
-// not the shared AST model owned by Core.
-export type {
-    GlobalIdentifierTracker,
-    IdentifierRoleApplicator,
-    IdentifierRoleCloner,
-    IdentifierRoleContextController,
-    IdentifierRoleManager,
-    ScopeLifecycle,
-    ScopeTracker,
-    ScopeTrackerOptions
-} from "./scope-tracker.js";
 
 /**
  * Comment extraction options.
@@ -86,25 +64,6 @@ export interface LocationMetadataOptions {
      * @default true
      */
     simplifyLocations: boolean;
-}
-
-/**
- * Scope tracking configuration.
- *
- * Controls whether the parser should perform semantic scope analysis
- * during parsing to track variable declarations, references, and
- * identifier roles. Used primarily for advanced semantic analysis.
- */
-export interface ScopeTrackingOptions {
-    /**
-     * Scope tracker configuration.
-     *
-     * When provided, enables scope tracking with the specified options.
-     * When undefined or with enabled:false, scope tracking is disabled.
-     *
-     * @default { enabled: false, getIdentifierMetadata: false }
-     */
-    scopeTrackerOptions?: ScopeTrackerOptions;
 }
 
 /**
@@ -168,7 +127,9 @@ export interface OutputFormatOptions {
  * Prediction strategy options.
  *
  * Controls when the parser should attempt the fast SLL prediction path before
- * falling back to LL parsing.
+ * falling back to LL parsing, and when ANTLR's reusable prediction/DFA state
+ * should be released so long-running consumers (LSP, watch-mode) don't leak
+ * memory across many distinct source files.
  */
 export interface PredictionStrategyOptions {
     /**
@@ -180,6 +141,36 @@ export interface PredictionStrategyOptions {
      * @default 8000
      */
     sllPredictionMaxSourceLength: number;
+
+    /**
+     * Maximum source length (in characters) below which the parser preserves
+     * ANTLR's shared prediction context cache and DFA decision state across
+     * consecutive parses.
+     *
+     * Above this threshold the parser clears the reusable prediction tables
+     * after each parse so memory usage stays proportional to the file being
+     * processed rather than the cumulative file history. Smaller projects can
+     * keep the warmed grammar automaton hot by raising this threshold; very
+     * large watch-mode scans can lower it to reclaim memory sooner.
+     *
+     * A value of 0 falls back to the default threshold (8000).
+     *
+     * @default 8000
+     */
+    predictionCacheReleaseMaxSourceLength: number;
+
+    /**
+     * Number of consecutive parses between forced ANTLR prediction cache
+     * releases, regardless of source size.
+     *
+     * The parser releases its reusable prediction state every Nth parse so
+     * that long runs of small files still periodically reclaim memory and
+     * pick up grammar automaton updates. Setting the value to 0 falls back
+     * to the default cadence (16).
+     *
+     * @default 16
+     */
+    predictionCacheReleaseInterval: number;
 }
 
 /**
@@ -195,15 +186,42 @@ export interface ParserOptions
     extends
         CommentProcessingOptions,
         LocationMetadataOptions,
-        ScopeTrackingOptions,
         DocCommentAttachmentOptions,
         PredictionStrategyOptions,
         OutputFormatOptions {}
 
-const DEFAULT_SCOPE_TRACKER_OPTIONS: ScopeTrackerOptions = Object.freeze({
-    enabled: false,
-    getIdentifierMetadata: false
-});
+/**
+ * Default maximum source length for which the parser uses the SLL fast path.
+ *
+ * The SLL fast path is significantly faster for small/medium inputs but can
+ * trigger expensive fallback behavior on very large sources. This threshold
+ * lets callers tune the SLL/LL hand-off to match project size characteristics.
+ */
+export const DEFAULT_SLL_PREDICTION_MAX_SOURCE_LENGTH = 8000;
+
+/**
+ * Default upper bound (in characters) below which the parser preserves
+ * ANTLR's shared prediction context and DFA decision state across parses.
+ *
+ * Sources above this length force the parser to release those tables after
+ * each parse so memory stays proportional to the file currently being
+ * processed rather than the cumulative file history. This threshold mirrors
+ * {@link DEFAULT_SLL_PREDICTION_MAX_SOURCE_LENGTH} by design: the same source
+ * size that triggers the slower LL prediction path also triggers prediction
+ * cache release, since both reflect "the grammar automaton is no longer a
+ * good fit for this file".
+ */
+export const DEFAULT_PREDICTION_CACHE_RELEASE_MAX_SOURCE_LENGTH = 8000;
+
+/**
+ * Default cadence (in parses) at which the parser releases its reusable
+ * ANTLR prediction state, regardless of source size.
+ *
+ * Smaller files reuse the warmed grammar automaton; releasing every Nth
+ * parse keeps the cache bounded for long-running LSP/watch-mode consumers
+ * that parse many small files in succession.
+ */
+export const DEFAULT_PREDICTION_CACHE_RELEASE_INTERVAL = 16;
 
 export const defaultParserOptions: ParserOptions = Object.freeze({
     getComments: true,
@@ -211,7 +229,8 @@ export const defaultParserOptions: ParserOptions = Object.freeze({
     simplifyLocations: true,
     attachFunctionDocComments: true,
     sllPredictionMaxSourceLength: DEFAULT_SLL_PREDICTION_MAX_SOURCE_LENGTH,
-    scopeTrackerOptions: DEFAULT_SCOPE_TRACKER_OPTIONS,
+    predictionCacheReleaseMaxSourceLength: DEFAULT_PREDICTION_CACHE_RELEASE_MAX_SOURCE_LENGTH,
+    predictionCacheReleaseInterval: DEFAULT_PREDICTION_CACHE_RELEASE_INTERVAL,
     astFormat: "gml",
     asJSON: false
 });

@@ -53,6 +53,31 @@ void test("reduceGraphVisualizationUiState with set-open-project-pending false c
     assert.equal(cleared.isOpenProjectPending, false);
 });
 
+void test("Auto-Game and live-reload stop operations participate in aggregate pending state", () => {
+    const autoGamePending = reduceGraphVisualizationUiState(createInitialGraphVisualizationUiState(), {
+        operation: "initialize-agent-pack",
+        pending: true,
+        type: "set-auto-game-operation-pending"
+    });
+    assert.equal(autoGamePending.autoGamePendingOperation, "initialize-agent-pack");
+    assert.equal(autoGamePending.pendingActionCount, 1);
+
+    const bothPending = reduceGraphVisualizationUiState(autoGamePending, {
+        pending: true,
+        type: "set-live-reload-stop-pending"
+    });
+    assert.equal(bothPending.isLiveReloadStopPending, true);
+    assert.equal(bothPending.pendingActionCount, 2);
+
+    const cleared = reduceGraphVisualizationUiState(bothPending, {
+        operation: "initialize-agent-pack",
+        pending: false,
+        type: "set-auto-game-operation-pending"
+    });
+    assert.equal(cleared.autoGamePendingOperation, null);
+    assert.equal(cleared.pendingActionCount, 1);
+});
+
 void test("reduceGraphVisualizationUiState with set-error sets errorMessage", () => {
     const state = createInitialGraphVisualizationUiState();
     assert.equal(state.errorMessage, null);

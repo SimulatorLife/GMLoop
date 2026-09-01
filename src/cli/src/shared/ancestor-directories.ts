@@ -44,18 +44,3 @@ export function collectUniqueAncestorDirectories(
 
     return Array.from(directories);
 }
-
-/**
- * Resolves every directory from the provided start paths up to the file system
- * root, preserving discovery order. Duplicate directories are returned only
- * once even when multiple starting points share ancestors. Empty inputs are
- * ignored, mirroring the truthiness guard in {@link collectUniqueAncestorDirectories}.
- *
- * @param {...(string | undefined | null)} startingDirectories Path(s) whose
- *        ancestor chains should be collected.
- * @returns {Array<string>} Flat list of absolute directories, ordered from each
- *        start path toward the root.
- */
-export function collectAncestorDirectories(...startingDirectories: Array<string | undefined | null>): Array<string> {
-    return collectUniqueAncestorDirectories(startingDirectories);
-}

@@ -51,11 +51,7 @@ function createHotReloadCoordinatorForValidation(
             cascade: [],
             order: [],
             circular: [],
-            metadata: { totalSymbols: 0, maxDistance: 0, hasCircular: false },
-            // Top-level convenience aliases (promoted from metadata)
-            totalSymbols: 0,
-            maxDistance: 0,
-            hasCircular: false
+            metadata: { totalSymbols: 0, maxDistance: 0, hasCircular: false }
         }),
         computeRenameImpactGraph: async () => createMinimalRenameImpactGraph(symbolId, symbolName),
         checkHotReloadSafety
@@ -229,7 +225,7 @@ void test("verifyPostEditIntegrity detects conflicts with existing symbols", asy
     assert.ok(result.warnings.some((w) => w.includes("already exists") && w.includes("other.gml")));
 });
 
-void test("verifyPostEditIntegrity detects reserved keyword conflicts", async () => {
+void test("verifyPostEditIntegrity detects reserved GameMaker identifier conflicts", async () => {
     const mockSemantic: PartialSemanticAnalyzer = {
         getReservedKeywords: async () => ["if", "else", "for", "while"]
     };
@@ -245,7 +241,7 @@ void test("verifyPostEditIntegrity detects reserved keyword conflicts", async ()
     });
 
     assert.equal(result.valid, false);
-    assert.ok(result.errors.some((e) => e.includes("reserved keyword") && e.includes("if")));
+    assert.ok(result.errors.some((e) => e.includes("reserved GameMaker identifier") && e.includes("if")));
 });
 
 void test("verifyPostEditIntegrity validates parse correctness", async () => {
@@ -387,7 +383,7 @@ void test("validateRenameRequest detects same name", async () => {
     assert.ok(result.errors.some((e) => e.includes("matches the existing identifier")));
 });
 
-void test("validateRenameRequest detects reserved keywords", async () => {
+void test("validateRenameRequest detects reserved GameMaker identifiers", async () => {
     const mockSemantic: PartialSemanticAnalyzer = {
         hasSymbol: async () => true,
         getSymbolOccurrences: async () => [{ path: "test.gml", start: 0, end: 5, scopeId: "scope-1" }],
@@ -401,7 +397,30 @@ void test("validateRenameRequest detects reserved keywords", async () => {
     });
 
     assert.equal(result.valid, false);
-    assert.ok(result.errors.some((e) => e.includes("reserved keyword")));
+    assert.ok(result.errors.some((e) => e.includes("reserved GameMaker identifier")));
+});
+
+void test("validateRenameRequest blocks a Tier 2 semantic rename-safety gap", async () => {
+    const message = "Cannot safely rename 'scr_test': an ambiguous binding exists at scripts/caller.gml:8-17.";
+    const mockSemantic: PartialSemanticAnalyzer = {
+        getRenameSafetyGaps: async () => [
+            {
+                message,
+                path: "scripts/caller.gml"
+            }
+        ],
+        getSymbolOccurrences: async () => [{ path: "scripts/test.gml", start: 0, end: 8, scopeId: "script:test" }],
+        hasSymbol: async () => true
+    };
+    const engine = new RefactorEngineClass({ semantic: mockSemantic });
+
+    const result = await engine.validateRenameRequest({
+        symbolId: "gml/script/scr_test",
+        newName: "scr_renamed"
+    });
+
+    assert.equal(result.valid, false);
+    assert.ok(result.errors.includes(message));
 });
 
 void test("validateRenameRequest surfaces cross-file conflicts", async () => {

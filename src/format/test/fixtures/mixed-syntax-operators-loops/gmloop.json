@@ -1,0 +1,7 @@
+{
+  "logicalOperatorsStyle": "symbols",
+  "fixture": {
+    "kind": "format",
+    "assertion": "transform"
+  }
+}

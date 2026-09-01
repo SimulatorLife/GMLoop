@@ -2,7 +2,7 @@
 
 grid[# _xInd, _yInd] = 100;
 
-var curr_val = myStruct[];
+var curr_val = myStruct[$ "the_key"];
 
 myArray[@ 3] = 9999;
 
@@ -22,7 +22,7 @@ enum eAIState {
 
 // Test that we can simplify expressions
 var s = size * 0.104;
-s = (s * 0.5) * (1 - lengthdir_x(1, swim_rot));
+s = s * 0.5 * (1 - lengthdir_x(1, swim_rot));
 
 // 1) Cancelable ratio inside a product
 var s1 = speed * 0.5;
@@ -33,18 +33,18 @@ var s2 = distance * 0.25;
 // 3) Degrees to radians
 var s3 = degtorad(angle);
 
-// 4) Distributive constant collection
+/// @desc 4) Distributive constant collection
 var s4 = value * 0.5;
 
 // 5) Divide by a reciprocal
-var s5 = x - (x0 * 0.016666666666666666);
+var s5 = x - x0 * 60;
 // var s5 = (x - x0) / (1 / 60);
 
 // 6) Sequential quarter then half
 var s6 = width * 0.125;
 
 // 7) Percent into tenth
-var s7 = 10 * hp;
+var s7 = hp / max_hp * 10;
 
 // 8) Multiply by one minus one-half
 var s8 = len * 0.5;
@@ -57,7 +57,6 @@ var s10 = size;
 
 // 11) Additive identity
 var s11 = y; // unnecessary addition
-
 // 12) Double then quarter
 var s12 = x * 0.5;
 
@@ -68,25 +67,25 @@ var s13 = a * 0.5;
 var s14 = vx * dt * 0.06;
 
 // 15) Ten then divide by five
-var s15 = 2 * score;
+var s15 = score * 2;
 
 // 16) Milliseconds to minutes
 var s16 = time_ms * 0.0000166666666667;
 
 // 17) Divide by one-half
-var s17 = pixels * 0.5;
+var s17 = pixels * 2;
 
 // 18) Redundant reciprocal factors
 var s18 = a;
 
 // 19) Minutes to seconds scaling
-var s19 = 2 * t;
+var s19 = t * 2;
 
 // 20) Nested percentage
 var s20 = radius * 0.5;
 
 // 21) Factorable sum
-var s21 = 5 * k;
+var s21 = k * 5;
 
 // 22) Multiply by zero
 var s22 = offset;
@@ -104,7 +103,7 @@ var s25 = dx * 0.5;
 var s26 = value_a;
 
 // 27) Mixed constants
-var s27 = 2 * n;
+var s27 = n * 2;
 
 // 28) Inverted compound
 var s28 = m;
@@ -113,7 +112,7 @@ var s28 = m;
 var s29 = amount;
 
 // 30) Reciprocal of reciprocal
-var s30 = a_val;
+var s30 = a_val * b_val;
 
 // 31) Chained frame scaling with obvious cancel
 var s31 = frames;

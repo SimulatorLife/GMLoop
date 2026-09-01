@@ -123,6 +123,50 @@ function computeWrappedControlFlowBodyReplacement(
     };
 }
 
+/**
+ * Builds the autofix callback for an `if` statement whose consequent is not
+ * already wrapped in a block. The fix wraps the consequent body in braces and,
+ * when the parent `if (...) then` header used the legacy `then` keyword,
+ * also rewrites the header to the canonical `if (...)` form. The two fixes
+ * share their `fixer` calls so the visitor does not need to know about the
+ * individual `replaceTextRange` plumbing.
+ *
+ * @param sourceText - Full source text for the program being linted.
+ * @param ifNode - The enclosing `IfStatement` node.
+ * @param consequentNode - The `if` consequent body that needs wrapping.
+ * @returns A fix callback suitable for `context.report({ fix })`.
+ */
+function buildIfConsequentFix(
+    sourceText: string,
+    ifNode: ControlFlowStatementNode,
+    consequentNode: ControlFlowStatementNode
+): (fixer: Rule.RuleFixer) => Rule.Fix | Rule.Fix[] | null {
+    return (fixer) => {
+        const bodyReplacement = computeWrappedControlFlowBodyReplacement(sourceText, consequentNode);
+        if (bodyReplacement === null) {
+            return null;
+        }
+
+        const bodyFix = fixer.replaceTextRange(
+            [bodyReplacement.rangeStart, bodyReplacement.rangeEnd],
+            bodyReplacement.replacementText
+        );
+
+        const headerReplacement = computeCanonicalIfHeaderReplacement(sourceText, ifNode);
+        if (headerReplacement === null) {
+            return bodyFix;
+        }
+
+        return [
+            fixer.replaceTextRange(
+                [headerReplacement.rangeStart, headerReplacement.rangeEnd],
+                headerReplacement.replacementText
+            ),
+            bodyFix
+        ];
+    };
+}
+
 function reportMissingControlFlowBraces(
     context: Rule.RuleContext,
     messageId: string,
@@ -171,100 +215,53 @@ export function createRequireControlFlowBracesRule(definition: GmlRuleDefinition
             messageText: "Control-flow statements must use braces."
         }),
         create(context) {
-            return Object.freeze({
-                IfStatement(node: unknown) {
-                    if (!isControlFlowStatementNode(node)) {
-                        return;
-                    }
-
-                    const isElseIfBranch = isElseIfBranchBySourceContext(context.sourceCode.text, node);
-                    const consequentNode = node.consequent;
-                    if (!isControlFlowStatementNode(consequentNode)) {
-                        return;
-                    }
-
-                    if (!isBlockStatementNode(consequentNode)) {
-                        const consequentFix = isElseIfBranch
-                            ? undefined
-                            : (fixer: Rule.RuleFixer) => {
-                                  const bodyReplacement = computeWrappedControlFlowBodyReplacement(
-                                      context.sourceCode.text,
-                                      consequentNode
-                                  );
-                                  if (bodyReplacement === null) {
-                                      return null;
-                                  }
-
-                                  const headerReplacement = computeCanonicalIfHeaderReplacement(
-                                      context.sourceCode.text,
-                                      node
-                                  );
-                                  if (headerReplacement === null) {
-                                      return fixer.replaceTextRange(
-                                          [bodyReplacement.rangeStart, bodyReplacement.rangeEnd],
-                                          bodyReplacement.replacementText
-                                      );
-                                  }
-
-                                  return [
-                                      fixer.replaceTextRange(
-                                          [headerReplacement.rangeStart, headerReplacement.rangeEnd],
-                                          headerReplacement.replacementText
-                                      ),
-                                      fixer.replaceTextRange(
-                                          [bodyReplacement.rangeStart, bodyReplacement.rangeEnd],
-                                          bodyReplacement.replacementText
-                                      )
-                                  ];
-                              };
-                        context.report({
-                            node: consequentNode as never,
-                            messageId: definition.messageId,
-                            fix: consequentFix
-                        });
-                    }
-
-                    if (node.alternate === null || node.alternate === undefined || isIfStatementNode(node.alternate)) {
-                        return;
-                    }
-
-                    reportMissingBlockBody(context, definition.messageId, node.alternate, true);
-                },
-                WhileStatement(node: unknown) {
-                    if (!isControlFlowStatementNode(node)) {
-                        return;
-                    }
-
-                    reportMissingBlockBody(context, definition.messageId, node.body, true);
-                },
-                ForStatement(node: unknown) {
-                    if (!isControlFlowStatementNode(node)) {
-                        return;
-                    }
-
-                    reportMissingBlockBody(context, definition.messageId, node.body, true);
-                },
-                RepeatStatement(node: unknown) {
-                    if (!isControlFlowStatementNode(node)) {
-                        return;
-                    }
-
-                    reportMissingBlockBody(context, definition.messageId, node.body, true);
-                },
-                DoUntilStatement(node: unknown) {
-                    if (!isControlFlowStatementNode(node)) {
-                        return;
-                    }
-
-                    reportMissingBlockBody(context, definition.messageId, node.body, true);
-                },
-                WithStatement(node: unknown) {
-                    if (!isControlFlowStatementNode(node)) {
-                        return;
-                    }
-
-                    reportMissingBlockBody(context, definition.messageId, node.body, true);
+            // The `while` / `for` / `repeat` / `do-until` / `with` visitors share
+            // an identical body: report a missing block body for `node.body`.
+            // Sharing one handler keeps the visitor declaration concise and
+            // prevents the cases from drifting apart when the rule evolves.
+            const reportMissingBodyBraces = (node: unknown) => {
+                if (!isControlFlowStatementNode(node)) {
+                    return;
                 }
+
+                reportMissingBlockBody(context, definition.messageId, node.body, true);
+            };
+
+            const handleIfStatement = (node: unknown) => {
+                if (!isControlFlowStatementNode(node)) {
+                    return;
+                }
+
+                const isElseIfBranch = isElseIfBranchBySourceContext(context.sourceCode.text, node);
+                const consequentNode = node.consequent;
+                if (!isControlFlowStatementNode(consequentNode)) {
+                    return;
+                }
+
+                if (!isBlockStatementNode(consequentNode)) {
+                    context.report({
+                        node: consequentNode as never,
+                        messageId: definition.messageId,
+                        fix: isElseIfBranch
+                            ? undefined
+                            : buildIfConsequentFix(context.sourceCode.text, node, consequentNode)
+                    });
+                }
+
+                if (node.alternate === null || node.alternate === undefined || isIfStatementNode(node.alternate)) {
+                    return;
+                }
+
+                reportMissingBlockBody(context, definition.messageId, node.alternate, true);
+            };
+
+            return Object.freeze({
+                IfStatement: handleIfStatement,
+                WhileStatement: reportMissingBodyBraces,
+                ForStatement: reportMissingBodyBraces,
+                RepeatStatement: reportMissingBodyBraces,
+                DoUntilStatement: reportMissingBodyBraces,
+                WithStatement: reportMissingBodyBraces
             });
         }
     });

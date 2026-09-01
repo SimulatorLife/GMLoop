@@ -4,12 +4,12 @@ import { afterEach, describe, it } from "node:test";
 import {
     DEFAULT_MAX_IN_MEMORY_SNAPSHOTS,
     MAX_IN_MEMORY_SNAPSHOTS_ENV_VAR
-} from "../src/runtime-options/format-memory-constants.js";
+} from "../src/modules/formatting/format-memory-constants.js";
 import {
     applyMaxInMemorySnapshotsEnvOverride,
     getDefaultMaxInMemorySnapshots,
     setDefaultMaxInMemorySnapshots
-} from "../src/runtime-options/format-memory-snapshots.js";
+} from "../src/modules/formatting/format-memory-options.js";
 
 const originalEnvValue = process.env[MAX_IN_MEMORY_SNAPSHOTS_ENV_VAR];
 
@@ -46,5 +46,17 @@ void describe("format memory snapshot runtime options", () => {
         applyMaxInMemorySnapshotsEnvOverride();
 
         assert.equal(getDefaultMaxInMemorySnapshots(), DEFAULT_MAX_IN_MEMORY_SNAPSHOTS);
+    });
+
+    void it("treats a 0 environment override as the documented 'disable the limit' sentinel", () => {
+        // The user-facing error message in format-memory-options.ts advertises
+        // "Provide 0 to disable the limit", and the enforcement helper in
+        // commands/format.ts short-circuits when the value is 0. Verify the
+        // environment variable honours that same contract so future refactors
+        // cannot silently regress it back into a hard cap.
+        process.env[MAX_IN_MEMORY_SNAPSHOTS_ENV_VAR] = "0";
+        applyMaxInMemorySnapshotsEnvOverride();
+
+        assert.equal(getDefaultMaxInMemorySnapshots(), 0);
     });
 });

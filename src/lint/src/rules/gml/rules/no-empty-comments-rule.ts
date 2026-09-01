@@ -1,8 +1,7 @@
-import { Core } from "@gmloop/core";
 import type { Rule } from "eslint";
 
 import type { GmlRuleDefinition } from "../index.js";
-import { createMeta, reportProgramTextRewrite } from "../rule-base-helpers.js";
+import { createMeta, reportProgramTextRewrite, rewriteSourceLines } from "../rule-base-helpers.js";
 
 /**
  * Returns `true` when the line is a bare `//` comment — i.e. the line contains
@@ -56,12 +55,9 @@ export function createNoEmptyCommentsRule(definition: GmlRuleDefinition): Rule.R
         create(context) {
             return Object.freeze({
                 Program() {
-                    reportProgramTextRewrite(context, definition, (sourceText) => {
-                        const lineEnding = Core.dominantLineEnding(sourceText);
-                        const sourceLines = sourceText.split(/\r?\n/u);
-                        const rewrittenLines = sourceLines.filter((line) => !isEmptyCodeCommentLine(line));
-                        return rewrittenLines.join(lineEnding);
-                    });
+                    reportProgramTextRewrite(context, definition, (sourceText) =>
+                        rewriteSourceLines(sourceText, (line) => (isEmptyCodeCommentLine(line) ? null : line))
+                    );
                 }
             });
         }

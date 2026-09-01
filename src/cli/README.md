@@ -14,16 +14,73 @@ If you are just getting started, begin with the [repository quick start](../../R
 
 ## Commands
 
-### `format` - Format GML Files
+### `agent-pack init` - Initialize or Update Auto-Game Agent Resources
 
-Wraps the Prettier plugin to format GameMaker Language files with enhanced diagnostics and error handling (targets `.gml` files only).
+Materializes the independently published `@gmloop/agent-pack` into a GameMaker
+project. The applicable resources include standard skills under
+`.agents/skills/` and portable project guidance such as `AGENTS.md` where
+needed. Repeat and upgrade runs preserve project-authored or project-modified
+content and report conflicts rather than silently overwriting it.
+
+Initialization also creates or extends the project-root `.gitignore` by default
+with `.gmloop/`, `.gmcache/`, `node_modules/`, `.playwright-mcp/`, and
+`.agents/skills/**/gmloop-*`. Existing rules remain byte-for-byte intact and
+equivalent patterns are not duplicated. Pass `--no-gitignore` to leave
+`.gitignore` untouched.
+
+Agent MCP integration setup is CLI-owned by each provider. GMLoop detects
+Codex, Gemini/Antigravity, and Qwen project config state for reporting, but it
+does not edit third-party agent config files directly. Automatic setup is
+limited to providers with verified project-scoped CLI support; v1 configures
+Qwen through `qwen mcp add --scope project`. Use `--agents detected` (default),
+`--agents qwen`, `--agents all`, or `--agents none` to control which provider
+CLI setup attempts run. Codex and Gemini/Antigravity are reported as manual
+until their CLIs expose verified project-scoped MCP setup.
+
+The CLI consumes the standalone package and does not own a duplicate skill
+collection. For GMLoop maintainers, the agent-pack's `skills/` directory is the
+sole packaged-collection source. Drop a standard `gmloop-<name>/SKILL.md` directory
+there and it is published and included by initialization automatically; no
+registry, manifest, name list, or skill-specific loading code is required.
 
 ```bash
-pnpm run cli -- format path/to/project
-# Implicit format mode with path-only input
-pnpm run cli -- path/to/project
-# Show format command options while using path-only invocation style
-pnpm run cli -- path/to/project --help
+gmloop agent-pack init --path path/to/Game.yyp
+gmloop agent-pack init --path path/to/Game.yyp --no-gitignore
+gmloop agent-pack init --path path/to/Game.yyp --agents qwen
+```
+
+The target must resolve to a GameMaker project root containing a `.yyp` file.
+GMLoop's own repository-development `.agents/skills` are not a source for this
+command or for Auto-Game discovery.
+
+Game projects that only need the raw resources can install them directly with
+`npm install -D @gmloop/agent-pack` without installing the GMLoop CLI or the rest of
+the monorepo tooling, then inspect, copy, or point compatible tooling at the
+package's standard collection. Package installation does not mutate project
+files, and the package has no separate executable. `gmloop agent-pack init` is
+the sole command-line initializer. The Auto-Game UI uses the CLI host to expose explicit initialize or update
+actions when the opened project's recorded pack version is missing or older than
+the version available to GMLoop.
+
+The shipped content is a standard Agent Skills collection, not a custom bundle:
+each `skills/gmloop-<name>/SKILL.md` uses the same `gmloop-`-prefixed frontmatter name, YAML frontmatter, and Markdown and may include
+the specification's standard supporting directories. GMLoop uses `gray-matter`
+to extract UI metadata and delegates conformance checks to the official
+`skills-ref` tool or another established standards-compatible validator. It
+does not maintain a custom skill parser or validator.
+
+Packaged skills should remain self-contained and AI-client neutral. Describe
+capabilities and expected outcomes rather than depending on another skill, a
+specific LLM vendor, MCP server, provider adapter, or tool command name.
+
+### `format` - Format GML Files
+
+Wraps the Prettier plugin to format GameMaker Language files with enhanced diagnostics and error handling (targets `.gml` files only). The target is supplied via `--path`; positional paths are rejected with an actionable error message that points at the correct flag.
+
+```bash
+pnpm run cli -- format --path path/to/project
+# Show format command options for the path-only invocation style
+pnpm run cli -- format --path path/to/project --help
 ```
 
 Normal format runs now keep output focused on results and diagnostics. Use `--list` when you want a full dump of resolved command settings before execution.
@@ -44,6 +101,7 @@ Normal format runs now keep output focused on results and diagnostics. Use `--li
 
 - `PRETTIER_PLUGIN_GML_LOG_LEVEL` - Default log level
 - `PRETTIER_PLUGIN_GML_ON_PARSE_ERROR` - Default parse error strategy
+- `PRETTIER_PLUGIN_GML_MAX_IN_MEMORY_SNAPSHOTS` - Upper bound for in-memory revert snapshots retained for `--on-parse-error=revert` (default: 50; set to `0` to disable enforcement and retain every snapshot until disk writes succeed again)
 
 ### `parse` - Parse GML Files to AST JSON
 
@@ -88,6 +146,12 @@ pnpm run cli -- lint --write path/to/project
 
 Post-lint config inspections (overlay wiring and processor policy enforcement) also run sequentially per file to bound peak memory usage on very large project scans.
 
+Config resolution prefers a discovered ESLint flat config when one exists. If no
+flat config is found, `lint` discovers `gmloop.json` from the lint root and
+applies the bundled GML config with project `lintRuleset` and `lintRules`
+overrides. Projects with `gmloop.json` do not need an `eslint.config.*` file for
+the CLI or UI lint-fix workflow.
+
 If you use a custom ESLint flat config and enable Feather or performance
 overlay rules, make sure the matching config entry also wires the canonical GML
 plugin and language (`plugins: { gml: Lint.plugin }` and
@@ -100,6 +164,15 @@ files.
 If a target does not contain any `.gml` files, `lint` now prints an explicit
 guidance message explaining that only `.gml` sources are processed and includes
 an example invocation.
+
+Passing an explicit path that resolves to an existing file with a non-`.gml`
+extension (for example, `gmloop lint src/scripts/player.ts`) is now rejected
+with exit code `2` and a clear error listing the offending paths, because the
+command is scoped to GameMaker Language sources and would otherwise silently
+run ESLint with whatever config happens to live alongside the input. Point at a
+`.gml` file, a directory containing `.gml` sources, or use `--path` to target a
+GameMaker project (`.yyp`) or directory. For non-`.gml` files, run ESLint
+directly.
 
 ### `fix` - Project-Wide Fix Workflow
 
@@ -124,6 +197,28 @@ pnpm run cli -- fix --only namingConvention
 
 `fix` is intentionally project-scoped and write-only. It runs the configured codemod set first so cross-file/project-aware edits happen before single-file lint fixes and final formatting normalization.
 
+### Shared project operation state
+
+Project-scoped `format`, `lint`, `fix`, `refactor`, and semantic-index builds acquire one
+exclusive lease in `<project>/.gmloop/operation-state.lock` and publish their
+active phase, semantic parse progress, output lines, and completion record in
+`<project>/.gmloop/operation-state.json`. The lock is authoritative across
+processes and concurrent MCP calls, so a second operation reports a conflict
+instead of repeating semantic analysis or mutating the same project in
+parallel.
+
+The CLI, MCP tools that delegate to the CLI runner, and the graph UI host all
+use that project-local state. The UI's `/api/fix/progress` response reads the
+same active operation and output history, and the Graph Index page's
+`/api/graph-index/progress` response reads the same semantic-analysis phase and
+`current/total` parse progress. Opening the UI during an existing build
+attaches to that operation and does not start duplicate analysis. Semantic
+facts remain owned by the canonical `<project>/.gmloop/graph-index.sqlite`
+store. Live Reload keeps
+its long-lived worker/session identity in the related
+`<project>/.gmloop/live-reload-session.json` registry and status endpoint, which
+are likewise shared by the UI, CLI, and MCP session controller.
+
 ### `mcp` - Start MCP Stdio Server
 
 Starts the GMLoop MCP server (`@gmloop/mcp`) over stdio so MCP clients can
@@ -135,6 +230,17 @@ pnpm run cli -- mcp
 
 This command is intended to be launched by an MCP host process, not from the
 in-process CLI test/capture runner.
+
+### `project info` / `project setup` - Project Metadata and Setup
+
+`project info` reports read-only project metadata: the project root, `.yyp` manifest, `gmloop.json` status, installed Auto-Game agent-pack status, project skills, resource inventory, semantic graph summary, and configured companion-tool MCP availability.
+
+`project setup` initializes and verifies GMLoop-owned readiness checks: config, graph, resource inventory, agent pack, parser status, and companion-tool availability.
+
+```bash
+gmloop project info --path path/to/Game.yyp --json
+gmloop project setup --path path/to/Game.yyp --json
+```
 
 ### Official `gm-cli`
 
@@ -155,6 +261,12 @@ GMLoop keeps its own graph-backed read/query commands such as `resource list`,
 GameMaker-native mutation/manual/MCP command surfaces that already live in
 `gm-cli`.
 
+Use `gmloop gm-cli capability-audit --json` to compare the current GMLoop
+CLI/MCP catalog with the discovered official `gm-cli` and ResourceTool MCP
+catalog. The audit classifies planned autonomous-game capabilities as direct
+official-tool usage, GMLoop companion commands, GMLoop-native gaps, or deferred
+work so new commands do not duplicate ResourceTool mirrors by accident.
+
 When the graph visualization Config page is open, GMLoop inspects the
 configured external `gm-cli` ResourceTool MCP server definition from the local
 MCP config files and renders the live `tools/list` catalog directly from that
@@ -172,6 +284,19 @@ Watches GML source files and coordinates the hot-reload development pipeline. Wh
 4. Generates hot-reload patches with script IDs
 5. Streams patches to runtime wrapper via WebSocket
 
+Scripts containing multiple top-level functions are split into one patch per
+function and sent as a single websocket batch. This keeps each function bound
+to its generated GameMaker runtime symbol; executable statements outside those
+functions are emitted as a separate file-level patch. Compile-time directives
+such as macros and regions are not treated as runtime function bodies. The
+startup scan builds one deterministic project-wide macro table, so a function
+patch can use a `#macro` declared in another GML resource. Macro definitions
+and uses are tracked as `gml/macro/<name>` dependencies; changing a macro
+resource, including a replacement-value or chained-definition change,
+retranspiles its dependent patches. A file that combines executable top-level
+statements with a same-named function is rejected because GameMaker has no
+runtime binding for a second file-level initialization patch.
+
 ```bash
 # Basic usage - watch current directory
 pnpm run cli -- watch
@@ -186,14 +311,13 @@ pnpm run cli -- watch /path/to/project --auto-inject
 **Options:**
 
 - `[targetPath]` - Directory to watch (default: current directory)
-- `--extensions <ext...>` - File extensions to watch (default: `.gml`; custom extensions are allowed)
 - `--polling` - Use polling instead of native file watching
 - `--polling-interval <ms>` - Polling interval in milliseconds (default: 1000)
 - `--verbose` - Enable verbose logging with detailed transpilation output
 - `--quiet` - Suppress non-essential output (only show errors and server URLs); useful for CI/CD or background processes
 - `--debounce-delay <ms>` - Delay in milliseconds before transpiling after file changes (default: 100, set to 0 to disable debouncing)
 - `--max-concurrent-dirs <count>` - Maximum number of directories to scan concurrently during initial file discovery (default: 4); increase for faster scans on systems with more resources, or decrease to avoid file handle exhaustion on resource-constrained systems
-- `--max-patch-history <count>` - Maximum number of patches to retain in memory (default: 100)
+- `--max-patch-history <count>` - Maximum number of patches to retain in memory (default: 100; set to 0 for unbounded)
 - `--websocket-port <port>` - WebSocket server port for streaming patches (default: 17890)
 - `--websocket-host <host>` - WebSocket server host for streaming patches (default: 127.0.0.1)
 - `--no-websocket-server` - Disable WebSocket server for patch streaming
@@ -250,41 +374,55 @@ pnpm run cli -- live-reload build /path/to/project
 # Prepare an existing HTML5 output explicitly
 pnpm run cli -- live-reload prepare --html5-output /path/to/output
 
-# Start the full live-reload dev session (builds first when configured)
-pnpm run cli -- live-reload dev /path/to/project
+# Attach to or start the managed live-reload session (builds first when configured)
+pnpm run cli -- live-reload session --path /path/to/project
 
-# Query the running status server
-pnpm run cli -- live-reload status
+# Replace or stop the managed project session
+pnpm run cli -- live-reload session --path /path/to/project --force-start
+pnpm run cli -- live-reload session --path /path/to/project --stop
 ```
 
-The `live-reload dev` command will:
+The `live-reload session` command will:
 
-1. Resolve `runtime.liveReload` from `gmloop.json`
-2. Build the GameMaker project into `runtime.liveReload.html5Output` when `runtime.liveReload.build` is configured
-3. Otherwise, locate an existing HTML5 output via `--html5-output`, `runtime.liveReload.html5Output`, or the latest GameMaker temp output
-4. Copy the self-contained `@gmloop/runtime-wrapper/dist/browser` asset tree into the output directory
-5. Inject a single module bootstrap tag into `index.html`
-6. Start the file watcher plus the runtime, patch, and status servers against that prepared HTML5 output
+1. Resolve the canonical GameMaker project root and project-local `.gmloop/live-reload-session.json` registry.
+2. Attach to a healthy registered session for that project unless `--force-start` is set.
+3. Resolve `runtime.liveReload` from `gmloop.json`.
+4. Build the GameMaker project into `runtime.liveReload.html5Output` when `runtime.liveReload.build` is configured.
+5. Otherwise, locate an existing HTML5 output via `--html5-output`, `runtime.liveReload.html5Output`, or the latest GameMaker temp output.
+6. Copy the self-contained `@gmloop/runtime-wrapper/dist/src/browser` asset tree into the output directory.
+7. Inject a single module bootstrap tag into `index.html`.
+8. Start the file watcher plus the runtime, patch, and status servers against that prepared HTML5 output, then write the session registry.
 
 The injected bootstrap uses the configured `--websocket-host`, `--websocket-port`, `--status-host`, and `--status-port` values so the running game can connect deterministically to the live-reload services.
+Human and JSON status output report the runtime URL, status URL, and WebSocket URL separately so automation does not confuse the playable runtime with the status endpoint.
 The watcher ignores generated/cache directories such as `.gmcache`, `.gml-hot-reload`, `dist`, and `node_modules` so the patch stream stays focused on project-owned GML sources.
 
 **Project config for one-click graph UI startup:**
 
-When using `graph visualize --serve`, the `Start Live Reload` button now reads `runtime.liveReload` from `gmloop.json` and forwards that configuration to `live-reload dev`. This allows the graph UI to build the HTML5 export first when build orchestration is configured, instead of relying only on transient `GMS2TEMP` auto-detection.
+When using `graph visualize --serve`, the `Start Live Reload` button uses the same managed session controller as `live-reload session`. It resolves the project-local `.gmloop/live-reload-session.json` registry first, adopts a healthy session when one exists, and returns that session's exact runtime, status, and WebSocket URLs to the UI. A new session receives dynamically allocated status and WebSocket ports, then reads the project's `runtime.liveReload` build/output configuration before the watcher starts. This keeps the graph UI from probing a fixed status port or creating parallel workers for a project that is already running.
+
+The graph host owns a session only when the UI starts that session itself. Closing the graph host does not stop a session started by the CLI, MCP, or another graph host; an explicit `Stop Live Reload` action is the user-directed operation that stops the currently registered project session.
+
+**Graph serve verification:**
+
+1. Inspect or start `live-reload session --path /path/to/project`.
+2. Launch `graph visualize --serve` and open the Live Reload tab.
+3. Confirm Start returns the registry's unchanged runtime, status, and WebSocket URLs and does not create a second worker.
+4. Confirm closing the graph host leaves an externally owned session running.
+5. Use `live-reload session --path /path/to/project --stop` for explicit cleanup.
 
 ```json
 {
-  "runtime": {
-    "liveReload": {
-      "build": {
-        "backend": "auto",
-        "configuration": "Default"
-      },
-      "html5Output": "build/html5",
-      "gmTempRoot": ".gm-temp/html5"
+    "runtime": {
+        "liveReload": {
+            "build": {
+                "backend": "auto",
+                "configuration": "Default"
+            },
+            "html5Output": "build/html5",
+            "gmTempRoot": ".gm-temp/html5"
+        }
     }
-  }
 }
 ```
 
@@ -511,6 +649,11 @@ The watch command now integrates with the transpiler module (`src/transpiler`) t
 - `sourceText`: Original GML source for debugging
 - `version`: Timestamp of transpilation
 
+When one source file produces several function patches, the websocket payload
+is an array of these patch objects. The runtime wrapper applies the array as a
+dependency-aware batch, while the status server counts each changed function
+patch separately.
+
 **Planned: Semantic Analysis Integration**
 
 The watch command now includes a **dependency tracker** that maintains file-to-symbol mappings as a foundation for future semantic integration. When files change, the tracker records which symbols they define, preparing the system for dependency-aware hot-reload.
@@ -596,19 +739,40 @@ pnpm run cli -- live-reload build /path/to/project
 - `--verbose` - Print the selected backend command line
 - `--quiet` - Suppress informational output
 
-### `live-reload dev` - Build, Prepare, And Watch
+When build paths are not explicitly configured, GMLoop discovers the GameMaker
+toolchain in this order:
+
+- a project-local `.gmcache/runtimes-gms2/runtime-*` runtime, then the standard
+  shared GameMaker runtime caches;
+- Igor under the selected runtime's `bin/igor` directory, then the project's
+  `.gmcache/igor` cache;
+- an HTML5-entitled licence from the standard GameMaker user-support folders,
+  then an HTML5-entitled project-local `.gmcache/license/licence.plist`.
+
+Explicit `runtimeRoot`, `toolPath`, `licenseFile`, and `userFolder` values keep
+their precedence. Automatic licence discovery skips cache or user licences
+without the `HTML5.build_module` entitlement. On arm64 macOS, an x64 Igor
+executable is launched through Rosetta automatically. The gm-cli cache option
+is passed as `--cache-dir`.
+
+### `live-reload session` - Attach, Start, Replace, Or Stop
 
 Start the full live-reload session for a GameMaker project.
 
 ```bash
 # Build first when runtime.liveReload.build is configured, then watch
-pnpm run cli -- live-reload dev /path/to/project
+pnpm run cli -- live-reload session --path /path/to/project
 
 # Force an existing output directory when build orchestration is not configured
-pnpm run cli -- live-reload dev /path/to/project --html5-output /path/to/html5/output
+pnpm run cli -- live-reload session --path /path/to/project --html5-output /path/to/html5/output
+
+# Intentionally start a second session for debugging
+pnpm run cli -- live-reload session --path /path/to/project --force-start
 ```
 
 When `runtime.liveReload.build` exists, `live-reload dev` treats `runtime.liveReload.html5Output` as the canonical output directory, rebuilds it before injection, and serves that same prepared output as the runtime URL shown by the UI.
+
+By default, `live-reload session` is attach-or-start. If `.gmloop/live-reload-session.json` points to a healthy session for the same canonical project root, the command returns the existing runtime URL, status URL, WebSocket URL, and status snapshot instead of starting parallel servers.
 
 Igor builds materialize project prefab packages from `.gmcache/prefabs` into the project-local `prefabs` path while the build runs, then remove the temporary materialization after the build. This keeps one-click Live Reload startup aligned with GameMaker projects whose package cache already contains the referenced prefab libraries.
 
@@ -631,41 +795,35 @@ If Node's native recursive watcher exhausts file handles after startup, Live Rel
 - Event transpilation (not just scripts)
 - Shader and asset hot-reloading
 
-### `live-reload status` - Query Live-Reload Status
+### Managed Session Status
 
-Queries the running live-reload status server for real-time metrics and diagnostics without interrupting the watcher.
+`live-reload session` returns the current full status snapshot. Health, ping, and readiness endpoints remain available from the returned status URL.
 
 ```bash
-# Query full status with metrics and recent patches
-pnpm run cli -- live-reload status
+# Attach to an existing session or start one and return JSON status
+pnpm run cli -- live-reload session --path /path/to/project
 
-# Get health check information
-pnpm run cli -- live-reload status --endpoint health
-
-# Check if live reload is running (lightweight ping)
-pnpm run cli -- live-reload status --endpoint ping
-
-# Query readiness status (for Kubernetes/orchestration)
-pnpm run cli -- live-reload status --endpoint ready
-
-# Get JSON output for scripting/automation
-pnpm run cli -- live-reload status --format json
-
-# Query custom host/port
-pnpm run cli -- live-reload status --status-host 127.0.0.1 --status-port 18000
+# Render a concise terminal summary
+pnpm run cli -- live-reload session --path /path/to/project --format pretty
 ```
 
 **Options:**
 
-- `--status-host <host>` - Status server host (default: 127.0.0.1, env: WATCH_STATUS_HOST)
-- `--status-port <port>` - Status server port (default: 17891, env: WATCH_STATUS_PORT)
-- `--format <format>` - Output format: `pretty` (default) or `json`
-- `--endpoint <endpoint>` - Endpoint to query: `status` (default), `health`, `ping`, or `ready`
+- `--path <project>` - Project directory or `.yyp` path used to locate `.gmloop/live-reload-session.json`; when omitted, the CLI uses the shared active-project state before falling back to the working directory
+- `--force-start` - Gracefully replace an active project session
+- `--stop` - Stop an active project session without starting another
+- `--format <format>` - Output format: `json` (default) or `pretty`
+
+Agents can use `live-reload session` and `live-reload wait-for-patch` by project path, or omit the path when `tmp/gm-cli-active-project.json` identifies the active project. Through MCP these appear as `gmloop_live_reload_session` and `gmloop_live_reload_wait_for_patch`.
+
+`tmp/gm-cli-active-project.json` is the shared active-target state used by the CLI, UI, and MCP-derived workflows. It stores the required `projectPath` and may also store `activeFilePath` for file-scoped commands. Resolution order is explicit path, `GMLOOP_GM_CLI_PROJECT_PATH`, this shared state, then the working directory; `activeFilePath` is preferred only for file-scoped commands.
+
+MCP starts the detached worker with the explicit worker command environment. The worker does not inherit the parent CLI capture sentinel, so its status endpoint becomes available to the MCP session call instead of waiting for a non-running child.
 
 **Example Output:**
 
 ```
-$ pnpm run cli -- live-reload status
+$ pnpm run cli -- live-reload session --path /path/to/project
 === Live Reload Status ===
 
 Uptime: 2h 15m 43s
@@ -895,6 +1053,55 @@ pnpm run cli -- symbol neighbors project::gml/script/scr_player --depth 2
 # Find all usages of a symbol
 pnpm run cli -- symbol usages project::gml/script/scr_player
 ```
+
+### `resource` - Inspect and Generate Project Resources
+
+Inspects indexed project resources or generates standalone resource assets (e.g. placeholder images).
+
+```bash
+# List all indexed project resources
+pnpm run cli -- resource list --path path/to/project
+
+# Search for resources matching a query
+pnpm run cli -- resource find scr_player --path path/to/project
+
+# Generate a solid color PNG image of given dimensions (useful for creating placeholder images)
+pnpm run cli -- resource create-image tmp/placeholder.png --width 64 --height 64 --color "#ff0000" --json
+```
+
+**Options for `create-image`:**
+
+- `--width <number>` - Width of the image in pixels (default: `64`)
+- `--height <number>` - Height of the image in pixels (default: `64`)
+- `--color <color>` - Color of the image (supports CSS color names like `red`, `transparent`, or hex codes like `#FF0000` or `#FF000080` for alpha transparency) (default: `red`)
+- `--json` - Emit machine-readable JSON output describing the generated file
+
+### `collect-stats` - Collect Project Health Statistics
+
+Scans the workspace for coarse health signals (large source files, TODO markers,
+and combined `dist/` build size) and writes a JSON report. By default the same
+numbers are also printed to stdout as a human-readable summary so contributors
+can see the actual values without opening the report file.
+
+```bash
+# Default: print stats to stdout and write reports/project-health.json
+pnpm run cli -- collect-stats
+
+# Custom output path
+pnpm run cli -- collect-stats --output reports/health.json
+
+# Machine-readable stdout payload (file is still written)
+pnpm run cli -- collect-stats --json
+
+# Suppress stdout output when only the file matters
+pnpm run cli -- collect-stats --quiet
+```
+
+**Options:**
+
+- `--output <path>` - Path to write the JSON report (default: `reports/project-health.json`)
+- `--json` - Emit machine-readable JSON to stdout in addition to writing the report file
+- `--quiet` - Suppress stdout output and only write the report file
 
 ## Architecture
 

@@ -1,0 +1,140 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+
+import { Semantic } from "@gmloop/semantic";
+
+void test("semantic highlighting classifies declarations, built-ins, and ignores comments and strings", () => {
+    const sourceText = `#macro SPEED 4\nfunction Player(_x) constructor {\n var café = abs(_x);\n // abs café\n return "abs";\n}`;
+    const tokens = Semantic.collectGmlSemanticHighlights({
+        sourceText,
+        occurrences: [],
+        projectIdentifiers: [],
+        builtIns: [{ name: "abs", type: "function", deprecated: false }]
+    });
+    const byStart = new Map(tokens.map((token) => [token.start, token]));
+
+    assert.equal(byStart.get(sourceText.indexOf("SPEED"))?.kind, "macro");
+    assert.equal(byStart.get(sourceText.indexOf("Player"))?.kind, "class");
+    assert.equal(byStart.get(sourceText.indexOf("_x"))?.kind, "parameter");
+    assert.equal(byStart.get(sourceText.indexOf("café"))?.kind, "variable");
+    assert.deepEqual(byStart.get(sourceText.indexOf("abs"))?.modifiers, ["defaultLibrary"]);
+    assert.equal(tokens.filter((token) => sourceText.slice(token.start, token.end) === "abs").length, 1);
+});
+
+void test("project occurrences override built-ins and retain definition/reference categories", () => {
+    const sourceText = "function abs(value) { return abs(value); }";
+    const declarationStart = sourceText.indexOf("abs");
+    const referenceStart = sourceText.lastIndexOf("abs");
+    const tokens = Semantic.collectGmlSemanticHighlights({
+        sourceText,
+        builtIns: [{ name: "abs", type: "function", deprecated: false }],
+        projectIdentifiers: [],
+        occurrences: [
+            { start: declarationStart, end: declarationStart + 3, kind: "function", role: "definition" },
+            { start: referenceStart, end: referenceStart + 3, kind: "function", role: "reference" }
+        ]
+    });
+    const byStart = new Map(tokens.map((token) => [token.start, token]));
+    assert.deepEqual(byStart.get(declarationStart)?.modifiers, ["declaration", "definition"]);
+    assert.deepEqual(byStart.get(referenceStart)?.modifiers, []);
+});
+
+void test("instance and constructor-static members use property tokens and static modifiers", () => {
+    const sourceText = "instance_value static_value";
+    const tokens = Semantic.collectGmlSemanticHighlights({
+        sourceText,
+        builtIns: [],
+        projectIdentifiers: [],
+        occurrences: [
+            { start: 0, end: 14, kind: "instanceVariable", role: "reference" },
+            { start: 15, end: 27, kind: "constructorStaticMember", role: "definition" }
+        ]
+    });
+    assert.equal(tokens[0]?.kind, "property");
+    assert.deepEqual(tokens[0]?.modifiers, []);
+    assert.equal(tokens[1]?.kind, "method");
+    assert.deepEqual(tokens[1]?.modifiers, ["declaration", "definition", "static"]);
+});
+
+void test("specific constructor-static occurrences win over duplicate struct-variable facts", () => {
+    const sourceText = "add_sounds";
+    const tokens = Semantic.collectGmlSemanticHighlights({
+        sourceText,
+        builtIns: [],
+        projectIdentifiers: [],
+        occurrences: [
+            { start: 0, end: 10, kind: "constructorStaticMember", role: "definition" },
+            { start: 0, end: 10, kind: "structVariable", role: "definition" }
+        ]
+    });
+    assert.equal(tokens[0]?.kind, "method");
+    assert.deepEqual(tokens[0]?.modifiers, ["declaration", "definition", "static"]);
+});
+
+void test("semantic highlighting orders tokens and carries built-in deprecation", () => {
+    const sourceText = "old_api room_name";
+    const tokens = Semantic.collectGmlSemanticHighlights({
+        sourceText,
+        builtIns: [{ name: "old_api", type: "function", deprecated: true }],
+        projectIdentifiers: [],
+        occurrences: [{ start: 8, end: 17, kind: "room", role: "reference" }]
+    });
+    assert.deepEqual(
+        tokens.map((token) => token.start),
+        [0, 8]
+    );
+    assert.deepEqual(tokens[0]?.modifiers, ["defaultLibrary", "deprecated"]);
+    assert.equal(tokens[1]?.kind, "namespace");
+});
+
+void test("syntax-only catalog entries do not override TextMate scopes for control flow and operators", () => {
+    const syntaxNames = ["if", "else", "for", "while", "repeat", "switch", "with", "not"];
+    const tokens = Semantic.collectGmlSemanticHighlights({
+        sourceText: "if (true) else for (item) while (not done) repeat (count) switch (value) with (target)",
+        builtIns: [
+            ...syntaxNames.map((name) => ({ name, type: "keyword" as const, deprecated: false })),
+            { name: "true", type: "literal", deprecated: false }
+        ],
+        projectIdentifiers: [],
+        occurrences: []
+    });
+    assert.deepEqual(tokens, []);
+});
+
+void test("project resources receive object, room, and generic resource categories", () => {
+    const sourceText = "obj_player rm_main spr_player";
+    const tokens = Semantic.collectGmlSemanticHighlights({
+        sourceText,
+        builtIns: [],
+        occurrences: [],
+        projectIdentifiers: [
+            { name: "obj_player", kind: "object" },
+            { name: "rm_main", kind: "room" },
+            { name: "spr_player", kind: "resource" }
+        ]
+    });
+    assert.deepEqual(
+        tokens.map((token) => token.kind),
+        ["class", "namespace", "namespace"]
+    );
+});
+
+void test("semantic highlighting correctly classifies parameters with default values and nested calls", () => {
+    const sourceText = `function AIController(sight_radius = irandom_range(250, 350), can_pathfind = true, can_wander = false) constructor {}`;
+    const tokens = Semantic.collectGmlSemanticHighlights({
+        sourceText,
+        occurrences: [],
+        projectIdentifiers: [],
+        builtIns: [
+            { name: "irandom_range", type: "function", deprecated: false },
+            { name: "true", type: "literal", deprecated: false },
+            { name: "false", type: "literal", deprecated: false }
+        ]
+    });
+    const byStart = new Map(tokens.map((token) => [token.start, token]));
+
+    assert.equal(byStart.get(sourceText.indexOf("sight_radius"))?.kind, "parameter");
+    assert.equal(byStart.get(sourceText.indexOf("irandom_range"))?.kind, "function");
+    assert.equal(byStart.get(sourceText.indexOf("can_pathfind"))?.kind, "parameter");
+    assert.equal(byStart.get(sourceText.indexOf("can_wander"))?.kind, "parameter");
+});

@@ -54,7 +54,7 @@ void test("normalizes GameMaker doc comment type annotations", () => {
 });
 
 void test("applies JSDoc alias replacements without type normalization", () => {
-    assertEquals(Core.applyJsDocTagAliasReplacements("/// @desc Example"), "/// @description Example");
+    assertEquals(Core.applyJsDocTagAliasReplacements("/// @desc Example"), "/// @desc Example");
     assertEquals(Core.applyJsDocTagAliasReplacements("/// @arg value"), "/// @param value");
     assertEquals(Core.applyJsDocTagAliasReplacements("/// @params value"), "/// @param value");
     assertEquals(

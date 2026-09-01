@@ -1,7 +1,12 @@
 import assert from "node:assert";
 import { test } from "node:test";
 
-import { deduplicatePatchesById } from "../browser/websocket/patch-queue.js";
+import {
+    createInitialConnectionMetrics,
+    deduplicatePatchesById,
+    enqueuePendingPatchUntilRuntimeReady
+} from "../src/browser/websocket/patch-queue.js";
+import type { WebSocketClientState } from "../src/browser/websocket/types.js";
 import { Clients, Runtime } from "../src/index.js";
 
 const { createRuntimeWrapper } = Runtime;
@@ -12,10 +17,14 @@ class MockWebSocket {
     private listeners = new Map<string, Set<(event?: unknown) => void>>();
 
     constructor() {
-        setTimeout(() => {
+        // Defer the open transition by one macrotask tick (matching the
+        // `MockWebSocket` in `websocket.test.ts`). This previously used
+        // `setTimeout(..., 10)` which added a real 10ms race window that
+        // could compound with other test setup delays on slow CI runners.
+        setImmediate(() => {
             this.readyState = 1;
             this.triggerEvent("open");
-        }, 10);
+        });
     }
 
     addEventListener(event: string, handler: (event?: unknown) => void): void {
@@ -39,7 +48,7 @@ class MockWebSocket {
 
     close(): void {
         this.readyState = 3;
-        setTimeout(() => this.triggerEvent("close"), 10);
+        setImmediate(() => this.triggerEvent("close"));
     }
 
     triggerEvent(event: string, data?: unknown): void {
@@ -61,6 +70,21 @@ const DEFAULT_PATCH_QUEUE_OPTIONS = {
     flushIntervalMs: 1000,
     maxQueueSize: 50
 };
+
+function createPendingPatchState(): WebSocketClientState {
+    return {
+        ws: null,
+        isConnected: false,
+        reconnectTimer: null,
+        manuallyDisconnected: false,
+        connectionMetrics: createInitialConnectionMetrics(),
+        patchQueue: null,
+        pendingPatches: [],
+        pendingPatchHead: 0,
+        readinessTimer: null,
+        runtimeReady: false
+    };
+}
 
 type RuntimeWrapperInstance = ReturnType<typeof createRuntimeWrapper>;
 type WebSocketClientOptions = Parameters<typeof createWebSocketClient>[0];
@@ -216,6 +240,48 @@ async function createConnectedPatchQueueClient(options: PatchQueueClientSetupOpt
     return { wrapper, client, ws, restoreRuntimeGlobals };
 }
 
+void test("pending runtime-readiness queue replaces duplicate patch ids before flush", () => {
+    const state = createPendingPatchState();
+
+    enqueuePendingPatchUntilRuntimeReady(state, { kind: "script", id: "script:pending", js_body: "return 1;" }, 10);
+    enqueuePendingPatchUntilRuntimeReady(state, { kind: "script", id: "script:other", js_body: "return 2;" }, 10);
+    enqueuePendingPatchUntilRuntimeReady(state, { kind: "script", id: "script:pending", js_body: "return 3;" }, 10);
+
+    assert.deepStrictEqual(state.pendingPatches, [
+        { kind: "script", id: "script:pending", js_body: "return 3;" },
+        { kind: "script", id: "script:other", js_body: "return 2;" }
+    ]);
+    assert.strictEqual(state.pendingPatchHead, 0);
+});
+
+void test("pending runtime-readiness queue replaces duplicates before enforcing max size", () => {
+    const state = createPendingPatchState();
+
+    enqueuePendingPatchUntilRuntimeReady(state, { kind: "script", id: "script:first", js_body: "return 1;" }, 2);
+    enqueuePendingPatchUntilRuntimeReady(state, { kind: "script", id: "script:second", js_body: "return 2;" }, 2);
+    enqueuePendingPatchUntilRuntimeReady(state, { kind: "script", id: "script:first", js_body: "return 10;" }, 2);
+
+    assert.deepStrictEqual(state.pendingPatches, [
+        { kind: "script", id: "script:first", js_body: "return 10;" },
+        { kind: "script", id: "script:second", js_body: "return 2;" }
+    ]);
+    assert.strictEqual(state.pendingPatchHead, 0);
+});
+
+void test("pending runtime-readiness queue keeps live window duplicate-free after drops", () => {
+    const state = createPendingPatchState();
+
+    enqueuePendingPatchUntilRuntimeReady(state, { kind: "script", id: "script:dropped", js_body: "return 1;" }, 2);
+    enqueuePendingPatchUntilRuntimeReady(state, { kind: "script", id: "script:kept", js_body: "return 2;" }, 2);
+    enqueuePendingPatchUntilRuntimeReady(state, { kind: "script", id: "script:newest", js_body: "return 3;" }, 2);
+    enqueuePendingPatchUntilRuntimeReady(state, { kind: "script", id: "script:kept", js_body: "return 20;" }, 2);
+
+    assert.deepStrictEqual(state.pendingPatches.slice(state.pendingPatchHead), [
+        { kind: "script", id: "script:kept", js_body: "return 20;" },
+        { kind: "script", id: "script:newest", js_body: "return 3;" }
+    ]);
+});
+
 void test("patch queue tracks patches received without double-counting on flush", async () => {
     const { client, ws, restoreRuntimeGlobals } = await createConnectedPatchQueueClient({
         patchQueue: {
@@ -275,6 +341,62 @@ void test("deduplicatePatchesById keeps only the newest patch for duplicate ids"
     const result = deduplicatePatchesById(patches);
     assert.strictEqual(result.duplicateCount, 1);
     assert.deepStrictEqual(result.patches, [uniquePatch, newestVersion]);
+});
+
+void test("patch queue coalesces queued duplicate ids before flushing", async () => {
+    const batchCalls: Array<Array<unknown>> = [];
+
+    const { client, ws, restoreRuntimeGlobals } = await createConnectedPatchQueueClient({
+        patchQueue: {
+            flushIntervalMs: 1000,
+            maxQueueSize: 10
+        },
+        wrapperMutator: (wrapper) => {
+            const originalApplyPatchBatch = wrapper.applyPatchBatch.bind(wrapper);
+            wrapper.applyPatchBatch = (patches: Array<unknown>) => {
+                batchCalls.push(patches);
+                return originalApplyPatchBatch(patches);
+            };
+            return wrapper;
+        }
+    });
+
+    try {
+        sendScriptPatch(ws, "gml/script/replace_me", "return 1;");
+        sendScriptPatch(ws, "gml/script/keep_me", "return 2;");
+        sendScriptPatch(ws, "gml/script/replace_me", "return 99;");
+
+        const queuedMetrics = await waitForQueueMetrics(
+            client,
+            "queue to coalesce duplicate patch before flush",
+            (snapshot) => snapshot.totalQueued === 3 && snapshot.totalDeduplicated === 1
+        );
+        assert.strictEqual(queuedMetrics.maxQueueDepth, 2);
+        assert.strictEqual(queuedMetrics.flushCount, 0);
+
+        const flushedCount = client.flushPatchQueue();
+        assert.strictEqual(flushedCount, 2);
+
+        assert.strictEqual(batchCalls.length, 1);
+        assert.deepStrictEqual(
+            batchCalls[0].map((patch) => {
+                assert.ok(typeof patch === "object" && patch !== null && "id" in patch);
+                return patch.id;
+            }),
+            ["gml/script/keep_me", "gml/script/replace_me"]
+        );
+
+        const flushedMetrics = await waitForQueueMetrics(
+            client,
+            "queue to flush coalesced duplicate patch",
+            (snapshot) => snapshot.totalFlushed === 2 && snapshot.flushCount === 1,
+            150
+        );
+        assert.strictEqual(flushedMetrics.totalDeduplicated, 1);
+    } finally {
+        client.disconnect();
+        restoreRuntimeGlobals();
+    }
 });
 
 void test("patch queue metrics account for partial batch failures", async () => {
@@ -577,7 +699,24 @@ void test("getPatchQueueMetrics returns initial metrics when queuing is enabled"
     assert.strictEqual(metrics.lastFlushedAt, null);
 });
 
-void test("patch queue enqueues patches instead of applying immediately", async () => {
+void test("patch queue enqueues patches instead of applying immediately", async (t) => {
+    // === Determinism notes ===
+    // The previous version of this test relied on a real setTimeout(100) to
+    // fire the queue's flush timer, then awaited up to 300ms of real wall-clock
+    // time for the metrics to update. Under heavy CI load, the Node event loop
+    // can be delayed past the wait window (worker contention, GC pauses, file
+    // system events from sibling tests, etc.), causing the assertion to fail
+    // with "Timed out waiting for queue to flush pending patch". Evidence of
+    // the failure mode: the test would intermittently throw from
+    // `waitForQueueMetrics(..., 300)` even though the timer was scheduled for
+    // 100ms — the 100ms delay drifted past 300ms under load.
+    //
+    // The fix replaces the queue's flush timer with Node's `mock.timers` so
+    // the flush fires at an exact, deterministic moment controlled by the
+    // test. `setImmediate` and `setTimeout` are not mocked for the helper
+    // above (`createConnectedPatchQueueClient`) so the initial connection
+    // still uses real timers; mocking is enabled only for the body that
+    // exercises the queue's deferred flush.
     let patchesApplied = 0;
 
     const { client, ws, restoreRuntimeGlobals } = await createConnectedPatchQueueClient({
@@ -595,28 +734,33 @@ void test("patch queue enqueues patches instead of applying immediately", async 
         }
     });
 
+    t.mock.timers.enable({ apis: ["setTimeout"] });
+
     try {
         sendScriptPatch(ws, "script:test1");
 
-        const metricsBeforeFlush = await waitForQueueMetrics(
-            client,
-            "queue to contain pending patch",
-            (metrics) => metrics.totalQueued === 1
-        );
-        assert.strictEqual(metricsBeforeFlush.totalQueued, 1);
-        assert.strictEqual(patchesApplied, 0);
+        // The patch lands in the queue synchronously, so the queue metrics
+        // are observable without polling — no real wait is required.
+        const metricsBeforeFlush = client.getPatchQueueMetrics();
+        assert.ok(metricsBeforeFlush !== null, "Patch queue metrics should be available while queuing is enabled");
+        assert.strictEqual(metricsBeforeFlush.totalQueued, 1, "Patch should be queued before the timer fires");
+        assert.strictEqual(metricsBeforeFlush.totalFlushed, 0, "Patch should not be flushed before the timer fires");
+        assert.strictEqual(metricsBeforeFlush.flushCount, 0, "No flush should have occurred yet");
+        assert.strictEqual(patchesApplied, 0, "Patches must not be applied while the queue is still pending");
 
-        const metricsAfterFlush = await waitForQueueMetrics(
-            client,
-            "queue to flush pending patch",
-            (metrics) => metrics.totalFlushed === 1 && metrics.flushCount === 1,
-            300
-        );
+        // Advance the mocked clock exactly one tick past the queue's flush
+        // interval. The flush timer was scheduled for 100ms, so ticking 100ms
+        // fires it deterministically — no event-loop latency involved.
+        t.mock.timers.tick(100);
 
-        assert.strictEqual(metricsAfterFlush.totalFlushed, 1);
-        assert.strictEqual(metricsAfterFlush.flushCount, 1);
-        assert.strictEqual(patchesApplied, 1);
+        const metricsAfterFlush = client.getPatchQueueMetrics();
+        assert.ok(metricsAfterFlush !== null, "Patch queue metrics should remain available after flush");
+        assert.strictEqual(metricsAfterFlush.totalFlushed, 1, "Queued patch should flush when the timer fires");
+        assert.strictEqual(metricsAfterFlush.flushCount, 1, "Exactly one flush should have occurred");
+        assert.strictEqual(metricsAfterFlush.lastFlushSize, 1, "The flush should have moved exactly one patch");
+        assert.strictEqual(patchesApplied, 1, "Queued patch should reach applyPatchBatch after the flush");
     } finally {
+        t.mock.timers.reset();
         client.disconnect();
         restoreRuntimeGlobals();
     }
@@ -1003,10 +1147,10 @@ void test("patch queue clears flush timer on disconnect", async () => {
     }
 });
 
-void test("patch queue deduplicates patches with the same ID on flush", async () => {
+void test("patch queue deduplicates patches with the same ID before flush", async () => {
     // Simulates rapid saves: the same script is patched three times within the
-    // flush window. Only the last version should be applied; earlier occurrences
-    // are counted in totalDeduplicated and still reflected in totalFlushed.
+    // flush window. Only the last version remains queued; earlier occurrences
+    // are counted in totalDeduplicated without waiting for the flush path.
     let batchCallCount = 0;
     const batchArgs: Array<Array<unknown>> = [];
 
@@ -1034,8 +1178,8 @@ void test("patch queue deduplicates patches with the same ID on flush", async ()
 
         await waitForQueueMetrics(
             client,
-            "queue to contain three duplicate patches",
-            (snapshot) => snapshot.totalQueued === 3
+            "queue to coalesce three duplicate patches",
+            (snapshot) => snapshot.totalQueued === 3 && snapshot.totalDeduplicated === 2
         );
 
         const flushed = client.flushPatchQueue();
@@ -1047,11 +1191,11 @@ void test("patch queue deduplicates patches with the same ID on flush", async ()
             300
         );
 
-        // flushPatchQueue returns the original queue size (before deduplication).
-        assert.strictEqual(flushed, 3);
+        // flushPatchQueue returns the compacted queue size after enqueue-time deduplication.
+        assert.strictEqual(flushed, 1);
 
-        // totalFlushed counts all patches removed from the queue (including deduped).
-        assert.strictEqual(metrics.totalFlushed, 3);
+        // totalFlushed counts patches removed from the compacted queue.
+        assert.strictEqual(metrics.totalFlushed, 1);
 
         // Two of the three patches were deduplicated (only the last one applied).
         assert.strictEqual(metrics.totalDeduplicated, 2);
@@ -1080,7 +1224,11 @@ void test("patch queue deduplicates preserving the latest body of each patch", a
         ws.simulateMessage(JSON.stringify({ kind: "script", id: "script:versioned", js_body: "return 'v2';" }));
         ws.simulateMessage(JSON.stringify({ kind: "script", id: "script:versioned", js_body: "return 'v3';" }));
 
-        await waitForQueueMetrics(client, "queue to capture three patches", (snapshot) => snapshot.totalQueued === 3);
+        await waitForQueueMetrics(
+            client,
+            "queue to coalesce three patches",
+            (snapshot) => snapshot.totalQueued === 3 && snapshot.totalDeduplicated === 2
+        );
 
         client.flushPatchQueue();
 

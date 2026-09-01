@@ -23,6 +23,8 @@
  * without editing the mechanism that performs the mutations.
  */
 
+import { Core } from "@gmloop/core";
+
 import { IDENTIFIER_CASE_OPTION_STORE_MAX_ENTRIES_OPTION_NAME } from "./options.js";
 
 // ---------------------------------------------------------------------------
@@ -76,12 +78,11 @@ export type OptionStoreEvictionPolicyDecision = {
  *          a positive integer otherwise).
  */
 export function resolveOptionStoreMaxEntries(options: unknown, getDefault: () => number = () => 128): number {
-    const resolvedOptions = getIdentifierCaseOptionsObject(options);
-    if (!resolvedOptions) {
+    if (!Core.isObjectLike(options)) {
         return getDefault();
     }
 
-    const configured: unknown = resolvedOptions[IDENTIFIER_CASE_OPTION_STORE_MAX_ENTRIES_OPTION_NAME];
+    const configured: unknown = options[IDENTIFIER_CASE_OPTION_STORE_MAX_ENTRIES_OPTION_NAME];
 
     if (configured === Infinity) {
         return configured as number;
@@ -136,15 +137,3 @@ export function evaluateOptionStoreEvictionPolicy(
 // ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------
-
-/**
- * Typed wrapper around the inlined options-object guard from option-store.ts.
- * Duplicated here to keep `resolveOptionStoreMaxEntries` self-contained and
- * free of imports from `option-store.ts` (which has side effects).
- */
-function getIdentifierCaseOptionsObject(options: unknown): Record<string, unknown> | null {
-    if (options == null || typeof options !== "object" || Array.isArray(options)) {
-        return null;
-    }
-    return options as Record<string, unknown>;
-}

@@ -86,16 +86,6 @@ export function createScriptCommand(): Command {
         await runScriptAddAction(scriptName, options);
     });
 
-    const inspect = applyStandardCommandOptions(new Command("inspect"))
-        .description("Inspect a script resource.")
-        .argument("<name>", "Script name.")
-        .addOption(createPathOption())
-        .addOption(createConfigOption());
-    inspect.action(function scriptInspectAction(scriptName: string) {
-        const options = this.opts<ScriptMutationOptions>();
-        emitScriptNotFoundLeaf("script inspect", options, { script: scriptName });
-    });
-
     const update = applyStandardCommandOptions(new Command("update"))
         .description("Update a script resource.")
         .argument("<name>", "Script name.")
@@ -143,7 +133,6 @@ export function createScriptCommand(): Command {
 
     command.addCommand(list);
     command.addCommand(add);
-    command.addCommand(inspect);
     command.addCommand(update);
     command.addCommand(remove);
     command.addCommand(rename);

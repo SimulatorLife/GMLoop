@@ -8,7 +8,7 @@
  * Two collectors are provided:
  *
  * - `collectLocalVariables` – walks a GML event AST and returns the set of
- *   all names declared with `var`. Used by `EventContextOracle` to distinguish
+ *   all names declared with `var` or `static`. Used by `EventContextOracle` to distinguish
  *   locals from instance fields.
  *
  * - `collectGlobalVarNames` – walks any GML program AST and returns the set
@@ -18,7 +18,7 @@
  *   declaration appears after the first use.
  */
 
-import type { ProgramNode } from "./ast.js";
+import type { GmlNode, ProgramNode, VariableDeclaratorNode } from "./ast.js";
 import {
     isAstRecord,
     isFunctionScopeBoundary,
@@ -31,6 +31,14 @@ import {
 type AstRecord = Record<string, unknown>;
 
 function walkAstNodes(root: unknown, visitNode: (node: AstRecord) => boolean | void): void {
+    // `walkAstNodes` is the inner traversal shared by every collector in this
+    // file and runs once per function/event/program during transpile. The
+    // child-iteration step previously built a fresh `Object.values` array on
+    // every visited node; iterating keys directly with `for…in` + `Object.hasOwn`
+    // avoids that allocation while visiting the same own enumerable properties
+    // in the same order. The behavior of the visit callback and the descent
+    // rules (including `shouldDescend === false` to stop at function-scope
+    // boundaries) is unchanged.
     const traversalStack: unknown[] = [root];
 
     while (traversalStack.length > 0) {
@@ -52,14 +60,20 @@ function walkAstNodes(root: unknown, visitNode: (node: AstRecord) => boolean | v
             continue;
         }
 
-        for (const value of Object.values(currentNode)) {
-            traversalStack.push(value);
+        for (const key in currentNode) {
+            if (Object.hasOwn(currentNode, key)) {
+                traversalStack.push((currentNode as AstRecord)[key]);
+            }
         }
     }
 }
 
 function collectVarDeclaratorNames(node: AstRecord, localNames: Set<string>): void {
-    if (!isVariableDeclarationNode(node) || node.kind !== "var" || !Array.isArray(node.declarations)) {
+    if (
+        !isVariableDeclarationNode(node) ||
+        (node.kind !== "var" && node.kind !== "static") ||
+        !Array.isArray(node.declarations)
+    ) {
         return;
     }
 
@@ -86,19 +100,42 @@ function collectVarDeclarationsFromTree(root: unknown, localNames: Set<string>):
     });
 }
 
+function collectStaticDeclarationsFromTree(root: unknown, declarations: VariableDeclaratorNode[]): void {
+    walkAstNodes(root, (currentNode) => {
+        if (isFunctionScopeBoundary(currentNode)) {
+            return false;
+        }
+
+        if (
+            isVariableDeclarationNode(currentNode) &&
+            currentNode.kind === "static" &&
+            Array.isArray(currentNode.declarations)
+        ) {
+            for (const declaration of currentNode.declarations) {
+                if (isVariableDeclaratorNode(declaration)) {
+                    declarations.push(declaration);
+                }
+            }
+        }
+
+        return true;
+    });
+}
+
 /**
- * Walk a GML event AST and collect all variable names declared with `var`.
+ * Walk a GML event AST and collect all variable names declared with `var` or `static`.
  *
  * Traversal stops at nested `FunctionDeclaration` and `ConstructorDeclaration`
  * boundaries so that inner-function locals are not included in the returned set.
  *
- * @param ast - The root `Program` node to walk
+ * @param ast - The event or function-body AST node to walk
  * @returns An immutable set of all `var`-declared variable names in the event body
  *
  * @example
  * ```gml
  * // Event body:
  * var speed = 5;
+ * static cached_message = "hit";
  * var dx = cos(direction) * speed;
  * health -= 1;           // NOT a local (instance field)
  * if (alive) {
@@ -107,13 +144,30 @@ function collectVarDeclarationsFromTree(root: unknown, localNames: Set<string>):
  * ```
  * ```typescript
  * const locals = collectLocalVariables(ast);
- * // locals = Set { "speed", "dx", "msg" }
+ * // locals = Set { "speed", "cached_message", "dx", "msg" }
  * ```
  */
-export function collectLocalVariables(ast: ProgramNode): ReadonlySet<string> {
+export function collectLocalVariables(ast: GmlNode): ReadonlySet<string> {
     const localNames = new Set<string>();
     collectVarDeclarationsFromTree(ast, localNames);
     return localNames;
+}
+
+/**
+ * Collect static declarations owned by one function body.
+ *
+ * Static declarations are initialized before the rest of their containing
+ * function executes. The emitter uses this ordered list to hoist those
+ * initializers into the function prologue while keeping nested functions'
+ * static scopes separate.
+ *
+ * @param ast - The function body or program fragment to inspect
+ * @returns Static declarators in source order, excluding nested functions
+ */
+export function collectStaticVariableDeclarations(ast: GmlNode): ReadonlyArray<VariableDeclaratorNode> {
+    const declarations: VariableDeclaratorNode[] = [];
+    collectStaticDeclarationsFromTree(ast, declarations);
+    return declarations;
 }
 
 /**

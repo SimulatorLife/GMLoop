@@ -32,7 +32,8 @@ void test("ruleIds contract keeps canonical ids with PascalCase keys", () => {
     }
 
     assertEquals((ruleIds as Record<string, string>).GmlNoGlobalvar, "gml/no-globalvar");
-    assertEquals((ruleIds as Record<string, string>).GmlNoLegacyApi, "gml/no-legacy-api");
+    assertEquals((ruleIds as Record<string, string>).GmlNoMultiVarDeclarations, "gml/no-multi-var-declarations");
+    assertEquals("GmlNoLegacyApi" in (ruleIds as Record<string, string>), false);
     assertEquals((ruleIds as Record<string, string>).GmlPreferArrayPush, "gml/prefer-array-push");
     assertEquals((ruleIds as Record<string, string>).GmlPreferCompoundAssignments, "gml/prefer-compound-assignments");
     assertEquals(
@@ -40,7 +41,23 @@ void test("ruleIds contract keeps canonical ids with PascalCase keys", () => {
         "gml/prefer-increment-decrement-operators"
     );
     assertEquals((ruleIds as Record<string, string>).GmlPreferDirectReturn, "gml/prefer-direct-return");
+    assertEquals((ruleIds as Record<string, string>).GmlPreferDirectBooleanReturn, "gml/prefer-direct-boolean-return");
+    assertEquals(
+        (ruleIds as Record<string, string>).GmlNoBooleanLiteralComparisons,
+        "gml/no-boolean-literal-comparisons"
+    );
     assertEquals((ruleIds as Record<string, string>).GmlRemoveDefaultComments, "gml/remove-default-comments");
+    assertEquals((ruleIds as Record<string, string>).GmlRemoveDocFunctionTags, "gml/remove-doc-function-tags");
+    assertEquals((ruleIds as Record<string, string>).GmlNormalizeDocReturns, "gml/normalize-doc-returns");
+    assertEquals((ruleIds as Record<string, string>).GmlNormalizeDocParamDefaults, "gml/normalize-doc-param-defaults");
+    assertEquals(
+        (ruleIds as Record<string, string>).GmlNormalizeDocParamSeparators,
+        "gml/normalize-doc-param-separators"
+    );
+    assertEquals(
+        (ruleIds as Record<string, string>).GmlNormalizeDocParamUndefinedDefaults,
+        "gml/normalize-doc-param-undefined-defaults"
+    );
     assertEquals((ruleIds as Record<string, string>).FeatherGM1000, "feather/gm1000");
 });
 
@@ -61,7 +78,7 @@ void test("config arrays are readonly FlatConfig[] values and share the pinned f
     const expectedGlob = Object.freeze(["**/*.gml"]);
     assert.deepEqual(expectedGlob, ["**/*.gml"]);
 
-    const sets = [Lint.configs.recommended, Lint.configs.feather, Lint.configs.performance];
+    const sets = [Lint.configs.all, Lint.configs.recommended, Lint.configs.feather, Lint.configs.performance];
     for (const configSet of sets) {
         assert.ok(Array.isArray(configSet));
         assertEquals(Object.isFrozen(configSet), true);
@@ -78,32 +95,71 @@ void test("config arrays are readonly FlatConfig[] values and share the pinned f
     assertEquals(recommendedGml.plugins?.gml, Lint.plugin);
     assertEquals(recommendedGml.rules["gml/require-argument-separators"], "error");
     assertEquals(recommendedGml.rules["gml/no-empty-regions"], "warn");
-    assertEquals(recommendedGml.rules["gml/no-legacy-api"], "warn");
     assertEquals(recommendedGml.rules["gml/no-scientific-notation"], "error");
     assertEquals(recommendedGml.rules["gml/prefer-array-push"], "warn");
     assertEquals(recommendedGml.rules["gml/prefer-compound-assignments"], "warn");
     assertEquals(recommendedGml.rules["gml/prefer-direct-return"], "warn");
+    assertEquals(recommendedGml.rules["gml/prefer-direct-boolean-return"], "warn");
+    assertEquals(recommendedGml.rules["gml/no-boolean-literal-comparisons"], "warn");
     assertEquals(recommendedGml.rules["gml/prefer-increment-decrement-operators"], "warn");
     assertEquals(recommendedGml.rules["gml/prefer-loop-invariant-expressions"], "warn");
     assertEquals(recommendedGml.rules["gml/remove-default-comments"], "warn");
-    assertEquals(recommendedGml.rules["gml/normalize-data-structure-accessors"], "warn");
+    assertEquals(recommendedGml.rules["gml/remove-doc-function-tags"], "warn");
+    assertEquals(recommendedGml.rules["gml/normalize-doc-returns"], "warn");
+    assertEquals(recommendedGml.rules["gml/normalize-doc-param-defaults"], "warn");
+    assertEquals(recommendedGml.rules["gml/normalize-doc-param-separators"], "warn");
+    assertEquals(recommendedGml.rules["gml/normalize-doc-param-undefined-defaults"], "warn");
     assertEquals(recommendedGml.rules["gml/require-region-pairs"], "error");
-    assertEquals(recommendedGml.rules["gml/require-trailing-optional-defaults"], "warn");
+    assertEquals(recommendedGml.rules["gml/normalize-operator-aliases"], undefined);
 
     assertEquals(recommendedFeather.plugins?.feather, Lint.featherPlugin);
     assertEquals(recommendedFeather.language, undefined);
     assertEquals(recommendedFeather.languageOptions, undefined);
     assertEquals(recommendedFeather.rules["feather/gm1003"], "warn");
     assertEquals(recommendedFeather.rules["feather/gm1009"], "warn");
+    assertEquals(recommendedFeather.rules["feather/gm1017"], "warn");
+    assertEquals(recommendedFeather.rules["feather/gm1023"], "warn");
+    assertEquals(recommendedFeather.rules["feather/gm1024"], "warn");
+    assertEquals(recommendedFeather.rules["feather/gm1028"], "warn");
     assertEquals(recommendedFeather.rules["feather/gm1033"], "warn");
     assertEquals(recommendedFeather.rules["feather/gm1041"], "warn");
     assertEquals(recommendedFeather.rules["feather/gm1051"], "warn");
+    assertEquals(recommendedFeather.rules["feather/gm1056"], "warn");
+    assertEquals(recommendedFeather.rules["feather/gm2004"], "warn");
     assertEquals(recommendedFeather.rules["feather/gm2007"], "warn");
     assertEquals(recommendedFeather.rules["feather/gm2020"], "warn");
-    assertEquals(Object.keys(recommendedFeather.rules).length, 7);
+    assertEquals(recommendedFeather.rules["feather/gm2061"], "warn");
+    assertEquals(Object.keys(recommendedFeather.rules).length, 14);
 
     const [featherOverlay] = Lint.configs.feather;
     assertEquals(featherOverlay.plugins?.feather, Lint.featherPlugin);
+
+    const [performanceConfig] = Lint.configs.performance;
+    assertEquals(performanceConfig.rules["gml/prefer-direct-boolean-return"], "warn");
+});
+
+void test("all config enables every registered rule at its recommended level", () => {
+    const [allRulesConfig] = Lint.configs.all;
+    const gmlRuleIds = Object.keys(Lint.plugin.rules).map((ruleName) => `gml/${ruleName}`);
+    const featherSeverityByRuleId = new Map(
+        Lint.services.featherManifest.entries.map((entry) => [entry.ruleId, entry.defaultSeverity])
+    );
+    const expectedRuleIds = [...gmlRuleIds, ...featherSeverityByRuleId.keys()].sort();
+
+    assertEquals(Lint.configs.all.length, 1);
+    assertEquals(allRulesConfig.language, "gml/gml");
+    assert.deepEqual(allRulesConfig.languageOptions, { recovery: "limited" });
+    assertEquals(allRulesConfig.plugins?.gml, Lint.plugin);
+    assertEquals(allRulesConfig.plugins?.feather, Lint.featherPlugin);
+    assert.deepEqual(Object.keys(allRulesConfig.rules).sort(), expectedRuleIds);
+
+    for (const ruleId of gmlRuleIds) {
+        assert.match(allRulesConfig.rules[ruleId] ?? "", /^(?:warn|error)$/u, `${ruleId} should be enabled`);
+    }
+    assertEquals(allRulesConfig.rules["gml/normalize-operator-aliases"], "warn");
+    for (const [ruleId, severity] of featherSeverityByRuleId) {
+        assertEquals(allRulesConfig.rules[ruleId], severity, `${ruleId} should use its recommended severity`);
+    }
 });
 
 void test("feather overlay still exposes the full manifest independently of recommended", () => {
@@ -123,12 +179,6 @@ void test("semver-sensitive lint constants are pinned", () => {
     for (const ruleId of Lint.services.performanceOverrideRuleIds) {
         assert.match(ruleId, /^(?:gml|feather)\/.+$/);
     }
-
-    // Verify canonical access path: performanceOverrideRuleIds is accessible
-    // directly on the Lint namespace (flattened alias), not as a separate
-    // module-level re-export that bypassed the services namespace.
-    assert.ok(Array.isArray(Lint.performanceOverrideRuleIds));
-    assertEquals(Lint.performanceOverrideRuleIds, Lint.services.performanceOverrideRuleIds);
 });
 
 void test("services namespace excludes project-aware analysis helpers", () => {
@@ -147,17 +197,9 @@ void test("services namespace excludes project-aware analysis helpers", () => {
     }
 });
 
-void test("performanceOverrideRuleIds is not a separate module-level re-export (legacy-path removed)", () => {
-    // The canonical source for performanceOverrideRuleIds is the services object.
-    // A previous pattern exported it directly from the module as a convenience
-    // re-export (effectively `export { PERFORMANCE_OVERRIDE_RULE_IDS as performanceOverrideRuleIds }`).
-    // That legacy path has been removed; the constant is now only accessible via:
-    //   1. Lint.services.performanceOverrideRuleIds  (primary through namespace)
-    //   2. Lint.performanceOverrideRuleIds          (flattened alias on Lint namespace)
-    // The separate module-level re-export that bypassed the namespace is gone.
+void test("performance override rule IDs are exposed only by their services owner", () => {
     assert.equal("performanceOverrideRuleIds" in Lint.services, true);
-    assert.equal("performanceOverrideRuleIds" in Lint, true);
-    assertEquals(Lint.performanceOverrideRuleIds, Lint.services.performanceOverrideRuleIds);
+    assert.equal("performanceOverrideRuleIds" in Lint, false);
 });
 
 void test("malformed scientific-notation helpers are only exposed through Lint namespace", () => {
@@ -184,6 +226,7 @@ void test("Lint.plugin.rules and Lint.featherPlugin.rules are properly populated
     assertEquals(Object.isFrozen(Lint.plugin.rules), true);
     assert.ok(Lint.plugin.rules["prefer-array-push"], "prefer-array-push must be in plugin rules");
     assert.ok(Lint.plugin.rules["no-globalvar"], "no-globalvar must be in plugin rules");
+    assert.ok(Lint.plugin.rules["no-multi-var-declarations"], "no-multi-var-declarations must be in plugin rules");
 
     assert.ok(Lint.featherPlugin.rules, "Lint.featherPlugin.rules must be defined");
     assertEquals(Object.isFrozen(Lint.featherPlugin.rules), true);

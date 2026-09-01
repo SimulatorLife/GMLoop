@@ -6,14 +6,7 @@ import { LightDomLitElement } from "../light-dom-lit-element.js";
  * Closed set of status labels supported by the shared UI status badge.
  */
 export type GmStatusChipStatus =
-    | "not-running"
-    | "running"
-    | "starting"
-    | "stopped"
-    | "offline"
-    | "error"
-    | "scanning"
-    | "success";
+    "not-running" | "running" | "starting" | "stopped" | "offline" | "error" | "scanning" | "success";
 
 type GmStatusChipConfig = Readonly<{
     label: string;

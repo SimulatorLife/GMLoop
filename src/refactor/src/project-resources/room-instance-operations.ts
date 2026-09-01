@@ -1,13 +1,22 @@
 import { randomUUID } from "node:crypto";
-import { readdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { Core } from "@gmloop/core";
 
-import { getManifestResources, type ProjectManifestEntry } from "./project-resource-operations.js";
+import {
+    getManifestResources,
+    type ProjectManifestEntry,
+    readProjectMetadataDocument,
+    resolveProjectManifestFile
+} from "./project-resource-operations.js";
+import {
+    assertFiniteCoordinate,
+    locateObjectReference,
+    locateRoomReference,
+    type ResourceReference,
+    writeRoomDocumentIfApplying
+} from "./room-resource-helpers.js";
 
-const ROOM_RESOURCE_DIRECTORY = "rooms";
-const OBJECT_RESOURCE_DIRECTORY = "objects";
 const INSTANCE_LAYER_RESOURCE_TYPE = "GMRInstanceLayer";
 const ROOM_INSTANCE_RESOURCE_TYPE = "GMRInstance";
 const ROOM_INSTANCE_NAME_PREFIX = "inst_";
@@ -15,11 +24,6 @@ const ROOM_INSTANCE_NAME_PREFIX = "inst_";
 type RoomInstanceLayerRecord = Record<string, unknown> & {
     instances: Array<unknown>;
 };
-
-type ResourceReference = Readonly<{
-    name: string;
-    path: string;
-}>;
 
 type LocatedRoomInstance = Readonly<{
     index: number;
@@ -70,6 +74,23 @@ export interface DeleteRoomInstanceRequest {
 }
 
 /**
+ * Parameters for inspecting one GameMaker room instance.
+ */
+export interface InspectRoomInstanceRequest {
+    instanceId: string;
+    projectRoot: string;
+    roomName: string;
+}
+
+/**
+ * Parameters for listing GameMaker room instances.
+ */
+export interface ListRoomInstancesRequest {
+    projectRoot: string;
+    roomName: string;
+}
+
+/**
  * Summary returned after a room instance mutation.
  */
 export interface RoomInstanceMutationResult {
@@ -88,58 +109,18 @@ export interface RoomInstanceMutationResult {
     y: number;
 }
 
-async function readProjectMetadataDocument(absolutePath: string): Promise<Record<string, unknown>> {
-    const rawContent = await readFile(absolutePath, "utf8");
-    return Core.parseProjectMetadataDocumentForMutation(rawContent, absolutePath).document;
-}
-
-async function resolveProjectManifestPath(projectRoot: string): Promise<string> {
-    const directoryEntries = await readdir(projectRoot, { withFileTypes: true });
-    const manifestFileNames = directoryEntries
-        .filter((entry) => entry.isFile() && entry.name.toLowerCase().endsWith(".yyp"))
-        .map((entry) => entry.name)
-        .toSorted((left, right) => left.localeCompare(right));
-
-    if (manifestFileNames.length === 0) {
-        throw new Error(`Could not locate a .yyp manifest inside '${projectRoot}'.`);
-    }
-    if (manifestFileNames.length > 1) {
-        throw new Error(
-            `Found multiple .yyp manifests in '${projectRoot}'. Room instance operations require exactly one project manifest.`
-        );
-    }
-
-    return path.join(projectRoot, manifestFileNames[0]);
-}
-
-function locateResourceReference(
-    manifestResources: ReadonlyArray<ProjectManifestEntry>,
-    resourceDirectory: string,
-    resourceName: string
-): ResourceReference {
-    const expectedPrefix = `${resourceDirectory}/`;
-    let located: ResourceReference | null = null;
-
-    for (const manifestResource of manifestResources) {
-        if (manifestResource.id.name !== resourceName || !manifestResource.id.path.startsWith(expectedPrefix)) {
-            continue;
-        }
-        if (located !== null) {
-            throw new Error(
-                `Found multiple ${resourceDirectory} resources named '${resourceName}' in the project manifest.`
-            );
-        }
-        located = Object.freeze({
-            name: manifestResource.id.name,
-            path: manifestResource.id.path
-        });
-    }
-
-    if (located === null) {
-        throw new Error(`Could not find ${resourceDirectory} resource '${resourceName}' in the project manifest.`);
-    }
-
-    return located;
+/**
+ * Read-only summary of an object instance placed in a GameMaker room.
+ */
+export interface RoomInstanceInspectionResult {
+    instanceId: string;
+    layerName: string;
+    objectName: string;
+    objectPath: string;
+    roomName: string;
+    roomPath: string;
+    x: number;
+    y: number;
 }
 
 function findInstanceLayer(roomDocument: Record<string, unknown>, roomName: string): RoomInstanceLayerRecord {
@@ -263,15 +244,37 @@ function readRoomInstanceObjectReference(instance: Record<string, unknown>, inst
     return Object.freeze({ name, path: resourcePath });
 }
 
+function summarizeRoomInstance(
+    context: RoomInstanceMutationContext,
+    instance: Record<string, unknown>
+): RoomInstanceInspectionResult {
+    const instanceId = getRoomInstanceName(instance);
+    if (instanceId === null) {
+        throw new TypeError(`Room '${context.roomReference.name}' contains an instance without a stable name.`);
+    }
+
+    const objectReference = readRoomInstanceObjectReference(instance, instanceId);
+    return {
+        instanceId,
+        layerName: Core.getNonEmptyString(context.instanceLayer.name) ?? "Instances",
+        objectName: objectReference.name,
+        objectPath: objectReference.path,
+        roomName: context.roomReference.name,
+        roomPath: context.roomReference.path,
+        x: readRoomInstanceCoordinate(instance, "x"),
+        y: readRoomInstanceCoordinate(instance, "y")
+    };
+}
+
 async function resolveRoomInstanceMutationContext(
     projectRootInput: string,
     roomName: string
 ): Promise<RoomInstanceMutationContext> {
     const projectRoot = path.resolve(projectRootInput);
-    const manifestPath = await resolveProjectManifestPath(projectRoot);
-    const manifestDocument = await readProjectMetadataDocument(manifestPath);
+    const manifest = await resolveProjectManifestFile(projectRoot);
+    const manifestDocument = await readProjectMetadataDocument(manifest.absolutePath);
     const manifestResources = getManifestResources(manifestDocument);
-    const roomReference = locateResourceReference(manifestResources, ROOM_RESOURCE_DIRECTORY, roomName);
+    const roomReference = locateRoomReference(manifestResources, roomName);
     const roomAbsolutePath = path.join(projectRoot, Core.fromPosixPath(roomReference.path));
     const roomDocument = await readProjectMetadataDocument(roomAbsolutePath);
     const instanceLayer = findInstanceLayer(roomDocument, roomName);
@@ -286,28 +289,6 @@ async function resolveRoomInstanceMutationContext(
     });
 }
 
-async function writeRoomDocumentIfApplying(
-    dryRun: boolean,
-    roomAbsolutePath: string,
-    roomDocument: Record<string, unknown>
-): Promise<void> {
-    if (dryRun) {
-        return;
-    }
-
-    await writeFile(
-        roomAbsolutePath,
-        `${Core.stringifyProjectMetadataDocument(roomDocument, roomAbsolutePath)}\n`,
-        "utf8"
-    );
-}
-
-function assertFiniteCoordinate(value: number, coordinateName: "x" | "y"): void {
-    if (!Number.isFinite(value)) {
-        throw new TypeError(`Invalid ${coordinateName} coordinate ${String(value)}. Expected a finite numeric value.`);
-    }
-}
-
 /**
  * Add an object instance to the first instance layer in a GameMaker room.
  *
@@ -319,11 +300,7 @@ export async function addRoomInstance(request: AddRoomInstanceRequest): Promise<
     assertFiniteCoordinate(request.y, "y");
 
     const context = await resolveRoomInstanceMutationContext(request.projectRoot, request.roomName);
-    const objectReference = locateResourceReference(
-        context.manifestResources,
-        OBJECT_RESOURCE_DIRECTORY,
-        request.objectName
-    );
+    const objectReference = locateObjectReference(context.manifestResources, request.objectName);
     const instanceLayer = context.instanceLayer;
     const instanceId = `${ROOM_INSTANCE_NAME_PREFIX}${randomUUID().replaceAll("-", "")}`;
     const roomInstance = createRoomInstance(instanceId, objectReference, request.x, request.y);
@@ -349,6 +326,33 @@ export async function addRoomInstance(request: AddRoomInstanceRequest): Promise<
         x: request.x,
         y: request.y
     };
+}
+
+/**
+ * List object instances from the first instance layer in a GameMaker room.
+ *
+ * @param request - Room instance listing request.
+ * @returns Stable summaries of room instances in layer order.
+ */
+export async function listRoomInstances(
+    request: ListRoomInstancesRequest
+): Promise<Array<RoomInstanceInspectionResult>> {
+    const context = await resolveRoomInstanceMutationContext(request.projectRoot, request.roomName);
+    return context.instanceLayer.instances
+        .filter((instance): instance is Record<string, unknown> => Core.isObjectLike(instance))
+        .map((instance) => summarizeRoomInstance(context, instance));
+}
+
+/**
+ * Inspect one object instance from the first instance layer in a GameMaker room.
+ *
+ * @param request - Room instance inspection request.
+ * @returns Stable summary of the requested room instance.
+ */
+export async function inspectRoomInstance(request: InspectRoomInstanceRequest): Promise<RoomInstanceInspectionResult> {
+    const context = await resolveRoomInstanceMutationContext(request.projectRoot, request.roomName);
+    const located = locateRoomInstance(context.instanceLayer, context.roomReference.name, request.instanceId);
+    return summarizeRoomInstance(context, located.instance);
 }
 
 /**

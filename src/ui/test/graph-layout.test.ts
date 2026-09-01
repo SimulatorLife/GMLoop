@@ -10,7 +10,8 @@ import {
     listGraphNodeKindLegendItems,
     listGraphNodeKinds,
     resolveEffectiveGraphNodeKinds
-} from "../src/app/graph-layout.js";
+} from "../src/graph/graph-layout.js";
+import { resolveOverlappingSimulationNodes, type SimulationNode } from "../src/graph/graph-layout-simulation.js";
 import type {
     GraphVisualizationEdgeType,
     GraphVisualizationNodeKind,
@@ -38,6 +39,25 @@ function createNode(id: string, kind: GraphVisualizationNodeKind, name: string):
 function allNodesMatch(_node: GraphLayoutNode): boolean {
     return true;
 }
+
+void test("resolveOverlappingSimulationNodes uses a stable axis for near-coincident nodes", () => {
+    const first: SimulationNode = { id: "first", radius: 10, vx: 0, vy: 0, x: 0, y: 0 };
+    const second: SimulationNode = {
+        id: "second",
+        radius: 10,
+        vx: 0,
+        vy: 0,
+        x: Number.EPSILON,
+        y: Number.EPSILON
+    };
+
+    resolveOverlappingSimulationNodes([first, second]);
+
+    assert.equal(first.y, 0);
+    assert.equal(second.y, Number.EPSILON);
+    assert.ok(first.x < -70);
+    assert.ok(second.x > 70);
+});
 
 function collectLegendChildrenByKind(
     items: ReadonlyArray<GraphNodeKindLegendItem>
@@ -188,6 +208,7 @@ void test("listGraphNodeKindLegendItems nests child kinds under semantic parent 
         "anim_curve",
         "data_file",
         "extension",
+        "folder",
         "font",
         "note",
         "object",
@@ -199,11 +220,23 @@ void test("listGraphNodeKindLegendItems nests child kinds under semantic parent 
         "shader",
         "sound",
         "sprite",
+        "texture_group",
         "tileset",
         "timeline"
     ]);
     assert.ok(![...rootKinds].map(String).includes("constructor"));
     assert.ok(!rootKinds.has("file"));
+});
+
+void test("listGraphNodeKindLegendItems groups texture groups under project resources", () => {
+    const legendItems = listGraphNodeKindLegendItems([
+        createNode("project", "project", "Project"),
+        createNode("texture-group", "texture_group", "Default")
+    ]);
+
+    const resourceLegend = legendItems.find((item) => item.kind === "resource");
+    assert.ok(resourceLegend);
+    assert.ok(resourceLegend.children.some((item) => item.kind === "texture_group" && item.level === 1));
 });
 
 void test("resolveEffectiveGraphNodeKinds hides child kinds when their legend parent is disabled", () => {
@@ -300,4 +333,47 @@ void test("createGraphLayout keeps dense sibling nodes separated for readable la
     }
 
     assert.ok(Math.min(...distances) >= 70);
+});
+
+void test("createGraphLayout guarantees minimum spacing across a large, deeply nested graph", () => {
+    const nodes: Array<GraphVisualizationNodeRecord> = [createNode("project", "project", "Game")];
+    const edges: Array<{ source: string; target: string; type: GraphVisualizationEdgeType }> = [];
+    const scriptCount = 25;
+    const functionsPerScript = 12;
+
+    for (let scriptIndex = 0; scriptIndex < scriptCount; scriptIndex++) {
+        const scriptId = `script-${String(scriptIndex)}`;
+        nodes.push(createNode(scriptId, "script", `script_${String(scriptIndex)}`));
+        edges.push({ source: "project", target: scriptId, type: "contains" });
+
+        for (let functionIndex = 0; functionIndex < functionsPerScript; functionIndex++) {
+            const functionId = `${scriptId}-fn-${String(functionIndex)}`;
+            nodes.push(createNode(functionId, "function", `fn_${String(functionIndex)}`));
+            edges.push({ source: scriptId, target: functionId, type: "defines" });
+        }
+    }
+
+    const startTimeMs = performance.now();
+    const layout = createGraphLayout(nodes, edges);
+    const elapsedMs = performance.now() - startTimeMs;
+
+    assert.equal(layout.nodes.length, 1 + scriptCount + scriptCount * functionsPerScript);
+    assert.ok(elapsedMs < 5000, `layout took ${String(elapsedMs)}ms, expected under 5000ms`);
+
+    for (let leftIndex = 0; leftIndex < layout.nodes.length; leftIndex++) {
+        for (let rightIndex = leftIndex + 1; rightIndex < layout.nodes.length; rightIndex++) {
+            const left = layout.nodes[leftIndex];
+            const right = layout.nodes[rightIndex];
+            if (!left || !right) {
+                continue;
+            }
+
+            const dist = Math.hypot(left.x - right.x, left.y - right.y);
+            const minDist = left.radius + right.radius + 80;
+            assert.ok(
+                dist >= minDist - 1,
+                `nodes '${left.id}' and '${right.id}' are ${String(dist)}px apart, expected at least ${String(minDist)}px`
+            );
+        }
+    }
 });

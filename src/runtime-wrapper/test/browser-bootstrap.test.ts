@@ -4,10 +4,10 @@ import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { liveReloadBootstrapConfig } from "../browser/config.js";
-import { applyMathSafetyPatches, initializeLiveReload } from "../browser/index.js";
-import { createRuntimeWrapper } from "../browser/runtime/index.js";
-import { createWebSocketClient } from "../browser/websocket/index.js";
+import { liveReloadBootstrapConfig } from "../src/browser/config.js";
+import { applyMathSafetyPatches, initializeLiveReload } from "../src/browser/index.js";
+import { createRuntimeWrapper } from "../src/browser/runtime/index.js";
+import { createWebSocketClient } from "../src/browser/websocket/index.js";
 
 void test("runtime-wrapper exposes a browser bootstrap entry at the public browser path", () => {
     assert.equal(typeof initializeLiveReload, "function");
@@ -26,7 +26,7 @@ void test("runtime-wrapper browser bootstrap config exports a websocket-aware de
 void test("runtime-wrapper browser dist assets do not contain bare workspace imports", async () => {
     const currentFilePath = fileURLToPath(import.meta.url);
     const distRoot = path.resolve(path.dirname(currentFilePath), "..");
-    const browserDistRoot = path.join(distRoot, "browser");
+    const browserDistRoot = path.join(distRoot, "src", "browser");
     const jsFiles = await listJavaScriptFiles(browserDistRoot);
 
     assert.ok(jsFiles.length > 0, "Expected browser dist assets to be emitted before the test runs.");

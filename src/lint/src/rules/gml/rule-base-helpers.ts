@@ -320,6 +320,47 @@ export interface SourceTextEdit {
     readonly text: string;
 }
 
+/**
+ * Structural description of a half-open source span (`[start, end)`) used by
+ * lint rules that rewrite AST nodes into autofixes or `replaceTextRange`
+ * calls.
+ */
+export type SourceTextRange = Readonly<{
+    start: number;
+    end: number;
+}>;
+
+/**
+ * Resolves a node to its half-open source span by reading the start and end
+ * indices via {@link Core.getNodeStartIndex} and {@link Core.getNodeEndIndex}
+ * and validating the result.
+ *
+ * Returns `null` when either index is missing, is not a finite number, or is
+ * not strictly greater than zero relative to the start — the three failure
+ * modes that previously had to be re-checked at every call site. Centralising
+ * the guard keeps the per-rule visitor code focused on the rewrite shape
+ * instead of repeating the same `typeof !== "number"` validation ladder.
+ *
+ * @param node AST node (or any value) whose source span should be resolved.
+ * @returns A frozen `{ start, end }` span, or `null` when the span is
+ *   unavailable or malformed.
+ */
+export function getNodeRange(node: unknown): SourceTextRange | null {
+    const start = Core.getNodeStartIndex(node);
+    const end = Core.getNodeEndIndex(node);
+    if (
+        typeof start !== "number" ||
+        typeof end !== "number" ||
+        !Number.isFinite(start) ||
+        !Number.isFinite(end) ||
+        end <= start
+    ) {
+        return null;
+    }
+
+    return Object.freeze({ start, end });
+}
+
 type RuleMetaOverrides = Readonly<{
     fixable?: "code" | "whitespace" | null;
     messageText?: string;
@@ -332,7 +373,7 @@ const DEFAULT_EMPTY_GML_RULE_SCHEMA: ReadonlyArray<unknown> = Object.freeze([
 
 export function createMeta(definition: GmlRuleDefinition, overrides: RuleMetaOverrides = {}): Rule.RuleMetaData {
     const docs = {
-        description: `Rule for ${definition.messageId}.`,
+        description: definition.description,
         recommended: false,
         requiresProjectContext: false
     };
@@ -730,6 +771,159 @@ export function applySourceTextEdits(sourceText: string, edits: ReadonlyArray<So
     return rewritten;
 }
 
+/**
+ * Splits source text on `\r?\n`, applies `transform` to each line, and joins
+ * the surviving lines back together using the dominant line ending from the
+ * original source. The transform callback receives the line, its index in the
+ * original array, and the full array of source lines. Returning `null` drops
+ * the line from the output entirely; returning a string replaces it.
+ *
+ * This consolidates the `Core.dominantLineEnding` + `text.split(/\r?\n/u)` +
+ * `result.join(lineEnding)` boilerplate that was previously copy-pasted into
+ * `no-empty-comments`, `remove-default-comments`, `no-assignment-in-condition`,
+ * and `normalize-directives`. Each of those rules now passes a per-line
+ * transform to this single helper instead of re-implementing the split/join
+ * mechanics.
+ *
+ * @param sourceText Full source text.
+ * @param transform Per-line transform; return `null` to drop the line.
+ * @returns The rewritten source text with the dominant line ending preserved.
+ */
+export function rewriteSourceLines(
+    sourceText: string,
+    transform: (line: string, index: number, sourceLines: ReadonlyArray<string>) => string | null
+): string {
+    const lineEnding = Core.dominantLineEnding(sourceText);
+    const sourceLines = sourceText.split(/\r?\n/u);
+    const rewrittenLines: Array<string> = [];
+    for (let index = 0; index < sourceLines.length; index += 1) {
+        const result = transform(sourceLines[index] ?? "", index, sourceLines);
+        if (result !== null) {
+            rewrittenLines.push(result);
+        }
+    }
+
+    return rewrittenLines.join(lineEnding);
+}
+
+/**
+ * Splits `sourceText` into source-line records, applies a block-level
+ * `transform`, and rejoins the resulting line array using the dominant line
+ * ending. The transform receives the full `ReadonlyArray<string>` of source
+ * lines and returns the replacement line array in source order.
+ *
+ * This helper complements {@link rewriteSourceLines}, which operates on one
+ * line at a time. Callers that need cross-line state — for example, scanning
+ * the whole file for declarations before rewriting the lines that depend on
+ * them — pass a transform that consumes the full line array and emits the
+ * replacement set in one pass.
+ *
+ * The transform owns all line-shaping decisions (drops, merges, re-emits);
+ * the helper only handles the `Core.dominantLineEnding` lookup and the
+ * `split`/`join` mechanics so call sites read as a single delegation step.
+ *
+ * @param sourceText Full source text to rewrite.
+ * @param transform Block-level transform operating over the full line array.
+ * @returns The rewritten source text, joined with the dominant line ending.
+ */
+export function rewriteSourceText(
+    sourceText: string,
+    transform: (sourceLines: ReadonlyArray<string>) => ReadonlyArray<string>
+): string {
+    const lineEnding = Core.dominantLineEnding(sourceText);
+    const sourceLines = sourceText.split(/\r?\n/u);
+    return transform(sourceLines).join(lineEnding);
+}
+
+/**
+ * Structural description of a single source line paired with its absolute
+ * offset, used by lint rules that report per-line diagnostics and fixes.
+ */
+export type SourceLine = Readonly<{
+    startOffset: number;
+    text: string;
+}>;
+
+/**
+ * Splits `sourceText` into per-line records, capturing both the line text
+ * (with trailing line-ending removed) and the absolute offset of the line's
+ * first character.
+ *
+ * Centralises the per-line collection pattern that was previously duplicated
+ * across the doc-comment normalization rules (`normalize-doc-returns`,
+ * `normalize-doc-param-separators`, and
+ * `normalize-doc-param-undefined-defaults`). Each rule now calls this helper
+ * instead of re-implementing the split/offset bookkeeping.
+ *
+ * @param sourceText Full source text to slice.
+ * @returns The list of source-line records in source order.
+ */
+export function collectSourceLines(sourceText: string): ReadonlyArray<SourceLine> {
+    const lines: Array<SourceLine> = [];
+    const linePattern = /[^\r\n]*(?:\r\n|\r|\n|$)/gu;
+    let match: RegExpExecArray | null;
+    while ((match = linePattern.exec(sourceText)) !== null) {
+        const rawLine = match[0];
+        if (rawLine.length === 0 && match.index === sourceText.length) {
+            break;
+        }
+
+        lines.push({
+            startOffset: match.index,
+            text: rawLine.replace(/(?:\r\n|\r|\n)$/u, "")
+        });
+
+        if (linePattern.lastIndex === sourceText.length) {
+            break;
+        }
+    }
+
+    return lines;
+}
+
+/**
+ * Reports one ESLint diagnostic and autofix per source line whose text changes
+ * after applying `normalizeLine`.
+ *
+ * The fix rewrites the line's character range in place using
+ * `fixer.replaceTextRange`, so surrounding lines and their offsets are not
+ * affected. Rules pass a per-line `normalizeLine` callback (typically a
+ * regular-expression substitution) and rely on this helper to handle the
+ * line iteration, the equality short-circuit, the location resolution, and
+ * the fixer wiring.
+ *
+ * This consolidates the `reportXxxFixes` pattern that was previously
+ * copy-pasted into `normalize-doc-returns`,
+ * `normalize-doc-param-separators`, and
+ * `normalize-doc-param-undefined-defaults`. Each rule now delegates the
+ * boilerplate here and supplies only the per-line normalization function.
+ *
+ * @param context ESLint rule context whose `sourceCode` is inspected.
+ * @param definition Rule metadata whose `messageId` is used for diagnostics.
+ * @param normalizeLine Per-line transform; lines whose return value equals
+ *   the original text are skipped.
+ */
+export function reportLineTextFixes(
+    context: Rule.RuleContext,
+    definition: GmlRuleDefinition,
+    normalizeLine: (line: string) => string
+): void {
+    const sourceText = context.sourceCode.text;
+    for (const line of collectSourceLines(sourceText)) {
+        const normalizedLine = normalizeLine(line.text);
+        if (normalizedLine === line.text) {
+            continue;
+        }
+
+        context.report({
+            loc: resolveLocFromIndex(context, sourceText, line.startOffset),
+            messageId: definition.messageId,
+            fix: (fixer) =>
+                fixer.replaceTextRange([line.startOffset, line.startOffset + line.text.length], normalizedLine)
+        });
+    }
+}
+
 export function computeLineStartOffsets(sourceText: string): Array<number> {
     const offsets = [0];
     for (let index = 0; index < sourceText.length; index += 1) {
@@ -885,4 +1079,76 @@ export function shouldReportUnsafe(context: Rule.RuleContext): boolean {
  */
 export function unwrapParenthesizedExpression(node: unknown): unknown {
     return Core.unwrapParenthesizedExpression(node);
+}
+
+/**
+ * Builds a GML rule that requires a paired enable call after the final disable
+ * call to a toggleable GPU state API, inserting the enable call as a trailing
+ * line when the source is missing it.
+ *
+ * This consolidates the "find last disable → check for enable after it →
+ * append reset" body that was previously copy-pasted into the
+ * `gml/require-ztest-enabled-reset` and `gml/require-zwrite-enabled-reset`
+ * factories. Each factory now declares only the function name, the
+ * corresponding disable/enable patterns, and the reset line — the matching,
+ * scan, and fix logic lives in this single helper.
+ *
+ * `disablePattern` and `enablePattern` must use the `g` flag so the helper's
+ * `lastIndex` reset on `enablePattern` is honored by the subsequent `exec`
+ * call. The helper rewrites `enablePattern.lastIndex` between uses; callers
+ * that retain a reference to the regex across rules are responsible for
+ * ensuring each call site uses its own regex instance (the two reset rule
+ * files already satisfy this by defining the patterns locally).
+ *
+ * @param definition Rule metadata describing the diagnostic message id.
+ * @param disablePattern Regex matching the disable call to scan for.
+ * @param enablePattern Regex matching the paired enable call.
+ * @param resetLine Statement appended at the end of the file when the enable
+ *   call is missing after the last disable call.
+ * @param messageText Diagnostic message body shown to the user.
+ * @returns A `Rule.RuleModule` that reports a single diagnostic on the last
+ *   disable call when no matching enable call follows it and offers an
+ *   autofix that appends the reset line at end-of-file.
+ */
+export function createRequireEnabledResetRule(
+    definition: GmlRuleDefinition,
+    disablePattern: RegExp,
+    enablePattern: RegExp,
+    resetLine: string,
+    messageText: string
+): Rule.RuleModule {
+    return Object.freeze({
+        meta: createMeta(definition, { messageText }),
+        create(context) {
+            return Object.freeze({
+                Program() {
+                    const sourceText = context.sourceCode.text;
+                    const disableMatches = [...sourceText.matchAll(disablePattern)];
+                    const lastDisable = disableMatches.at(-1);
+                    if (!lastDisable) {
+                        return;
+                    }
+
+                    const lastDisableIndex = lastDisable.index ?? 0;
+                    const lastDisableEnd = lastDisableIndex + lastDisable[0].length;
+                    enablePattern.lastIndex = lastDisableEnd;
+                    if (enablePattern.exec(sourceText) !== null) {
+                        return;
+                    }
+
+                    context.report({
+                        loc: resolveLocFromIndex(context, sourceText, lastDisableIndex),
+                        messageId: definition.messageId,
+                        fix: (fixer) => {
+                            const prefix = sourceText.endsWith("\n") ? "" : "\n";
+                            return fixer.insertTextAfterRange(
+                                [sourceText.length, sourceText.length],
+                                `${prefix}${resetLine}\n`
+                            );
+                        }
+                    });
+                }
+            });
+        }
+    });
 }

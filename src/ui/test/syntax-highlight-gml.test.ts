@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { highlightGml, tokenizeGml } from "../src/app/syntax-highlight-gml.js";
+import { SyntaxHighlight } from "@gmloop/syntax-highlight";
+
+const { highlightGml, tokenizeGml } = SyntaxHighlight;
 
 void test("tokenizeGml recognizes single-line comments", () => {
     const tokens = tokenizeGml("// this is a comment");
@@ -59,26 +61,20 @@ void test("tokenizeGml recognizes scientific notation numbers", () => {
 });
 
 void test("tokenizeGml recognizes GML keywords", () => {
-    const keywords = [
-        "function",
-        "var",
-        "if",
-        "else",
-        "for",
-        "while",
-        "return",
-        "and",
-        "or",
-        "not",
-        "enum",
-        "static",
-        "globalvar"
-    ];
+    const keywords = ["function", "var", "if", "else", "for", "while", "return", "enum", "static", "globalvar"];
     for (const keyword of keywords) {
         const tokens = tokenizeGml(keyword);
         assert.equal(tokens.length, 1, `Keyword "${keyword}" should produce one token`);
         assert.equal(tokens[0].type, "keyword", `Keyword "${keyword}" should be type "keyword"`);
         assert.equal(tokens[0].text, keyword);
+    }
+});
+
+void test("tokenizeGml recognizes GML word operators", () => {
+    for (const operator of ["and", "or", "not", "xor", "div", "mod"]) {
+        const tokens = tokenizeGml(operator);
+        assert.equal(tokens.length, 1);
+        assert.equal(tokens[0].type, "operator", `Word operator "${operator}" should be type "operator"`);
     }
 });
 
@@ -110,11 +106,11 @@ void test("tokenizeGml recognizes built-in function names with underscores", () 
 void test("tokenizeGml recognizes property access dot", () => {
     const tokens = tokenizeGml("obj.x");
     assert.equal(tokens.length, 3);
-    assert.equal(tokens[0].type, "plain");
+    assert.equal(tokens[0].type, "identifier");
     assert.equal(tokens[0].text, "obj");
     assert.equal(tokens[1].type, "property-access");
     assert.equal(tokens[1].text, ".");
-    assert.equal(tokens[2].type, "plain");
+    assert.equal(tokens[2].type, "property-access");
     assert.equal(tokens[2].text, "x");
 });
 
@@ -168,10 +164,10 @@ void test("tokenizeGml recognizes builtin constants", () => {
     }
 });
 
-void test("tokenizeGml classifies identifiers not followed by parenthesis as plain", () => {
+void test("tokenizeGml classifies identifiers not followed by parenthesis as identifiers", () => {
     const tokens = tokenizeGml("variable_name");
     assert.equal(tokens.length, 1);
-    assert.equal(tokens[0].type, "plain");
+    assert.equal(tokens[0].type, "identifier");
 });
 
 void test("tokenizeGml handles mixed content", () => {
@@ -210,7 +206,7 @@ void test("highlightGml escapes HTML special characters", () => {
     // Each character is its own token, so &lt; and &gt; appear in separate spans
     // but the full escaped string is preserved in the output
     assert.match(html, /<span class="gml-operator">&lt;<\/span>/);
-    assert.match(html, /<span class="gml-plain">script<\/span>/);
+    assert.match(html, /<span class="gml-identifier">script<\/span>/);
     assert.match(html, /<span class="gml-operator">&gt;<\/span>/);
     assert.doesNotMatch(html, /<script>/);
     assert.doesNotMatch(html, /&lt;script&gt;/);
@@ -251,6 +247,6 @@ void test("highlightGml handles comments with special characters", () => {
 void test("tokenizeGml handles identifiers starting with $", () => {
     const tokens = tokenizeGml("$variable");
     assert.equal(tokens.length, 1);
-    assert.equal(tokens[0].type, "plain");
+    assert.equal(tokens[0].type, "identifier");
     assert.equal(tokens[0].text, "$variable");
 });

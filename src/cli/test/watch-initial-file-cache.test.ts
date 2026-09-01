@@ -8,7 +8,7 @@ void describe("watch command initial file cache", () => {
         const filePath = "/project/scripts/player.gml";
         const cachedEntry = {
             content: "function player() { return 1; }",
-            ast: { type: "Program" },
+            mtimeMs: 10,
             symbols: ["gml_Script_player"],
             references: []
         };
@@ -27,7 +27,7 @@ void describe("watch command initial file cache", () => {
                 "/project/scripts/other.gml",
                 {
                     content: "function other() { return 2; }",
-                    ast: { type: "Program" },
+                    mtimeMs: 10,
                     symbols: ["gml_Script_other"],
                     references: []
                 }
@@ -46,7 +46,7 @@ void describe("watch command initial file cache", () => {
                 "/project/scripts/leftover.gml",
                 {
                     content: "function leftover() { return 3; }",
-                    ast: { type: "Program" },
+                    mtimeMs: 10,
                     symbols: ["gml_Script_leftover"],
                     references: []
                 }

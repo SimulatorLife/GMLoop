@@ -6,7 +6,11 @@ import * as assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import {
+    buildBatchHotReloadReport,
+    buildBatchValidationReport,
+    buildCascadeReport,
     buildHotReloadReport,
+    buildRenameImpactReport,
     formatBatchRenamePlanReport,
     formatOccurrencePreview,
     formatRenamePlanReport,
@@ -16,6 +20,7 @@ import {
     type BatchRenamePlanSummary,
     ConflictType,
     OccurrenceKind,
+    type RenameImpactAnalysis,
     type RenamePlanSummary,
     type SymbolOccurrence
 } from "../src/types.js";
@@ -143,7 +148,7 @@ void describe("formatRenamePlanReport", () => {
             workspace: new WorkspaceEdit(),
             validation: {
                 valid: false,
-                errors: ["Symbol not found", "Reserved keyword conflict"],
+                errors: ["Symbol not found", "Reserved GameMaker identifier conflict"],
                 warnings: []
             },
             hotReload: null,
@@ -163,7 +168,7 @@ void describe("formatRenamePlanReport", () => {
                 conflicts: [
                     {
                         type: ConflictType.RESERVED,
-                        message: "'if' is a reserved keyword",
+                        message: "'if' is a reserved GameMaker identifier",
                         severity: "error"
                     }
                 ],
@@ -176,9 +181,9 @@ void describe("formatRenamePlanReport", () => {
         assert.ok(report.includes("Status: INVALID"));
         assert.ok(report.includes("Validation Errors:"));
         assert.ok(report.includes("Symbol not found"));
-        assert.ok(report.includes("Reserved keyword conflict"));
+        assert.ok(report.includes("Reserved GameMaker identifier conflict"));
         assert.ok(report.includes("Conflicts:"));
-        assert.ok(report.includes("'if' is a reserved keyword"));
+        assert.ok(report.includes("'if' is a reserved GameMaker identifier"));
     });
 
     void it("formats plan with warnings", () => {
@@ -451,11 +456,7 @@ void describe("formatBatchRenamePlanReport", () => {
                     totalSymbols: 2,
                     maxDistance: 1,
                     hasCircular: true
-                },
-                // Top-level convenience aliases (promoted from metadata)
-                totalSymbols: 2,
-                maxDistance: 1,
-                hasCircular: true
+                }
             }
         };
 
@@ -504,7 +505,7 @@ void describe("formatBatchRenamePlanReport", () => {
                         conflicts: [
                             {
                                 type: ConflictType.RESERVED,
-                                message: "Reserved keyword"
+                                message: "Reserved GameMaker identifier"
                             }
                         ],
                         warnings: [
@@ -522,7 +523,7 @@ void describe("formatBatchRenamePlanReport", () => {
         const report = formatBatchRenamePlanReport(plan);
 
         assert.ok(report.includes("Conflicts: 1"));
-        assert.ok(report.includes("Reserved keyword"));
+        assert.ok(report.includes("Reserved GameMaker identifier"));
         assert.ok(report.includes("Warnings: 1"));
         assert.ok(report.includes("Large impact"));
     });
@@ -673,5 +674,281 @@ void describe("buildHotReloadReport", () => {
         const result = buildHotReloadReport(validation);
         assert.ok(result !== null);
         assert.deepEqual(result.suggestions, suggestions);
+    });
+});
+
+void describe("buildBatchValidationReport", () => {
+    void it("returns the underlying batch validation fields", () => {
+        const plan: BatchRenamePlanSummary = {
+            workspace: new WorkspaceEdit(),
+            validation: { valid: true, errors: [], warnings: [] },
+            hotReload: null,
+            batchValidation: {
+                valid: false,
+                errors: ["Multiple symbols renamed to same name"],
+                warnings: ["Some warnings"],
+                renameValidations: new Map(),
+                conflictingSets: [["gml/script/scr_a", "gml/script/scr_b"]]
+            },
+            impactAnalyses: new Map(),
+            cascadeResult: null
+        };
+
+        const report = buildBatchValidationReport(plan);
+
+        assert.equal(report.valid, false);
+        assert.deepEqual(report.errors, ["Multiple symbols renamed to same name"]);
+        assert.deepEqual(report.warnings, ["Some warnings"]);
+        assert.deepEqual(report.conflictingSets, [["gml/script/scr_a", "gml/script/scr_b"]]);
+    });
+
+    void it("returns empty collections when the batch has none", () => {
+        const plan: BatchRenamePlanSummary = {
+            workspace: new WorkspaceEdit(),
+            validation: { valid: true, errors: [], warnings: [] },
+            hotReload: null,
+            batchValidation: {
+                valid: true,
+                errors: [],
+                warnings: [],
+                renameValidations: new Map(),
+                conflictingSets: []
+            },
+            impactAnalyses: new Map(),
+            cascadeResult: null
+        };
+
+        const report = buildBatchValidationReport(plan);
+
+        assert.equal(report.valid, true);
+        assert.equal(report.errors.length, 0);
+        assert.equal(report.warnings.length, 0);
+        assert.equal(report.conflictingSets.length, 0);
+    });
+
+    void it("exposes the structured report without callers reaching into plan.batchValidation", () => {
+        // The helper exists precisely to give callers a single immediate
+        // neighbour; verify the returned shape is the adapter, not the
+        // original `BatchRenameValidation` (which would still require
+        // callers to reach into `plan.batchValidation.*`).
+        const plan: BatchRenamePlanSummary = {
+            workspace: new WorkspaceEdit(),
+            validation: { valid: true, errors: [], warnings: [] },
+            hotReload: null,
+            batchValidation: {
+                valid: true,
+                errors: [],
+                warnings: [],
+                renameValidations: new Map(),
+                conflictingSets: []
+            },
+            impactAnalyses: new Map(),
+            cascadeResult: null
+        };
+
+        const report = buildBatchValidationReport(plan);
+
+        // Only the four documented fields should be surfaced; the
+        // adapter deliberately hides `renameValidations` because the
+        // formatter does not consume it.
+        assert.deepEqual(Object.keys(report).sort(), ["conflictingSets", "errors", "valid", "warnings"]);
+    });
+});
+
+void describe("buildCascadeReport", () => {
+    void it("returns null when the plan has no cascade result", () => {
+        const plan: BatchRenamePlanSummary = {
+            workspace: new WorkspaceEdit(),
+            validation: { valid: true, errors: [], warnings: [] },
+            hotReload: null,
+            batchValidation: {
+                valid: true,
+                errors: [],
+                warnings: [],
+                renameValidations: new Map(),
+                conflictingSets: []
+            },
+            impactAnalyses: new Map(),
+            cascadeResult: null
+        };
+
+        assert.equal(buildCascadeReport(plan), null);
+    });
+
+    void it("returns the cascade result when present", () => {
+        const cascade = {
+            cascade: [],
+            order: ["gml/script/scr_a"],
+            circular: [],
+            metadata: { totalSymbols: 1, maxDistance: 0, hasCircular: false }
+        };
+        const plan: BatchRenamePlanSummary = {
+            workspace: new WorkspaceEdit(),
+            validation: { valid: true, errors: [], warnings: [] },
+            hotReload: null,
+            batchValidation: {
+                valid: true,
+                errors: [],
+                warnings: [],
+                renameValidations: new Map(),
+                conflictingSets: []
+            },
+            impactAnalyses: new Map(),
+            cascadeResult: cascade
+        };
+
+        const result = buildCascadeReport(plan);
+
+        assert.ok(result !== null);
+        assert.equal(result.metadata.totalSymbols, 1);
+        assert.equal(result.metadata.maxDistance, 0);
+        assert.equal(result.metadata.hasCircular, false);
+    });
+});
+
+void describe("buildBatchHotReloadReport", () => {
+    void it("returns null when the plan has no hot-reload data", () => {
+        const plan: BatchRenamePlanSummary = {
+            workspace: new WorkspaceEdit(),
+            validation: { valid: true, errors: [], warnings: [] },
+            hotReload: null,
+            batchValidation: {
+                valid: true,
+                errors: [],
+                warnings: [],
+                renameValidations: new Map(),
+                conflictingSets: []
+            },
+            impactAnalyses: new Map(),
+            cascadeResult: null
+        };
+
+        assert.equal(buildBatchHotReloadReport(plan), null);
+    });
+
+    void it("exposes valid, errors, and warnings without navigating plan.hotReload", () => {
+        const plan: BatchRenamePlanSummary = {
+            workspace: new WorkspaceEdit(),
+            validation: { valid: true, errors: [], warnings: [] },
+            hotReload: {
+                valid: false,
+                errors: ["Hot reload blocked"],
+                warnings: ["Restart required"]
+            },
+            batchValidation: {
+                valid: true,
+                errors: [],
+                warnings: [],
+                renameValidations: new Map(),
+                conflictingSets: []
+            },
+            impactAnalyses: new Map(),
+            cascadeResult: null
+        };
+
+        const report = buildBatchHotReloadReport(plan);
+
+        assert.ok(report !== null);
+        assert.equal(report.valid, false);
+        assert.deepEqual(report.errors, ["Hot reload blocked"]);
+        assert.deepEqual(report.warnings, ["Restart required"]);
+    });
+});
+
+void describe("buildRenameImpactReport", () => {
+    void it("exposes every summary field without callers reaching into analysis.summary", () => {
+        const analysis: RenameImpactAnalysis = {
+            valid: true,
+            summary: {
+                symbolId: "gml/script/scr_player",
+                oldName: "scr_player",
+                newName: "scr_hero",
+                affectedFiles: ["scripts/player.gml", "scripts/enemy.gml"],
+                totalOccurrences: 7,
+                definitionCount: 1,
+                referenceCount: 6,
+                hotReloadRequired: true,
+                dependentSymbols: ["gml/script/scr_helper"]
+            },
+            conflicts: [],
+            warnings: []
+        };
+
+        const report = buildRenameImpactReport(analysis);
+
+        assert.equal(report.symbolId, "gml/script/scr_player");
+        assert.equal(report.oldName, "scr_player");
+        assert.equal(report.newName, "scr_hero");
+        assert.deepEqual(report.affectedFiles, ["scripts/player.gml", "scripts/enemy.gml"]);
+        assert.equal(report.totalOccurrences, 7);
+        assert.equal(report.definitionCount, 1);
+        assert.equal(report.referenceCount, 6);
+        assert.equal(report.hotReloadRequired, true);
+        assert.deepEqual(report.dependentSymbols, ["gml/script/scr_helper"]);
+    });
+
+    void it("preserves empty summary fields verbatim", () => {
+        const analysis: RenameImpactAnalysis = {
+            valid: true,
+            summary: {
+                symbolId: "gml/script/scr_empty",
+                oldName: "scr_empty",
+                newName: "scr_empty_new",
+                affectedFiles: [],
+                totalOccurrences: 0,
+                definitionCount: 0,
+                referenceCount: 0,
+                hotReloadRequired: false,
+                dependentSymbols: []
+            },
+            conflicts: [],
+            warnings: []
+        };
+
+        const report = buildRenameImpactReport(analysis);
+
+        assert.equal(report.affectedFiles.length, 0);
+        assert.equal(report.totalOccurrences, 0);
+        assert.equal(report.definitionCount, 0);
+        assert.equal(report.referenceCount, 0);
+        assert.equal(report.hotReloadRequired, false);
+        assert.equal(report.dependentSymbols.length, 0);
+    });
+
+    void it("captures primitive summary fields by value at the moment of construction", () => {
+        const summary = {
+            symbolId: "gml/script/scr_player",
+            oldName: "scr_player",
+            newName: "scr_player_initial",
+            affectedFiles: ["scripts/player.gml"],
+            totalOccurrences: 3,
+            definitionCount: 1,
+            referenceCount: 2,
+            hotReloadRequired: false,
+            dependentSymbols: []
+        };
+        const analysis: RenameImpactAnalysis = {
+            valid: true,
+            summary,
+            conflicts: [],
+            warnings: []
+        };
+
+        const report = buildRenameImpactReport(analysis);
+
+        // Mutate the source after construction. The facade is a fresh
+        // object, so the string and number primitive fields it copied
+        // remain at the values captured at construction time (live
+        // aliasing only applies to the nested array fields, which
+        // remain shared by reference — that matches the existing
+        // sibling facade helpers, e.g. `buildBatchValidationReport`).
+        summary.newName = "scr_player_mutated";
+        summary.totalOccurrences = 999;
+
+        assert.equal(report.newName, "scr_player_initial");
+        assert.equal(report.totalOccurrences, 3);
+        // The array field stays bound to the same array reference,
+        // mirroring the contract of the sibling facade helpers.
+        assert.equal(report.affectedFiles, summary.affectedFiles);
     });
 });

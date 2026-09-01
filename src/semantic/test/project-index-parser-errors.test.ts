@@ -1,31 +1,41 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { formatProjectIndexSyntaxError, getDefaultProjectIndexParser } from "../src/project-index/index.js";
+import { Core } from "@gmloop/core";
 
-void test("project index parser reports syntax errors with context", () => {
-    const parser = getDefaultProjectIndexParser();
+import { buildProjectIndex, formatProjectIndexSyntaxError } from "../src/project-index/index.js";
+import { createTempProjectWorkspace } from "./test-project-helpers.js";
+
+void test("project index parser reports syntax errors with context", async () => {
+    const workspace = await createTempProjectWorkspace("gmloop-parser-error-");
     const invalidSource = ["function example() {", "    var value = ;", "}", ""].join("\n");
+    await workspace.writeProjectFile("objects/example/Step_0.gml", invalidSource);
 
-    assert.throws(
-        () =>
-            parser(invalidSource, {
-                filePath: "objects/example/Step_0.gml",
-                projectRoot: "/project/root"
-            }),
-        (error) => {
-            assert.match(
-                (error as any).message,
-                /Syntax Error \(objects\/example\/Step_0\.gml: line 2, column \d+\): unexpected symbol ';/
-            );
-            assert.ok((error as any).message.includes("2 |     var value = ;"));
-            assert.strictEqual((error as any).filePath, "objects/example/Step_0.gml");
-            assert.strictEqual((error as any).sourceExcerpt, "2 |     var value = ;\n  |                 ^");
-            assert.ok((error as any).message.includes((error as any).sourceExcerpt));
-            assert.ok((error as any).originalMessage?.includes("Syntax Error"));
-            return true;
-        }
-    );
+    try {
+        await assert.rejects(
+            () => buildProjectIndex(workspace.projectRoot, Core.defaultFsFacade),
+            (error: unknown) => {
+                assert.ok(Core.isObjectLike(error));
+                const formattedError = error as {
+                    filePath?: string;
+                    message?: string;
+                    originalMessage?: string;
+                    sourceExcerpt?: string;
+                };
+                assert.match(
+                    formattedError.message ?? "",
+                    /Syntax Error \(objects\/example\/Step_0\.gml: line 2, column \d+\): unexpected symbol ';/
+                );
+                assert.match(formattedError.message ?? "", /2 \| {5}var value = ;/);
+                assert.equal(formattedError.filePath, "objects/example/Step_0.gml");
+                assert.equal(formattedError.sourceExcerpt, "2 |     var value = ;\n  |                 ^");
+                assert.match(formattedError.originalMessage ?? "", /Syntax Error/);
+                return true;
+            }
+        );
+    } finally {
+        await workspace.cleanup();
+    }
 });
 
 void test("syntax error excerpts expand tabs before pointing at the column", () => {

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import path from "node:path";
 import test from "node:test";
 
-import { collectAncestorDirectories, collectUniqueAncestorDirectories } from "../src/shared/ancestor-directories.js";
+import { collectUniqueAncestorDirectories } from "../src/shared/ancestor-directories.js";
 
 void test("collectUniqueAncestorDirectories deduplicates ancestors across inputs", () => {
     const base = path.join(process.cwd(), "tmp", "cli-path-utils", "unique");
@@ -33,12 +33,12 @@ void test("collectUniqueAncestorDirectories accepts a bare string", () => {
     assert.strictEqual(result.includes(expectedRoot), true);
 });
 
-void test("collectAncestorDirectories orders and deduplicates ancestors", () => {
+void test("collectUniqueAncestorDirectories orders and deduplicates ancestors", () => {
     const projectRoot = path.join(process.cwd(), "tmp", "cli-path-utils");
     const nestedFeature = path.join(projectRoot, "src", "features", "core");
     const nestedSibling = path.join(projectRoot, "src", "features", "extras");
 
-    const result = collectAncestorDirectories(nestedFeature, nestedSibling);
+    const result = collectUniqueAncestorDirectories([nestedFeature, nestedSibling]);
 
     const firstChain = [];
     let current = path.resolve(nestedFeature);
@@ -69,9 +69,9 @@ void test("collectAncestorDirectories orders and deduplicates ancestors", () => 
     assert.ok(result.includes(path.parse(result[0]).root));
 });
 
-void test("collectAncestorDirectories skips empty inputs", () => {
+void test("collectUniqueAncestorDirectories skips empty inputs", () => {
     const projectRoot = path.join(process.cwd(), "tmp", "cli-path-utils");
-    const result = collectAncestorDirectories(null, undefined, "", projectRoot);
+    const result = collectUniqueAncestorDirectories([null, undefined, "", projectRoot]);
 
     assert.strictEqual(result[0], path.resolve(projectRoot));
 });

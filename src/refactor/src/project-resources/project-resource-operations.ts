@@ -9,12 +9,15 @@ import {
     type ProjectResourceKindValue,
     requireProjectResourceKind
 } from "./project-resource-kinds.js";
+import { createDefaultInstanceLayer, createDefaultRoomViews } from "./room-metadata-defaults.js";
 
 const RESOURCE_NAME_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/u;
 const EMPTY_PNG_BYTES = Buffer.from(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+tmN0AAAAASUVORK5CYII=",
     "base64"
 );
+// Minimal silent 16-bit mono 44.1kHz WAV file (44-byte header, zero data frames).
+const SILENT_WAV_BYTES = Buffer.from("UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=", "base64");
 
 type ProjectResourceArtifact = Readonly<{
     content: Buffer | string;
@@ -139,6 +142,10 @@ const RESOURCE_TYPE_BY_KIND: Readonly<Record<ProjectResourceKindValue, ResourceT
         resourceDirectory: "scripts",
         resourceType: "GMScript"
     }),
+    [ProjectResourceKind.SOUND]: Object.freeze({
+        resourceDirectory: "sounds",
+        resourceType: "GMSound"
+    }),
     [ProjectResourceKind.SPRITE]: Object.freeze({
         resourceDirectory: "sprites",
         resourceType: "GMSprite"
@@ -166,7 +173,18 @@ async function pathExists(candidatePath: string): Promise<boolean> {
     }
 }
 
-async function resolveProjectManifest(projectRoot: string): Promise<ResolvedProjectManifest> {
+/**
+ * Locate the single `.yyp` project manifest file inside `projectRoot`.
+ *
+ * The returned descriptor carries the absolute file path, a project-root-relative
+ * posix path, and a filename-derived fallback `projectName`. The manifest body
+ * itself is not read here, so callers that need the canonical project name should
+ * also read the document and prefer its `name` field.
+ *
+ * @param projectRoot - Absolute path to the GameMaker project root.
+ * @returns Frozen descriptor describing the located manifest file.
+ */
+export async function resolveProjectManifestFile(projectRoot: string): Promise<ResolvedProjectManifest> {
     const directoryEntries = await readdir(projectRoot, {
         withFileTypes: true
     });
@@ -181,27 +199,42 @@ async function resolveProjectManifest(projectRoot: string): Promise<ResolvedProj
 
     if (manifestFileNames.length > 1) {
         throw new Error(
-            `Found multiple .yyp manifests in '${projectRoot}'. Resource operations require exactly one project manifest.`
+            `Found multiple .yyp manifests in '${projectRoot}'. Project operations require exactly one project manifest.`
         );
     }
 
     const manifestFileName = manifestFileNames[0];
     const manifestAbsolutePath = path.join(projectRoot, manifestFileName);
-    const manifestDocument = await readProjectMetadataDocument(manifestAbsolutePath);
-    const manifestName =
-        Core.getNonEmptyString(manifestDocument.name) ??
-        path.basename(manifestFileName, path.extname(manifestFileName));
 
     return Object.freeze({
         absolutePath: manifestAbsolutePath,
-        projectName: manifestName,
+        projectName: path.basename(manifestFileName, path.extname(manifestFileName)),
         relativePath: Core.toPosixPath(manifestFileName)
     });
 }
 
-async function readProjectMetadataDocument(absolutePath: string): Promise<Record<string, unknown>> {
+/**
+ * Read and parse a GameMaker project metadata document from disk, returning the
+ * raw record (without schema filtering) that downstream code mutates in place.
+ *
+ * @param absolutePath - Absolute path to the `.yy`/`.yyp` metadata file.
+ * @returns The parsed metadata document, including any post-mutation source
+ *   metadata captured by {@link Core.parseProjectMetadataDocumentForMutation}.
+ */
+export async function readProjectMetadataDocument(absolutePath: string): Promise<Record<string, unknown>> {
     const rawContent = await readFile(absolutePath, "utf8");
     return Core.parseProjectMetadataDocumentForMutation(rawContent, absolutePath).document;
+}
+
+async function resolveProjectManifest(projectRoot: string): Promise<ResolvedProjectManifest> {
+    const manifest = await resolveProjectManifestFile(projectRoot);
+    const manifestDocument = await readProjectMetadataDocument(manifest.absolutePath);
+    const projectName = Core.getNonEmptyString(manifestDocument.name) ?? manifest.projectName;
+    return Object.freeze({
+        absolutePath: manifest.absolutePath,
+        projectName,
+        relativePath: manifest.relativePath
+    });
 }
 
 function createProjectResourceContext(
@@ -282,6 +315,16 @@ function replaceResourcePathReferences<TValue>(value: TValue, previousPath: stri
         return value;
     }
 
+    // Boxed primitives (e.g. @bscotch/yy's FixedNumber, which subclasses Number to
+    // carry a fixed-decimal `digits` hint) are object-like but store their payload in
+    // an internal slot rather than an enumerable property. Recursing into them via
+    // Object.entries would drop the wrapped value and keep only incidental own
+    // properties like `digits`, corrupting fields such as a sound's `duration`/`volume`.
+    const objectTag = Object.prototype.toString.call(value);
+    if (objectTag === "[object Number]" || objectTag === "[object String]" || objectTag === "[object Boolean]") {
+        return value;
+    }
+
     const record = value as Record<string, unknown>;
     const output: Record<string, unknown> = {};
     for (const [key, entry] of Object.entries(record)) {
@@ -337,26 +380,6 @@ function createParentReference(context: ProjectResourceContext): { name: string;
         name: context.manifest.projectName,
         path: path.posix.basename(context.manifest.relativePath)
     };
-}
-
-function createDefaultRoomViews(): Array<Record<string, number | boolean | null>> {
-    return Array.from({ length: 8 }, () => ({
-        hborder: 32,
-        hport: 768,
-        hspeed: -1,
-        hview: 768,
-        inherit: false,
-        objectId: null,
-        vborder: 32,
-        visible: false,
-        vspeed: -1,
-        wport: 1024,
-        wview: 1024,
-        xport: 0,
-        xview: 0,
-        yport: 0,
-        yview: 0
-    }));
 }
 
 function createResourceMetadataDocument(context: ProjectResourceContext): Record<string, unknown> {
@@ -420,28 +443,7 @@ function createResourceMetadataDocument(context: ProjectResourceContext): Record
                 instanceCreationOrder: [],
                 isDnd: false,
                 layers: [
-                    {
-                        $GMRInstanceLayer: "",
-                        "%Name": "Instances",
-                        depth: 0,
-                        effectEnabled: true,
-                        effectType: null,
-                        gridX: 32,
-                        gridY: 32,
-                        hierarchyFrozen: false,
-                        inheritLayerDepth: false,
-                        inheritLayerSettings: false,
-                        inheritSubLayers: true,
-                        inheritVisibility: true,
-                        instances: [],
-                        layers: [],
-                        name: "Instances",
-                        properties: [],
-                        resourceType: "GMRInstanceLayer",
-                        resourceVersion: "2.0",
-                        userdefinedDepth: false,
-                        visible: true
-                    },
+                    createDefaultInstanceLayer("Instances", 0),
                     {
                         $GMRBackgroundLayer: "",
                         "%Name": "Background",
@@ -671,6 +673,32 @@ function createResourceMetadataDocument(context: ProjectResourceContext): Record
                 resourceVersion: "2.0"
             };
         }
+        case ProjectResourceKind.SOUND: {
+            return {
+                $GMSound: "v2",
+                "%Name": context.resourceName,
+                audioGroupId: {
+                    name: "audiogroup_default",
+                    path: "audiogroups/audiogroup_default"
+                },
+                bitDepth: 1,
+                channelFormat: 1,
+                compression: 0,
+                compressionQuality: 4,
+                conversionMode: 0,
+                duration: 0,
+                exportDir: "",
+                name: context.resourceName,
+                parent,
+                preload: false,
+                resourcePath: context.resourcePath,
+                resourceType: context.resourceType,
+                resourceVersion: "2.0",
+                sampleRate: 44_100,
+                soundFile: `${context.resourceName}.wav`,
+                volume: 1
+            };
+        }
     }
 }
 
@@ -721,6 +749,13 @@ function createResourceArtifacts(
         artifacts.push({
             path: `${context.resourceDirectory}/${context.resourceName}/${context.resourceName}.png`,
             content: EMPTY_PNG_BYTES
+        });
+    }
+
+    if (context.resourceKind === ProjectResourceKind.SOUND) {
+        artifacts.push({
+            path: `${context.resourceDirectory}/${context.resourceName}/${context.resourceName}.wav`,
+            content: SILENT_WAV_BYTES
         });
     }
 
@@ -887,6 +922,12 @@ function collectFallbackDeletionPaths(
         case ProjectResourceKind.FONT: {
             return {
                 deletedPaths: [context.resourcePath, `${resourceDirectory}/${context.resourceName}.png`],
+                warnings
+            };
+        }
+        case ProjectResourceKind.SOUND: {
+            return {
+                deletedPaths: [context.resourcePath, `${resourceDirectory}/${context.resourceName}.wav`],
                 warnings
             };
         }

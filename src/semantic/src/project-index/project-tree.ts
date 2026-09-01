@@ -10,12 +10,19 @@ import {
     resolveProjectFileCategory
 } from "./project-file-categories.js";
 
-const PROJECT_TREE_EXCLUDED_DIRECTORY_SEGMENTS = new Set<string>([".git", ".gmcache", "node_modules"]);
+const PROJECT_TREE_EXCLUDED_DIRECTORY_SEGMENTS = new Set<string>([
+    ".git",
+    ".gmcache",
+    ".gmloop",
+    "cache",
+    "node_modules"
+]);
 
-function createProjectTreeRecord(absolutePath, relativePosix) {
+function createProjectTreeRecord(absolutePath, relativePosix, mtimeMs = null) {
     return {
         absolutePath,
-        relativePath: relativePosix
+        relativePath: relativePosix,
+        mtimeMs
     };
 }
 
@@ -38,13 +45,13 @@ function createProjectTreeCollector(metrics = null) {
         }
     }
 
-    function register(relativePosix, absolutePath) {
+    function register(relativePosix, absolutePath, mtimeMs = null) {
         const category = resolveProjectFileCategory(relativePosix);
         if (!category) {
             return;
         }
 
-        recordFile(category, createProjectTreeRecord(absolutePath, relativePosix));
+        recordFile(category, createProjectTreeRecord(absolutePath, relativePosix, mtimeMs));
     }
 
     function snapshot() {
@@ -132,32 +139,42 @@ async function processDirectoryEntries({
     ensureNotAborted,
     metrics
 }) {
-    await Core.runSequentially(entries, async (entry) => {
-        ensureNotAborted();
-        const descriptor = createDirectoryEntryDescriptor(directoryContext, entry, projectRoot);
-        if (Core.isDirectoryExcludedBySegments(descriptor.absolutePath, PROJECT_TREE_EXCLUDED_DIRECTORY_SEGMENTS, [])) {
-            metrics?.counters?.increment("io.skippedExcludedDirectories");
-            return;
-        }
+    await Core.runInParallelWithLimit(
+        entries,
+        async (entry) => {
+            ensureNotAborted();
+            const descriptor = createDirectoryEntryDescriptor(directoryContext, entry, projectRoot);
+            if (
+                Core.isDirectoryExcludedBySegments(
+                    descriptor.absolutePath,
+                    PROJECT_TREE_EXCLUDED_DIRECTORY_SEGMENTS,
+                    []
+                )
+            ) {
+                metrics?.counters?.increment("io.skippedExcludedDirectories");
+                return;
+            }
 
-        const stats = await resolveEntryStats({
-            absolutePath: descriptor.absolutePath,
-            fsFacade,
-            ensureNotAborted,
-            metrics
-        });
+            const stats = await resolveEntryStats({
+                absolutePath: descriptor.absolutePath,
+                fsFacade,
+                ensureNotAborted,
+                metrics
+            });
 
-        if (!stats) {
-            return;
-        }
+            if (!stats) {
+                return;
+            }
 
-        if (isDirectoryStat(stats)) {
-            traversal.enqueue(descriptor.relativePath);
-            return;
-        }
+            if (isDirectoryStat(stats)) {
+                traversal.enqueue(descriptor.relativePath);
+                return;
+            }
 
-        collector.register(descriptor.relativePosix, descriptor.absolutePath);
-    });
+            collector.register(descriptor.relativePosix, descriptor.absolutePath, stats?.mtimeMs ?? null);
+        },
+        32
+    );
 }
 
 export async function scanProjectTree(

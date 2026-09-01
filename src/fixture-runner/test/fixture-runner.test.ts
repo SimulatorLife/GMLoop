@@ -80,6 +80,33 @@ void test("loadFixtureProjectConfig rejects invalid fixture assertion values", a
     }
 });
 
+void test("loadFixtureProjectConfig rejects unsafe expected text file names", async () => {
+    const rootPath = await mkdtemp(path.join(os.tmpdir(), "fixture-runner-config-invalid-expected-text-"));
+
+    try {
+        for (const [caseId, expectedTextFile] of [
+            ["parent-path", "../expected.txt"],
+            ["nested-path", "nested/expected.txt"],
+            ["protected-gml", "expected.gml"],
+            ["alternate-gml", "expected.current.gml"]
+        ]) {
+            const configPath = path.join(rootPath, `${caseId}.json`);
+            await writeFile(
+                configPath,
+                `${JSON.stringify({ fixture: { kind: "format", expectedTextFile } }, null, 2)}\n`,
+                "utf8"
+            );
+
+            await assert.rejects(
+                FixtureRunner.loadFixtureProjectConfig(configPath),
+                /gmloop\.json fixture config\.expectedTextFile must name a non-GML file in the fixture case directory/u
+            );
+        }
+    } finally {
+        await rm(rootPath, { recursive: true, force: true });
+    }
+});
+
 void test("discoverFixtureCases normalizes directory-per-case fixtures", async () => {
     const rootPath = await mkdtemp(path.join(os.tmpdir(), "fixture-runner-discovery-"));
     await createTextFixtureCase(
@@ -187,6 +214,48 @@ void test("discoverFixtureCases assigns fixture paths by kind", async () => {
         assert.equal(refactorCase.expectedFilePath, null);
         assert.equal(refactorCase.projectDirectoryPath, path.join(rootPath, "refactor-project-tree", "project"));
         assert.equal(refactorCase.expectedDirectoryPath, path.join(rootPath, "refactor-project-tree", "expected"));
+    } finally {
+        await rm(rootPath, { recursive: true, force: true });
+    }
+});
+
+void test("discoverFixtureCases supports non-GML expected text files for transform fixtures", async () => {
+    const rootPath = await mkdtemp(path.join(os.tmpdir(), "fixture-runner-expected-text-"));
+    const casePath = path.join(rootPath, "format-transform");
+    await mkdir(casePath, { recursive: true });
+    await writeFile(
+        path.join(casePath, "gmloop.json"),
+        `${JSON.stringify({ fixture: { kind: "format", expectedTextFile: "expected.current.txt" } }, null, 2)}\n`,
+        "utf8"
+    );
+    await writeFile(path.join(casePath, "input.gml"), "input\n", "utf8");
+    await writeFile(path.join(casePath, "expected.current.txt"), "output\n", "utf8");
+
+    try {
+        const fixtureCases = await FixtureRunner.discoverFixtureCases(rootPath);
+        assert.equal(fixtureCases.length, 1);
+        assert.equal(fixtureCases[0]?.assertion, "transform");
+        assert.equal(fixtureCases[0]?.expectedFilePath, path.join(casePath, "expected.current.txt"));
+
+        const result = await FixtureRunner.runFixtureSuite({
+            fixtureRoot: rootPath,
+            adapter: {
+                workspaceName: "format",
+                suiteName: "format fixtures",
+                supports(kind) {
+                    return kind === "format";
+                },
+                async run({ runProfiledStage }) {
+                    return await runProfiledStage("format", async () => ({
+                        resultKind: "text",
+                        outputText: "output\n",
+                        changed: true
+                    }));
+                }
+            }
+        });
+
+        assert.deepEqual(result.failures, []);
     } finally {
         await rm(rootPath, { recursive: true, force: true });
     }
@@ -506,6 +575,10 @@ void test("runFixtureSuite continues collecting failures for profiling mode", as
         assert.equal(result.executionResults.length, 1);
         assert.equal(result.failures.length, 1);
         assert.equal(result.failures[0]?.fixtureCase.caseId, "failing");
+        const failure = result.failures[0]?.error;
+        assert.ok(failure instanceof Error);
+        assert.match(failure.message, /Fixture failing failed in format: /u);
+        assert.ok(failure.cause instanceof Error);
         const report = collector.createReport();
         assert.equal(report.entries.length, 2);
         assert.equal(
@@ -839,6 +912,53 @@ void test("fixture stage timing rejects out-of-order stage execution", async () 
             }),
             /ran out of order/u
         );
+    } finally {
+        await rm(rootPath, { recursive: true, force: true });
+    }
+});
+
+void test("resolveFixtureCaseProfileBudgets surfaces nested budgets via the FixtureCase facade", async () => {
+    const rootPath = await mkdtemp(path.join(os.tmpdir(), "fixture-runner-budgets-resolver-"));
+
+    try {
+        await createTextFixtureCase(
+            rootPath,
+            "with-budgets",
+            {
+                fixture: {
+                    kind: "format",
+                    profile: { budgets: { durationMs: { total: 100 } } }
+                }
+            },
+            "input\n",
+            "input\n"
+        );
+        await createTextFixtureCase(
+            rootPath,
+            "profile-without-budgets",
+            { fixture: { kind: "format", profile: {} } },
+            "input\n",
+            "input\n"
+        );
+        await createTextFixtureCase(rootPath, "no-profile", { fixture: { kind: "format" } }, "input\n", "input\n");
+
+        const discovered = await FixtureRunner.discoverFixtureCases(rootPath);
+        const byId = new Map(discovered.map((fixtureCase) => [fixtureCase.caseId, fixtureCase]));
+        const withBudgets = byId.get("with-budgets");
+        const profileWithoutBudgets = byId.get("profile-without-budgets");
+        const noProfile = byId.get("no-profile");
+
+        assert.notEqual(withBudgets, undefined, "Expected to discover the budgets fixture case.");
+        assert.notEqual(
+            profileWithoutBudgets,
+            undefined,
+            "Expected to discover the profile-without-budgets fixture case."
+        );
+        assert.notEqual(noProfile, undefined, "Expected to discover the no-profile fixture case.");
+
+        assert.deepEqual(FixtureRunner.resolveFixtureCaseProfileBudgets(withBudgets), { durationMs: { total: 100 } });
+        assert.equal(FixtureRunner.resolveFixtureCaseProfileBudgets(profileWithoutBudgets), null);
+        assert.equal(FixtureRunner.resolveFixtureCaseProfileBudgets(noProfile), null);
     } finally {
         await rm(rootPath, { recursive: true, force: true });
     }

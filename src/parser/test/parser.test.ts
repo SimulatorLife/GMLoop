@@ -8,8 +8,38 @@ import { Core } from "@gmloop/core";
 
 import GameMakerASTBuilder from "../src/ast/gml-ast-builder.js";
 import { GameMakerSyntaxError } from "../src/ast/gml-syntax-error.js";
-import { GMLParser } from "../src/gml-parser.js";
-import { defaultParserOptions, type ParserOptions, type ScopeTracker } from "../src/types/index.js";
+import { extractGmlFunctionNames, GMLParser } from "../src/gml-parser.js";
+import { defaultParserOptions, type ParserOptions } from "../src/types/index.js";
+
+void describe("parser prediction state lifecycle", () => {
+    void it("parses distinct precedence-heavy sources after each parse releases ANTLR state", () => {
+        for (let index = 0; index < 12; index += 1) {
+            const source = `${`function prediction_state_${index}() {
+                var value = ${index};
+                value = value + (value > 0 ? 1 : 0);
+                return value;
+            }`}
+${"\n".repeat(8001)}`;
+
+            const ast = GMLParser.parse(source, { getComments: false, getLocations: false });
+            assert.equal(ast.type, "Program");
+            assert.equal(ast.body.length, 1);
+        }
+    });
+});
+
+void describe("lightweight GML metadata", () => {
+    void it("extracts named functions without treating comments or constructors as declarations", () => {
+        const source = `// function ignored_comment() {}
+function first_name() {
+    return function (value) { return value; };
+}
+function second_name() {}
+`;
+
+        assert.deepEqual(extractGmlFunctionNames(source), ["first_name", "second_name"]);
+    });
+});
 
 const currentDirectory = fileURLToPath(new URL(".", import.meta.url));
 const fixturesDirectory = path.join(currentDirectory, "../../test/input");
@@ -122,7 +152,6 @@ function collectNodesByType(node, type) {
 
 const { fileNames: fixtureNames, fixtureContentsByName } = await loadFixtures();
 const expectedFailures = new Set<string>();
-const successfulFixture = fixtureNames.find((fixtureName) => !expectedFailures.has(fixtureName));
 const fixtureParserOptions: ParserOptions = {
     ...defaultParserOptions,
     getComments: false,
@@ -130,16 +159,54 @@ const fixtureParserOptions: ParserOptions = {
     simplifyLocations: false
 };
 
+// Parse a small synthetic source once at module load to verify the parser's
+// `getLocations: false` option strips location metadata. The previous
+// implementation parsed the largest real-world fixture (≈1k lines, ≈2s on a
+// warm cache; up to 3.4s cold) for this check, which dominated this test
+// file's module-load cost. The assertion only inspects the resulting AST for
+// the absence of `start`/`end` properties, so a small but realistic source —
+// a function declaration with a body, parameters, a local variable, and a
+// return — exercises the same option-stripping path. The main fixture loop
+// below still parses every real-world fixture end-to-end, preserving full
+// coverage of the parser's input surface.
+const locationStrippingProbeSource = [
+    "function example(value, factor) {",
+    "    var total = value * factor + 1;",
+    "    return total;",
+    "}",
+    ""
+].join("\n");
+const locationStrippingProbeAst = GMLParser.parse(locationStrippingProbeSource, { getLocations: false });
+
+// Pre-parse every expected-success fixture once at module load so each `it`
+// test below only needs to verify the cached AST shape. The previous
+// implementation parsed each fixture inside its own test, paying the
+// ANTLR-driven per-invocation cost (plus a one-shot cold-start penalty) 17
+// times. Hoisting the parse work keeps the same coverage — every fixture
+// still produces a Program with an array body — while letting the runtime
+// warm up once. Expected-failure fixtures (none today) are intentionally
+// excluded here so the test loop can still exercise the throw path
+// on demand.
+const fixtureAsts = new Map<string, ReturnType<typeof GMLParser.parse>>();
+for (const fixtureName of fixtureNames) {
+    if (expectedFailures.has(fixtureName)) {
+        continue;
+    }
+    const source = fixtureContentsByName.get(fixtureName);
+    if (!source) {
+        throw new Error(`Fixture '${fixtureName}' was not preloaded.`);
+    }
+    fixtureAsts.set(fixtureName, GMLParser.parse(source, fixtureParserOptions));
+}
+
 void describe("GameMaker parser fixtures", () => {
     for (const fixtureName of fixtureNames) {
-        void it(`parses ${fixtureName}`, async () => {
-            const source = fixtureContentsByName.get(fixtureName);
-            if (!source) {
-                throw new Error(`Fixture '${fixtureName}' was not preloaded.`);
-            }
-            const shouldFail = expectedFailures.has(fixtureName);
-
-            if (shouldFail) {
+        void it(`parses ${fixtureName}`, () => {
+            if (expectedFailures.has(fixtureName)) {
+                const source = fixtureContentsByName.get(fixtureName);
+                if (!source) {
+                    throw new Error(`Fixture '${fixtureName}' was not preloaded.`);
+                }
                 assert.throws(
                     () =>
                         parseFixture(source, {
@@ -152,7 +219,7 @@ void describe("GameMaker parser fixtures", () => {
                 return;
             }
 
-            const ast = parseFixture(source, { options: fixtureParserOptions });
+            const ast = fixtureAsts.get(fixtureName);
 
             assert.ok(ast, `Parser returned no AST for ${fixtureName}.`);
             assert.strictEqual(ast.type, "Program", `Unexpected root node type for ${fixtureName}.`);
@@ -220,22 +287,150 @@ void describe("GameMaker parser fixtures", () => {
         assert.doesNotThrow(() => parseFixture(source));
     });
 
-    void it("omits location metadata when disabled", async () => {
-        const fixtureName = successfulFixture;
+    void it("parses lowercase GML keyword operators", () => {
+        const source = [
+            "function test_operators(left, right, extra) {",
+            "    value = !left or right and extra xor left;",
+            "    amount = total div 2 mod 3;",
+            "}",
+            ""
+        ].join("\n");
 
-        assert.ok(fixtureName, "Expected at least one parser fixture to be present.");
+        assert.doesNotThrow(() => parseFixture(source));
+    });
 
-        const source = fixtureContentsByName.get(fixtureName);
-        if (!source) {
-            throw new Error(`Fixture '${fixtureName}' was not preloaded.`);
+    void it("rejects uppercase GML keyword operators", () => {
+        const sources = [
+            "function test_and(left, right) {\n    if (left AND right) {}\n}\n",
+            "function test_or(left, right) {\n    if (left OR right) {}\n}\n",
+            "function test_xor(left, right) {\n    if (left XOR right) {}\n}\n",
+            "function test_div(left, right) {\n    if (left DIV right) {}\n}\n",
+            "function test_mod(left, right) {\n    if (left MOD right) {}\n}\n"
+        ];
+
+        for (const source of sources) {
+            assert.throws(() => parseFixture(source, { suppressErrors: true }), GameMakerSyntaxError);
         }
-        const astWithoutLocations = parseFixture(source, {
-            options: { getLocations: false }
-        });
+    });
 
-        assert.ok(astWithoutLocations, "Parser returned no AST when locations were disabled.");
+    void it("parses logical keyword operators 'not' and 'NOT'", () => {
+        const lowercaseSource = "function test_not(left) {\n    if (not left) {}\n}\n";
+        const uppercaseSource = "function test_not(left) {\n    if (NOT left) {}\n}\n";
+
+        assert.doesNotThrow(() => parseFixture(lowercaseSource));
+        assert.doesNotThrow(() => parseFixture(uppercaseSource));
+
+        const ast = parseFixture(lowercaseSource);
+        const statement = ast.body[0].body.body[0];
+        const testExpr = statement.test.type === "ParenthesizedExpression" ? statement.test.expression : statement.test;
+        assert.strictEqual(testExpr.type, "UnaryExpression");
+        assert.strictEqual(testExpr.operator, "!");
+    });
+
+    void it("rejects symbolic operators recovered as identifier statements", () => {
+        assert.throws(() => parseFixture("invalid %%%%", { suppressErrors: true }), {
+            name: "GameMakerSyntaxError",
+            message: /unexpected symbol '%'.*identifier/
+        });
+    });
+
+    void it("allows uppercase operator-looking names as identifiers", () => {
+        const source = [
+            "#macro NOT 1",
+            "#macro AND 2",
+            "function OR(XOR, DIV = 1) {",
+            "    var NOT = DIV;",
+            "    var AND = OR;",
+            "    var MOD = NOT + AND;",
+            "    return XOR + DIV + MOD;",
+            "}",
+            "function use_operator_names() {",
+            "    var NOT = 1;",
+            "    var AND = 2;",
+            "    var OR = 3;",
+            "    var XOR = OR(NOT, AND);",
+            "    var DIV = {",
+            "        NOT: NOT,",
+            "        AND: AND,",
+            "        OR: OR,",
+            "        XOR: XOR",
+            "    };",
+            "    enum MOD {",
+            "        NOT = 1,",
+            "        AND,",
+            "        OR,",
+            "        XOR",
+            "    }",
+            "    return DIV.NOT + MOD.XOR;",
+            "}",
+            ""
+        ].join("\n");
+
+        assert.doesNotThrow(() => parseFixture(source));
+    });
+
+    void it("allows lowercase operator-looking names as identifiers outside operator positions", () => {
+        const source = [
+            "#macro not 1",
+            "#macro and 2",
+            "function not(and, or = 1) {",
+            "    var xor = or;",
+            "    var div = xor;",
+            "    var mod = div;",
+            "    return and + or + xor + div + mod;",
+            "}",
+            "function use_operator_names() {",
+            "    var not = 1;",
+            "    var and = 2;",
+            "    var or = 3;",
+            "    var xor = not(and, or);",
+            "    var div = {",
+            "        not: not,",
+            "        and: and,",
+            "        or: or,",
+            "        xor: xor",
+            "    };",
+            "    enum mod {",
+            "        not = 1,",
+            "        and,",
+            "        or,",
+            "        xor",
+            "    }",
+            "    return div.not + mod.xor;",
+            "}",
+            ""
+        ].join("\n");
+
+        assert.doesNotThrow(() => parseFixture(source));
+    });
+
+    void it("parses lowercase 'not' call expressions", () => {
+        const source = [
+            "function not(value) {",
+            "    return value;",
+            "}",
+            "function use_not(value) {",
+            "    var called = not(value);",
+            "}",
+            ""
+        ].join("\n");
+
+        const ast = parseFixture(source);
+        const calls = collectNodesByType(ast, "CallExpression");
+
+        assert.ok(
+            calls.some((call) => call.object?.type === "Identifier" && call.object.name === "not"),
+            "Expected not(value) to parse as a call expression."
+        );
+    });
+
+    void it("omits location metadata when disabled", () => {
+        assert.ok(
+            locationStrippingProbeAst,
+            "Parser returned no AST for the location-stripping probe when locations were disabled."
+        );
         assert.strictEqual(
-            hasLocationInformation(astWithoutLocations),
+            hasLocationInformation(locationStrippingProbeAst),
             false,
             "AST unexpectedly contains location metadata when getLocations is false."
         );
@@ -275,6 +470,14 @@ void describe("GameMaker parser fixtures", () => {
         assert.equal(parser.options.getLocations, true);
         assert.equal(parser.options.attachFunctionDocComments, true);
         assert.equal(parser.options.sllPredictionMaxSourceLength, defaultParserOptions.sllPredictionMaxSourceLength);
+        assert.equal(
+            parser.options.predictionCacheReleaseMaxSourceLength,
+            defaultParserOptions.predictionCacheReleaseMaxSourceLength
+        );
+        assert.equal(
+            parser.options.predictionCacheReleaseInterval,
+            defaultParserOptions.predictionCacheReleaseInterval
+        );
         assert.equal(parser.options.astFormat, "gml");
     });
 
@@ -300,6 +503,54 @@ void describe("GameMaker parser fixtures", () => {
         });
 
         assert.equal(parser.options.sllPredictionMaxSourceLength, defaultParserOptions.sllPredictionMaxSourceLength);
+    });
+
+    void it("honors an explicit prediction-cache release size threshold override", () => {
+        const parser = new GMLParser("x = 1;", { predictionCacheReleaseMaxSourceLength: 32 });
+
+        assert.equal(parser.options.predictionCacheReleaseMaxSourceLength, 32);
+    });
+
+    void it("treats a prediction-cache release size threshold of 0 as unset", () => {
+        const parser = new GMLParser("x = 1;", { predictionCacheReleaseMaxSourceLength: 0 });
+
+        assert.equal(
+            parser.options.predictionCacheReleaseMaxSourceLength,
+            defaultParserOptions.predictionCacheReleaseMaxSourceLength
+        );
+    });
+
+    void it("falls back to defaults when the prediction-cache release size threshold is invalid", () => {
+        const parser = new GMLParser("x = 1;", { predictionCacheReleaseMaxSourceLength: Number.NaN });
+
+        assert.equal(
+            parser.options.predictionCacheReleaseMaxSourceLength,
+            defaultParserOptions.predictionCacheReleaseMaxSourceLength
+        );
+    });
+
+    void it("honors an explicit prediction-cache release interval override", () => {
+        const parser = new GMLParser("x = 1;", { predictionCacheReleaseInterval: 4 });
+
+        assert.equal(parser.options.predictionCacheReleaseInterval, 4);
+    });
+
+    void it("treats a prediction-cache release interval of 0 as unset", () => {
+        const parser = new GMLParser("x = 1;", { predictionCacheReleaseInterval: 0 });
+
+        assert.equal(
+            parser.options.predictionCacheReleaseInterval,
+            defaultParserOptions.predictionCacheReleaseInterval
+        );
+    });
+
+    void it("falls back to defaults when the prediction-cache release interval is invalid", () => {
+        const parser = new GMLParser("x = 1;", { predictionCacheReleaseInterval: Number.NaN });
+
+        assert.equal(
+            parser.options.predictionCacheReleaseInterval,
+            defaultParserOptions.predictionCacheReleaseInterval
+        );
     });
 
     void it("counts CRLF sequences as a single line break", () => {
@@ -638,6 +889,28 @@ void describe("GameMaker parser fixtures", () => {
         );
     });
 
+    void it("parses keyword-like names after member dots", () => {
+        const source = "function demo(vector, amount) {\n  return vector.Div(amount);\n}\n";
+        const ast = parseFixture(source, {
+            options: { getLocations: true, simplifyLocations: false }
+        });
+
+        const memberExpressions = collectNodesByType(ast, "MemberDotExpression");
+        const divMemberExpression = memberExpressions.find(
+            (memberExpression) => memberExpression.property?.name === "Div"
+        );
+
+        assert.ok(divMemberExpression, "Expected .Div to parse as a member-dot expression.");
+
+        const sourceOffset = source.indexOf(".Div");
+        assert.ok(sourceOffset !== -1, "Unable to locate .Div in source.");
+        assert.strictEqual(
+            Core.getNodeStartIndex(divMemberExpression.property),
+            sourceOffset + 1,
+            "Keyword-like member property should keep the property token location."
+        );
+    });
+
     void it("parses assignments that target member access on call results", () => {
         const source = 'set_mapping(gp_shoulderrb, 4, __INPUT_MAPPING.AXIS, "righttrigger").extended_range = true;\n';
         const ast = parseFixture(source, {
@@ -904,36 +1177,150 @@ switch (x) {
         assert.doesNotThrow(() => GMLParser.parse(source));
     });
 
-    void it("throws when scope tracking is enabled without a scope tracker factory", () => {
-        const source = "var value = 1;";
+    void it("returns syntax identifiers without semantic binding metadata", () => {
+        const ast = GMLParser.parse("globalvar score; score = global.score;");
+        const identifiers: Array<Record<string, unknown>> = [];
 
-        assert.throws(
-            () =>
-                parseFixture(source, {
-                    options: {
-                        scopeTrackerOptions: {
-                            enabled: true,
-                            getIdentifierMetadata: false
-                        }
-                    }
-                }),
-            /Invalid createScopeTracker function\./
-        );
+        Core.traverseAst(ast, {
+            enter(node) {
+                if (node.type === "Identifier") {
+                    identifiers.push(node as Record<string, unknown>);
+                }
+            }
+        });
+
+        assert.ok(identifiers.length > 0);
+        for (const identifier of identifiers) {
+            assert.equal("classifications" in identifier, false);
+            assert.equal("declaration" in identifier, false);
+            assert.equal("isGlobalIdentifier" in identifier, false);
+            assert.equal("scopeId" in identifier, false);
+        }
     });
 
-    void it("ignores an invalid scope tracker factory when scope tracking is disabled", () => {
-        const source = "var value = 1;";
+    void it("allows 'new' to be used as an identifier or function argument", () => {
+        const sources = [
+            "ai.set_target(new, TargetInstance(plyr_inst));",
+            "var new = true;",
+            "self.new = true;",
+            "new MyStruct();",
+            "return _add_shape(new, ColmeshDynamic(shape, matrix));"
+        ];
 
-        assert.doesNotThrow(() =>
-            parseFixture(source, {
-                options: {
-                    scopeTrackerOptions: {
-                        enabled: false,
-                        getIdentifierMetadata: false,
-                        createScopeTracker: "not-a-function" as unknown as () => ScopeTracker | null
+        for (const source of sources) {
+            assert.doesNotThrow(() => parseFixture(source), `Failed to parse: ${source}`);
+            const ast = parseFixture(source);
+            assert.ok(ast);
+            assert.equal(ast.type, "Program");
+        }
+    });
+
+    void it("parses logical 'not' / 'NOT' before various expression start characters", () => {
+        const sources = [
+            "if (not 1) {}",
+            "if (NOT 0.5) {}",
+            "if (not .5) {}",
+            "if (not $FF) {}",
+            "if (NOT 0x10) {}",
+            "if (NOT !value) {}",
+            "if (not ~value) {}",
+            'if (not "hello") {}',
+            "if (not [1, 2]) {}",
+            "if (not {a: 1}) {}"
+        ];
+
+        for (const source of sources) {
+            assert.doesNotThrow(() => GMLParser.parse(source), `Failed to parse: ${source}`);
+        }
+    });
+
+    void it("resolves enum member initializers across every supported source", () => {
+        function collectEnumMembers(source: string) {
+            const ast = GMLParser.parse(source, { simplifyLocations: false });
+            const members: Array<Record<string, unknown>> = [];
+            Core.traverseAst(ast, {
+                enter(node) {
+                    if (node && typeof node === "object" && node.type === "EnumMember") {
+                        members.push(node as unknown as Record<string, unknown>);
                     }
                 }
-            })
+            });
+            return members;
+        }
+
+        const literalCases: Array<{
+            label: string;
+            source: string;
+            expectedInitializers: ReadonlyArray<unknown>;
+            expectedCount: number;
+        }> = [
+            {
+                label: "integer literals",
+                source: ["enum E {", "    A = 1,", "    B,", "    C = 4", "}", ""].join("\n"),
+                expectedInitializers: ["1", null, "4"],
+                expectedCount: 3
+            },
+            {
+                label: "hexadecimal literals",
+                source: ["enum H {", "    A = $FF,", "    B = $10", "}", ""].join("\n"),
+                expectedInitializers: ["$FF", "$10"],
+                expectedCount: 2
+            },
+            {
+                label: "binary literals",
+                source: ["enum B {", "    A = 0b1010,", "    B = 0b1100", "}", ""].join("\n"),
+                expectedInitializers: ["0b1010", "0b1100"],
+                expectedCount: 2
+            }
+        ];
+
+        for (const { label, source, expectedInitializers, expectedCount } of literalCases) {
+            const members = collectEnumMembers(source);
+            const initializers = members.map((member) => member.initializer ?? null);
+            assert.deepStrictEqual(
+                initializers,
+                expectedInitializers,
+                `Expected ${label} to surface initializers verbatim from the source text.`
+            );
+            assert.strictEqual(
+                members.length,
+                expectedCount,
+                `Expected ${label} to yield ${expectedCount} enum member(s).`
+            );
+        }
+
+        const inheritedSource = ["enum I {", "    A = 1,", "    B,", "    C", "}", ""].join("\n");
+        const inheritedMembers = collectEnumMembers(inheritedSource);
+        assert.strictEqual(inheritedMembers.length, 3, "Expected three enum members for the inheritance case.");
+        assert.deepStrictEqual(
+            inheritedMembers.map((member) => member.initializer ?? null),
+            ["1", null, null],
+            "Implicit-inheritance enum members should yield a null initializer."
         );
+
+        const expressionSource = ["enum X {", "    A = 1 + 2,", "    B = 3 * 4", "}", ""].join("\n");
+        const expressionMembers = collectEnumMembers(expressionSource);
+        assert.strictEqual(
+            expressionMembers.length,
+            2,
+            "Expected the expression initializer case to yield two enum members."
+        );
+        expressionMembers.forEach((member, index) => {
+            const initializer = member.initializer as Record<string, unknown> | null;
+            assert.ok(
+                initializer && typeof initializer === "object",
+                "Complex expression initializers should be preserved as AST nodes."
+            );
+            assert.strictEqual(
+                initializer.type,
+                "BinaryExpression",
+                "Multi-token initializers should arrive as BinaryExpression nodes."
+            );
+            assert.strictEqual(
+                initializer._enumInitializerText,
+                index === 0 ? "1+2" : "3*4",
+                "AST-backed initializers should carry the verbatim source text for downstream formatters."
+            );
+        });
     });
 });

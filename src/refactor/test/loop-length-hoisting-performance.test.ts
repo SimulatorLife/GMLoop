@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { performance } from "node:perf_hooks";
 import test from "node:test";
 
-import { applyLoopLengthHoistingCodemod } from "../src/codemods/loop-length-hoisting/index.js";
+import { applyLoopLengthHoistingCodemod } from "../src/codemods/loop-length-hoisting-codemod.js";
 
 const SPARSE_FILE_COUNT = 10_000;
 const SPARSE_PERFORMANCE_THRESHOLD_MS = 120;

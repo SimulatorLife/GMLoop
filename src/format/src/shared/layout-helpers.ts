@@ -82,12 +82,27 @@ export function getNextNonWhitespaceCharacter(text: string | null | undefined, s
 }
 
 // ---------------------------------------------------------------------------
-// Private helpers
+// Internal helpers
 // ---------------------------------------------------------------------------
 
+/**
+ * Fallback used by {@link isWhitespaceCharacterCode} for non-ASCII code
+ * points. Cached as a module-level constant so the regex is only compiled
+ * once.
+ */
 const UNICODE_WHITESPACE_REGEX = /\s/;
 
-function isWhitespaceCharacterCode(charCode: number): boolean {
+/**
+ * Return whether the provided character code is a Unicode whitespace code
+ * point. Uses a fast ASCII branch for the common case and falls back to the
+ * Unicode `\s` regex for higher code points (line/paragraph separators,
+ * non-breaking spaces, etc.).
+ *
+ * Used by:
+ * - countTrailingBlankLines / getNextNonWhitespaceCharacter above
+ * - semicolons.ts – to decide which characters the semicolon cleanup skips
+ */
+export function isWhitespaceCharacterCode(charCode: number): boolean {
     if (charCode < 0x80) {
         return charCode === 0x20 || (charCode >= 0x09 && charCode <= 0x0d);
     }

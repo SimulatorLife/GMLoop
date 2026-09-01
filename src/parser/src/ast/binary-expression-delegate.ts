@@ -86,7 +86,7 @@ export default class BinaryExpressionDelegate {
             return visit(ctx);
         }
 
-        const operator = operatorToken.getText();
+        const operator = operatorToken.getText().toLowerCase();
 
         // In GML, the single-equals token can represent assignment semantics.
         // Parsing it as a BinaryExpression would incorrectly treat chained

@@ -8,7 +8,7 @@
 
 import { Core } from "@gmloop/core";
 
-const { getErrorMessage } = Core;
+import { DEFAULT_LIVE_RELOAD_STATUS_HOST, DEFAULT_LIVE_RELOAD_STATUS_PORT } from "../../modules/live-reload/config.js";
 
 export const WATCH_STATUS_OUTPUT_FORMATS = Object.freeze({
     PRETTY: "pretty",
@@ -127,6 +127,22 @@ function displayPretty(data: unknown, endpoint: string): void {
         return;
     }
 
+    // The structured endpoints (`ready`, `health`, and the default `status`
+    // view) all assume the status server returned a JSON object describing
+    // the live-reload session. When the response is `null` (or otherwise not
+    // object-like — e.g. an upstream proxy stripped the body), accessing
+    // fields like `data.ready` would throw `TypeError: Cannot read
+    // properties of null (reading 'ready')`. Surface a deterministic
+    // human-readable message in that case so the CLI never crashes for a
+    // recoverable server-shape mismatch.
+    if (!Core.isObjectLike(data)) {
+        console.log(
+            `Live-reload status server returned an unexpected response for the "${endpoint}" endpoint. ` +
+                "Expected a JSON object describing the live-reload session state."
+        );
+        return;
+    }
+
     if (endpoint === "ready") {
         const readyData = data as { ready: boolean; uptime?: number };
         if (readyData.ready) {
@@ -166,6 +182,19 @@ function displayPretty(data: unknown, endpoint: string): void {
         patchCount: number;
         errorCount: number;
         websocketClients: number;
+        runtimeUrl?: string | null;
+        statusUrl?: string;
+        watchedRoot?: string;
+        websocketConnectionCount?: number;
+        websocketUrl?: string;
+        lastChangedFile?: string | null;
+        lastPatchId?: string | null;
+        lastPatchResult?: {
+            delivered: boolean;
+            failureCount: number;
+            successCount: number;
+            totalClients: number;
+        } | null;
         recentPatches: Array<{
             id: string;
             timestamp: number;
@@ -184,6 +213,29 @@ function displayPretty(data: unknown, endpoint: string): void {
     console.log(`Total patches: ${statusData.patchCount}`);
     console.log(`Total errors: ${statusData.errorCount}`);
     console.log(`WebSocket clients: ${statusData.websocketClients}`);
+    if (statusData.watchedRoot) {
+        console.log(`Watched root: ${statusData.watchedRoot}`);
+    }
+    if (statusData.runtimeUrl !== undefined) {
+        console.log(`Runtime URL: ${statusData.runtimeUrl ?? "<not served>"}`);
+    }
+    if (statusData.statusUrl) {
+        console.log(`Status URL: ${statusData.statusUrl}`);
+    }
+    if (statusData.websocketUrl) {
+        console.log(`WebSocket URL: ${statusData.websocketUrl}`);
+    }
+    if (statusData.lastChangedFile) {
+        console.log(`Last changed file: ${statusData.lastChangedFile}`);
+    }
+    if (statusData.lastPatchId) {
+        console.log(`Last patch ID: ${statusData.lastPatchId}`);
+    }
+    if (statusData.lastPatchResult) {
+        console.log(
+            `Last patch delivery: ${statusData.lastPatchResult.successCount}/${statusData.lastPatchResult.totalClients} client(s)`
+        );
+    }
 
     if (statusData.recentPatches.length > 0) {
         console.log("\nRecent patches:");
@@ -213,7 +265,11 @@ function displayPretty(data: unknown, endpoint: string): void {
  * @param {string} [options.endpoint] - Endpoint to query; defaults to `status`.
  */
 export async function runWatchStatusCommand(options: WatchStatusCommandOptions = {}): Promise<void> {
-    const { statusHost = "127.0.0.1", statusPort = 17_891, endpoint = "status" } = options;
+    const {
+        statusHost = DEFAULT_LIVE_RELOAD_STATUS_HOST,
+        statusPort = DEFAULT_LIVE_RELOAD_STATUS_PORT,
+        endpoint = "status"
+    } = options;
     const format = parseWatchStatusOutputFormat(options.format);
 
     try {
@@ -225,7 +281,7 @@ export async function runWatchStatusCommand(options: WatchStatusCommandOptions =
             displayPretty(data, endpoint);
         }
     } catch (error) {
-        const message = getErrorMessage(error, {
+        const message = Core.getErrorMessage(error, {
             fallback: "Unknown error"
         });
 

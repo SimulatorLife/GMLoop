@@ -1,10 +1,13 @@
+import { spawn } from "node:child_process";
 import * as http from "node:http";
 import type { Socket } from "node:net";
 
 import { Core } from "@gmloop/core";
+import { UI } from "@gmloop/ui";
 
 import { tryParseJsonPayload } from "../../shared/error-guards.js";
-import type { ServerEndpoint, ServerLifecycle } from "./server-contracts.js";
+import { isInvalidGameMakerProjectFileError } from "../../workflow/project-file-validation.js";
+import type { ServerEndpoint, ServerLifecycle } from "./index.js";
 
 type GraphVisualizationServerRenderBundle = (
     isServerMode: boolean
@@ -20,6 +23,138 @@ type GraphVisualizationServerOpenProjectTargets = (
     input: Readonly<{ path: string | null }>
 ) => Promise<GraphVisualizationServerRegenerationResult>;
 
+/**
+ * Bind address configuration for the HTTP listener.
+ *
+ * Hosts the two transport-level primitives every server needs: the listen
+ * host/port pair and an optional UI revision probe so the bundled HTML can
+ * detect that a regeneration happened since the page was rendered. Splitting
+ * these out keeps the address concerns separate from the request-handling
+ * capabilities below.
+ */
+export interface GraphVisualizationServerCore {
+    host?: string;
+    port?: number;
+    getUiRevision?: () => number;
+}
+
+/**
+ * Bundle rendering and graph regeneration surface.
+ *
+ * Required by every server because the server's primary job is to serve
+ * the rendered visualization bundle and to expose a reindex endpoint.
+ * Consumers that only need to render the UI without wiring up fix, live
+ * reload, or Auto-Game agent capabilities can depend on this role alone.
+ */
+export interface GraphVisualizationRenderer {
+    regenerate: GraphVisualizationServerRegenerate;
+    renderBundle: GraphVisualizationServerRenderBundle;
+}
+
+/**
+ * Open-project target handling.
+ *
+ * Provides the ability to switch the active project root from the
+ * visualization UI without coupling to regeneration, fix, or live-reload
+ * concerns.
+ */
+export interface GraphVisualizationOpenProjectCapability {
+    openProjectTargets?: GraphVisualizationServerOpenProjectTargets;
+}
+
+/**
+ * Playground processing and fixture discovery.
+ *
+ * Provides format/lint/refactor playground routing without coupling to
+ * fix, live-reload, or config-management concerns.
+ */
+export interface GraphVisualizationPlaygroundCapability {
+    processPlayground?: GraphVisualizationServerProcessPlayground;
+    getPlaygroundFixtures?: GraphVisualizationServerGetPlaygroundFixtures;
+}
+
+/**
+ * Project fix workflow control.
+ *
+ * Provides the ability to start, cancel, observe, and clear fix runs
+ * without coupling to regeneration, live-reload, or config concerns.
+ */
+export interface GraphVisualizationFixCapability {
+    runFix?: GraphVisualizationServerRunFix;
+    cancelFix?: GraphVisualizationServerCancelFix;
+    getFixProgress?: GraphVisualizationServerGetFixProgress;
+    clearFixProgress?: GraphVisualizationServerClearFixProgress;
+}
+
+/**
+ * Live-reload lifecycle and semantic-index progress reporting.
+ *
+ * Provides start/stop control plus read-only progress snapshots for the
+ * runtime UI without coupling to fix, playground, or Auto-Game concerns.
+ */
+export interface GraphVisualizationLiveReloadCapability {
+    startLiveReload?: GraphVisualizationServerStartLiveReload;
+    stopLiveReload?: GraphVisualizationServerStopLiveReload;
+    getSemanticIndexProgress?: GraphVisualizationServerGetSemanticIndexProgress;
+}
+
+/**
+ * Project config creation and saving.
+ *
+ * Provides config bootstrap and persistence without coupling to fix,
+ * live-reload, or Auto-Game agent-pack concerns.
+ */
+export interface GraphVisualizationConfigCapability {
+    createConfig?: GraphVisualizationServerCreateConfig;
+    saveConfig?: GraphVisualizationServerSaveConfig;
+}
+
+/**
+ * Auto-Game agent-pack initialization and skill toggling.
+ *
+ * Provides agent-pack setup plus per-skill enable/disable control without
+ * coupling to fix, live-reload, or config concerns.
+ */
+export interface GraphVisualizationAutoGameCapability {
+    initializeAutoGameAgentPack?: GraphVisualizationServerInitializeAutoGameAgentPack;
+    setAutoGameSkillEnabled?: GraphVisualizationServerSetAutoGameSkillEnabled;
+}
+
+/**
+ * Composite server-options contract.
+ *
+ * Composes every role interface so the existing wiring (CLI `visualize`
+ * command and tests) can keep passing a single options bag while making
+ * each cohesive responsibility discoverable. Consumers that only need a
+ * subset — for example a future embedder wiring only a playground
+ * server — should depend on the matching role interface directly rather
+ * than this composite.
+ *
+ * Each role models one cohesive responsibility and exposes only the
+ * members its consumers require, which is the Interface Segregation
+ * Principle in practice.
+ */
+export type GraphVisualizationServerOptions = GraphVisualizationServerCore &
+    GraphVisualizationRenderer &
+    GraphVisualizationOpenProjectCapability &
+    GraphVisualizationPlaygroundCapability &
+    GraphVisualizationFixCapability &
+    GraphVisualizationLiveReloadCapability &
+    GraphVisualizationConfigCapability &
+    GraphVisualizationAutoGameCapability;
+
+export type GraphVisualizationServerPlaygroundFixture = Readonly<{
+    caseId: string;
+    kind: string;
+    inputGml: string;
+    expectedGml: string | null;
+    config: Record<string, unknown>;
+}>;
+
+type GraphVisualizationServerGetPlaygroundFixtures = () => Promise<
+    ReadonlyArray<GraphVisualizationServerPlaygroundFixture>
+>;
+
 type GraphVisualizationServerProcessPlayground = (
     input: Readonly<{
         gml: string;
@@ -30,6 +165,7 @@ type GraphVisualizationServerProcessPlayground = (
         refactor: boolean;
         codemodIds: ReadonlyArray<string>;
         transpileMode: "none" | "patch" | "expression";
+        fixtureId?: string;
     }>
 ) => Promise<Readonly<{ ast: string; output: string; error: string | null }>>;
 
@@ -41,34 +177,53 @@ type GraphVisualizationServerStartLiveReload = (
 
 type GraphVisualizationServerStopLiveReload = () => Promise<unknown>;
 
-type GraphVisualizationServerRunFix = () => Promise<Readonly<{ logLines: ReadonlyArray<string> }>>;
+type GraphVisualizationProjectWorkflow = (typeof UI.PROJECT_WORKFLOWS)[number];
+type GraphVisualizationServerRunFix = (
+    input: Readonly<{ workflow: GraphVisualizationProjectWorkflow }>
+) => Promise<Readonly<{ logLines: ReadonlyArray<string> }>>;
+type GraphVisualizationServerCancelFix = () => Promise<Readonly<{ cancelled: boolean }>>;
 type GraphVisualizationServerFixProgress = Readonly<{
     isRunning: boolean;
     logLines: ReadonlyArray<string>;
+    status?: string;
+    workflow?: GraphVisualizationProjectWorkflow;
 }>;
 type GraphVisualizationServerGetFixProgress = () => GraphVisualizationServerFixProgress;
+/** Slowest-file/cache-hit summary reported once a semantic index build completes. */
+export type GraphVisualizationServerSemanticIndexBuildSummary = Readonly<{
+    cacheHitCount: number;
+    cacheMissCount: number;
+    slowestFiles: ReadonlyArray<Readonly<{ relativePath: string; durationMs: number }>>;
+    totalDurationMs: number;
+}>;
+/** Shared semantic-index progress payload returned by the graph server. */
+export type GraphVisualizationServerSemanticIndexProgress = Readonly<{
+    current: number | null;
+    isRunning: boolean;
+    logLines: ReadonlyArray<string>;
+    /** Stable id of the operation this snapshot describes, or null when idle. */
+    operationId: string | null;
+    stage: "gml-parse" | "complete" | null;
+    status: "idle" | "running" | "success" | "error";
+    summary: GraphVisualizationServerSemanticIndexBuildSummary | null;
+    total: number | null;
+}>;
+type GraphVisualizationServerGetSemanticIndexProgress = () => GraphVisualizationServerSemanticIndexProgress;
 type GraphVisualizationServerClearFixProgress = () => void;
 type GraphVisualizationServerCreateConfig = () => Promise<GraphVisualizationServerRegenerationResult>;
 type GraphVisualizationServerSaveConfig = (
     input: Readonly<{ config: Readonly<Record<string, unknown>> }>
 ) => Promise<GraphVisualizationServerRegenerationResult>;
-
-export type GraphVisualizationServerOptions = Readonly<{
-    host?: string;
-    port?: number;
-    getUiRevision?: () => number;
-    regenerate: GraphVisualizationServerRegenerate;
-    renderBundle: GraphVisualizationServerRenderBundle;
-    openProjectTargets?: GraphVisualizationServerOpenProjectTargets;
-    processPlayground?: GraphVisualizationServerProcessPlayground;
-    runFix?: GraphVisualizationServerRunFix;
-    getFixProgress?: GraphVisualizationServerGetFixProgress;
-    clearFixProgress?: GraphVisualizationServerClearFixProgress;
-    startLiveReload?: GraphVisualizationServerStartLiveReload;
-    stopLiveReload?: GraphVisualizationServerStopLiveReload;
-    createConfig?: GraphVisualizationServerCreateConfig;
-    saveConfig?: GraphVisualizationServerSaveConfig;
-}>;
+type GraphVisualizationServerInitializeAutoGameAgentPack = (
+    input: Readonly<{
+        agentTargets: ReadonlyArray<"codex" | "gemini" | "qwen">;
+        includeGitIgnore: boolean;
+        includeVSCode: boolean;
+    }>
+) => Promise<GraphVisualizationServerRegenerationResult>;
+type GraphVisualizationServerSetAutoGameSkillEnabled = (
+    input: Readonly<{ enabled: boolean; name: string }>
+) => Promise<GraphVisualizationServerRegenerationResult>;
 
 export type GraphVisualizationServerHandle = ServerEndpoint &
     ServerLifecycle &
@@ -162,6 +317,15 @@ async function routeGraphVisualizationServerRequest(
         return;
     }
 
+    if (handleSemanticIndexProgressRequest(request, response, options)) {
+        return;
+    }
+
+    if (request.method === "GET" && request.url === "/api/playground/fixtures" && options.getPlaygroundFixtures) {
+        await handleGetPlaygroundFixturesRequest(options.getPlaygroundFixtures, response);
+        return;
+    }
+
     if (request.method === "GET") {
         await handleStaticGraphVisualizationFileRequest(options, request, response);
         return;
@@ -173,7 +337,12 @@ async function routeGraphVisualizationServerRequest(
     }
 
     if (request.method === "POST" && request.url === "/api/fix" && options.runFix) {
-        await handleRunFixRequest(options.runFix, options.clearFixProgress, response);
+        await handleRunFixRequest(options.runFix, options.clearFixProgress, request, response);
+        return;
+    }
+
+    if (request.method === "POST" && request.url === "/api/fix/cancel" && options.cancelFix) {
+        await handleCancelFixRequest(options.cancelFix, response);
         return;
     }
 
@@ -207,13 +376,31 @@ async function routeGraphVisualizationServerRequest(
         return;
     }
 
+    if (
+        request.method === "POST" &&
+        request.url === "/api/auto-game/agent-pack/init" &&
+        options.initializeAutoGameAgentPack
+    ) {
+        await handleInitializeAutoGameAgentPackRequest(options.initializeAutoGameAgentPack, request, response);
+        return;
+    }
+
+    if (
+        request.method === "POST" &&
+        request.url === "/api/auto-game/skills/toggle" &&
+        options.setAutoGameSkillEnabled
+    ) {
+        await handleSetAutoGameSkillEnabledRequest(options.setAutoGameSkillEnabled, request, response);
+        return;
+    }
+
     writeTextResponse(response, 404, "Not found");
 }
 
 function handleUiRevisionRequest(
     request: http.IncomingMessage,
     response: http.ServerResponse<http.IncomingMessage>,
-    options: GraphVisualizationServerOptions
+    options: Pick<GraphVisualizationServerCore, "getUiRevision">
 ): boolean {
     if (request.method !== "GET" || request.url !== "/api/ui-revision") {
         return false;
@@ -224,7 +411,7 @@ function handleUiRevisionRequest(
 }
 
 async function handleStaticGraphVisualizationFileRequest(
-    options: GraphVisualizationServerOptions,
+    options: GraphVisualizationRenderer,
     request: http.IncomingMessage,
     response: http.ServerResponse<http.IncomingMessage>
 ): Promise<void> {
@@ -243,7 +430,7 @@ async function handleStaticGraphVisualizationFileRequest(
 }
 
 async function handleRegenerateRequest(
-    options: GraphVisualizationServerOptions,
+    options: GraphVisualizationRenderer,
     response: http.ServerResponse<http.IncomingMessage>
 ): Promise<void> {
     try {
@@ -257,16 +444,43 @@ async function handleRegenerateRequest(
 async function handleRunFixRequest(
     runFix: GraphVisualizationServerRunFix,
     clearFixProgress: GraphVisualizationServerClearFixProgress | undefined,
+    request: http.IncomingMessage,
     response: http.ServerResponse<http.IncomingMessage>
 ): Promise<void> {
     try {
-        const fixResult = await runFix();
+        const parsedBody = await readOptionalJsonObjectRequestBody(request);
+        if (parsedBody === null) {
+            writeInvalidJsonPayloadResponse(response);
+            return;
+        }
+        const workflow = readProjectWorkflow(parsedBody.workflow);
+        if (workflow === null) {
+            writeJsonResponse(response, 400, { error: "Unknown project workflow." });
+            return;
+        }
+        const fixResult = await runFix({ workflow });
         writeJsonResponse(response, 200, { logLines: fixResult.logLines, ok: true });
         clearFixProgress?.();
     } catch (error: unknown) {
         writeJsonResponse(response, 500, { error: resolveErrorMessage(error) });
         clearFixProgress?.();
     }
+}
+
+async function handleCancelFixRequest(
+    cancelFix: GraphVisualizationServerCancelFix,
+    response: http.ServerResponse<http.IncomingMessage>
+): Promise<void> {
+    try {
+        const cancelResult = await cancelFix();
+        writeJsonResponse(response, 200, { cancelled: cancelResult.cancelled, ok: true });
+    } catch (error: unknown) {
+        writeJsonResponse(response, 500, { error: resolveErrorMessage(error) });
+    }
+}
+
+function readProjectWorkflow(value: unknown): GraphVisualizationProjectWorkflow | null {
+    return UI.PROJECT_WORKFLOWS.find((workflow) => workflow === value) ?? null;
 }
 
 async function handleOpenProjectTargetsRequest(
@@ -286,6 +500,20 @@ async function handleOpenProjectTargetsRequest(
             path: selectedPath.length > 0 ? selectedPath : null
         });
         writeJsonResponse(response, 200, createOpenProjectTargetsResponse(selectionResult));
+    } catch (error: unknown) {
+        writeJsonResponse(response, isInvalidGameMakerProjectFileError(error) ? 400 : 500, {
+            error: resolveErrorMessage(error)
+        });
+    }
+}
+
+async function handleGetPlaygroundFixturesRequest(
+    getPlaygroundFixtures: GraphVisualizationServerGetPlaygroundFixtures,
+    response: http.ServerResponse<http.IncomingMessage>
+): Promise<void> {
+    try {
+        const fixtures = await getPlaygroundFixtures();
+        writeJsonResponse(response, 200, { fixtures, ok: true });
     } catch (error: unknown) {
         writeJsonResponse(response, 500, { error: resolveErrorMessage(error) });
     }
@@ -381,6 +609,75 @@ async function handleSaveConfigRequest(
     }
 }
 
+async function handleInitializeAutoGameAgentPackRequest(
+    initializeAutoGameAgentPack: GraphVisualizationServerInitializeAutoGameAgentPack,
+    request: http.IncomingMessage,
+    response: http.ServerResponse<http.IncomingMessage>
+): Promise<void> {
+    try {
+        const parsedBody = await readOptionalJsonObjectRequestBody(request);
+        let includeGitIgnore = true;
+        if (parsedBody !== null && parsedBody.includeGitIgnore !== undefined) {
+            if (typeof parsedBody.includeGitIgnore !== "boolean") {
+                writeInvalidJsonPayloadResponse(response);
+                return;
+            }
+            includeGitIgnore = parsedBody.includeGitIgnore;
+        }
+        let includeVSCode = false;
+        if (parsedBody !== null && parsedBody.includeVSCode !== undefined) {
+            if (typeof parsedBody.includeVSCode !== "boolean") {
+                writeInvalidJsonPayloadResponse(response);
+                return;
+            }
+            includeVSCode = parsedBody.includeVSCode;
+        }
+        let agentTargets: ReadonlyArray<"codex" | "gemini" | "qwen"> = Object.freeze([]);
+        if (parsedBody !== null && parsedBody.agentTargets !== undefined) {
+            if (
+                !Array.isArray(parsedBody.agentTargets) ||
+                parsedBody.agentTargets.some(
+                    (agentTarget) => agentTarget !== "codex" && agentTarget !== "gemini" && agentTarget !== "qwen"
+                )
+            ) {
+                writeInvalidJsonPayloadResponse(response);
+                return;
+            }
+            agentTargets = Object.freeze([...parsedBody.agentTargets]);
+        }
+        const result = await initializeAutoGameAgentPack({ agentTargets, includeGitIgnore, includeVSCode });
+        writeJsonResponse(response, 200, { changed: result.changed, ok: true });
+    } catch (error: unknown) {
+        writeJsonResponse(response, 500, { error: resolveErrorMessage(error) });
+    }
+}
+
+async function handleSetAutoGameSkillEnabledRequest(
+    setAutoGameSkillEnabled: GraphVisualizationServerSetAutoGameSkillEnabled,
+    request: http.IncomingMessage,
+    response: http.ServerResponse<http.IncomingMessage>
+): Promise<void> {
+    try {
+        const parsedBody = await readOptionalJsonObjectRequestBody(request);
+        if (
+            parsedBody === null ||
+            typeof parsedBody.name !== "string" ||
+            parsedBody.name.trim().length === 0 ||
+            typeof parsedBody.enabled !== "boolean"
+        ) {
+            writeInvalidJsonPayloadResponse(response);
+            return;
+        }
+        const result = await setAutoGameSkillEnabled({
+            enabled: parsedBody.enabled,
+            name: parsedBody.name.trim()
+        });
+        writeJsonResponse(response, 200, { changed: result.changed, ok: true });
+    } catch (error: unknown) {
+        writeJsonResponse(response, 500, { error: resolveErrorMessage(error) });
+    }
+}
+
 function createOpenProjectTargetsResponse(
     selectionResult: GraphVisualizationServerRegenerationResult
 ): Readonly<Record<string, unknown>> {
@@ -415,7 +712,8 @@ function createProcessPlaygroundInput(
         lint: parsedBody.lint === true,
         lintRuleIds: readStringListPayloadField(parsedBody, "lintRuleIds"),
         refactor: parsedBody.refactor === true,
-        transpileMode: readPlaygroundTranspileMode(parsedBody.transpileMode)
+        transpileMode: readPlaygroundTranspileMode(parsedBody.transpileMode),
+        fixtureId: typeof parsedBody.fixtureId === "string" ? parsedBody.fixtureId : undefined
     };
 }
 
@@ -467,7 +765,7 @@ function writeTextResponse(
 function handleFixProgressRequest(
     request: http.IncomingMessage,
     response: http.ServerResponse<http.IncomingMessage>,
-    options: GraphVisualizationServerOptions
+    options: GraphVisualizationFixCapability
 ): boolean {
     if (request.method !== "GET" || request.url !== "/api/fix/progress" || !options.getFixProgress) {
         return false;
@@ -477,8 +775,21 @@ function handleFixProgressRequest(
     return true;
 }
 
+function handleSemanticIndexProgressRequest(
+    request: http.IncomingMessage,
+    response: http.ServerResponse<http.IncomingMessage>,
+    options: GraphVisualizationLiveReloadCapability
+): boolean {
+    if (request.method !== "GET" || request.url !== "/api/graph-index/progress" || !options.getSemanticIndexProgress) {
+        return false;
+    }
+    response.writeHead(200, { "Content-Type": "application/json" });
+    response.end(JSON.stringify({ ...options.getSemanticIndexProgress(), ok: true }));
+    return true;
+}
+
 async function resolveStaticGraphVisualizationFileForRequest(
-    options: GraphVisualizationServerOptions,
+    options: GraphVisualizationRenderer,
     requestUrl: string | undefined
 ): Promise<GraphVisualizationBundleFile | null> {
     const bundle = await options.renderBundle(true);
@@ -524,4 +835,21 @@ async function readRequestBody(request: http.IncomingMessage): Promise<string> {
         }
     }
     return Buffer.concat(chunks).toString("utf8");
+}
+
+/**
+ * Open a URL in the system default browser.
+ */
+export function openUrlInDefaultBrowser(url: string): void {
+    if (process.platform === "darwin") {
+        spawn("open", [url], { detached: true, stdio: "ignore" }).unref();
+        return;
+    }
+
+    if (process.platform === "win32") {
+        spawn("cmd", ["/c", "start", "", url], { detached: true, stdio: "ignore" }).unref();
+        return;
+    }
+
+    spawn("xdg-open", [url], { detached: true, stdio: "ignore" }).unref();
 }

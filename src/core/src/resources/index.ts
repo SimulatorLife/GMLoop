@@ -2,14 +2,16 @@ export type { FeatherDiagnostic, FeatherMetadata } from "./feather-metadata.js";
 export {
     __normalizeFeatherMetadataForTests,
     clearFeatherMetadataCache,
-    FEATHER_METADATA_PATH,
-    FEATHER_METADATA_URL,
     getFeatherDiagnosticById,
     getFeatherDiagnostics,
     getFeatherMetadata,
+    getFeatherMetadataPath,
+    getFeatherMetadataUrl,
     loadBundledFeatherMetadata
 } from "./feather-metadata.js";
 export type {
+    BuiltInHoverInfo,
+    BuiltInHoverParameter,
     DeprecatedIdentifierDiagnosticOwner,
     DeprecatedIdentifierLegacyUsage,
     DeprecatedIdentifierMetadataEntry,
@@ -17,9 +19,10 @@ export type {
 } from "./gml-identifier-loading.js";
 export {
     clearIdentifierMetadataCache,
+    getBuiltInHoverInfo,
+    getGmlIdentifierMetadataPath,
+    getGmlIdentifierMetadataUrl,
     getIdentifierMetadata,
-    GML_IDENTIFIER_METADATA_PATH,
-    GML_IDENTIFIER_METADATA_URL,
     loadBundledIdentifierMetadata,
     loadDeprecatedIdentifierEntries,
     loadManualFunctionNames,
@@ -28,6 +31,11 @@ export {
     resetReservedIdentifierMetadataLoader,
     setReservedIdentifierMetadataLoader
 } from "./gml-identifier-loading.js";
+export type { GmlBindingIdentifierContext } from "./gml-identifier-reservation.js";
+export {
+    isReservedGmlBindingIdentifierName,
+    loadReservedGmlBindingIdentifierNames
+} from "./gml-identifier-reservation.js";
 export type { ProjectMetadataSchemaName } from "./project-metadata.js";
 export {
     applyProjectMetadataStringMutations,

@@ -1,5 +1,9 @@
-import type { MutableDocCommentLines, MutableGameMakerAstNode } from "@gmloop/core";
-import type { Doc, Parser, Plugin as PrettierPlugin, Printer, SupportOptions } from "prettier";
+import type { MutableGameMakerAstNode } from "@gmloop/core";
+import type { Options as PrettierOptions, Parser, Plugin as PrettierPlugin, Printer, SupportOptions } from "prettier";
+
+import type { ProjectFormatOptionCatalogEntry } from "../options/project-config-catalog.js";
+
+export type { ProjectFormatOptionCatalogEntry } from "../options/project-config-catalog.js";
 
 export type GmlAst = MutableGameMakerAstNode;
 
@@ -10,19 +14,38 @@ export type GmlPrintFunction = NonNullable<GmlPrinter["print"]>;
 export type GmlPrintCommentFunction = NonNullable<GmlPrinter["printComment"]>;
 export type GmlHandleComments = NonNullable<GmlPrinter["handleComments"]>;
 
+/**
+ * Runtime operation used by formatter orchestration to invoke Prettier.
+ */
+export type GmlSourceFormatter = (source: string, options?: PrettierOptions) => Promise<string>;
+
 export type LogicalOperatorsStyleMap = Readonly<{
     KEYWORDS: string;
     SYMBOLS: string;
 }>;
 
+/**
+ * Minimal dependency-injection contract for the formatter's high-level
+ * Prettier plugin wiring. The contract now only surfaces the helpers
+ * that the Prettier plugin entry point (`createGmlFormat`) and the
+ * `printers` bundle require: the parser adapter, the printer entry
+ * point, the `printComment`/`handleComments` Prettier callbacks, and
+ * the `LogicalOperatorsStyle` map.
+ *
+ * Helpers that the printer workspace consumes internally — the dangling
+ * comment printers — are imported directly from
+ * `../comments/comment-printer.js` by the high-level printer modules.
+ * The previous indirection through `options.gml` (resolved by
+ * `printer/comment-print-boundary.ts`) was a backward-compatibility
+ * shim with no remaining callers and has been removed; the contract no
+ * longer lists those helpers.
+ * (target-state.md §2.3, §3.2)
+ */
 export type GmlFormatComponentContract = Readonly<{
     gmlParserAdapter: GmlParserAdapter;
     print: GmlPrintFunction;
     handleComments: GmlHandleComments;
     printComment: GmlPrintCommentFunction;
-    buildPrintableDocCommentLines: (docCommentDocs: MutableDocCommentLines, originalText: string | null) => Doc[];
-    countTrailingBlankLines: (text: string | null | undefined, startIndex: number) => number;
-    getNextNonWhitespaceCharacter: (text: string | null | undefined, startIndex: number) => string | null;
     LogicalOperatorsStyle: LogicalOperatorsStyleMap;
 }>;
 
@@ -34,16 +57,10 @@ export type GmlFormatComponentBundle = Readonly<{
 
 export type GmlFormatDefaultOptions = Record<string, unknown>;
 
-export type ProjectFormatOptionCatalogEntry = Readonly<{
-    defaultValue: boolean | number | string;
-    description: string;
-    name: string;
-}>;
-
 export type GmlFormat = Omit<PrettierPlugin<GmlAst>, "defaultOptions"> & {
     defaultOptions?: GmlFormatDefaultOptions;
     formatOptions?: SupportOptions;
-    format: (source: string, options?: Record<string, unknown>) => Promise<string>;
+    format: GmlSourceFormatter;
     extractProjectFormatOptions: (config: Record<string, unknown>) => Record<string, unknown>;
     projectFormatOptionCatalog: ReadonlyArray<ProjectFormatOptionCatalogEntry>;
     /**

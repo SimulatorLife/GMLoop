@@ -6,13 +6,18 @@ import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { __graphCommandTest__, createGraphCommand } from "../src/commands/graph.js";
+import { Core } from "@gmloop/core";
+
+import type * as CliModule from "../src/cli.js";
+import { __graphCommandTest__, createGraphCommand } from "../src/commands/graph/index.js";
+import type { LiveReloadRegisteredSession } from "../src/modules/live-reload/session-registry.js";
+import { writeGameMakerCliActiveProjectState } from "../src/workflow/project-root.js";
 
 const SKIP_CLI_ENV_VAR = "PRETTIER_PLUGIN_GML_SKIP_CLI_RUN";
 const SKIP_CLI_ENV_VALUE = "1";
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../..");
 
-let cliModulePromise: Promise<typeof import("../src/cli.js")> | undefined;
+let cliModulePromise: Promise<typeof CliModule> | undefined;
 
 async function loadCliModule() {
     if (cliModulePromise === undefined) {
@@ -45,8 +50,16 @@ async function createDualRootFixture(): Promise<{
         await fs.writeFile(filePath, contents, "utf8");
     };
 
-    await writeFile(projectRoot, "Project.yyp", JSON.stringify({ name: "Project", resourceType: "GMProject" }));
-    await writeFile(toolsetRoot, "Toolset.yyp", JSON.stringify({ name: "Toolset", resourceType: "GMProject" }));
+    await writeFile(
+        projectRoot,
+        "Project.yyp",
+        JSON.stringify({ name: "Project", resourceType: "GMProject", resources: [] })
+    );
+    await writeFile(
+        toolsetRoot,
+        "Toolset.yyp",
+        JSON.stringify({ name: "Toolset", resourceType: "GMProject", resources: [] })
+    );
     await writeFile(
         toolsetRoot,
         "scripts/shared_toolset_fn/shared_toolset_fn.yy",
@@ -90,22 +103,112 @@ async function waitForCondition(predicate: () => boolean, failureMessage: string
     assert.fail(failureMessage);
 }
 
-function createLiveReloadStatusSnapshot() {
+async function waitForFileContents(filePath: string): Promise<string> {
+    const deadline = Date.now() + 5000;
+    while (Date.now() < deadline) {
+        try {
+            return await fs.readFile(filePath, "utf8");
+        } catch (error: unknown) {
+            const errorCode =
+                typeof error === "object" && error !== null && "code" in error ? Reflect.get(error, "code") : null;
+            if (errorCode !== "ENOENT") {
+                throw error;
+            }
+        }
+        await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+
+    return assert.fail(`Timed out waiting for ${filePath} to be written.`);
+}
+
+function createLiveReloadStatusPayload(runtimeUrl: string | null): Record<string, unknown> {
     return {
-        avgHotReloadLatencyMs: null,
         errorCount: 0,
-        maxPatchHistory: 50,
+        liveReloadSession: { sessionId: "graph-test-session" },
         patchCount: 0,
-        patchHistorySize: 0,
-        p95HotReloadLatencyMs: null,
-        recentErrors: [],
-        recentPatches: [],
-        runtimeUrl: null,
+        runtimeUrl,
         scanComplete: true,
         totalPatchCount: 0,
-        uptimeMs: 10,
-        watcherStatus: "running" as const,
+        uptime: 10,
         websocketClients: 0
+    };
+}
+
+type LiveReloadSessionEndpointOverrides = Readonly<{
+    projectRoot?: string;
+    runtimeUrl?: string | null;
+    sessionId?: string;
+    statusPort?: number;
+    watchedRoot?: string;
+    websocketPort?: number;
+}>;
+
+function createRegisteredLiveReloadSession(
+    overrides: LiveReloadSessionEndpointOverrides = {}
+): LiveReloadRegisteredSession {
+    return {
+        lastHeartbeatAt: Date.now(),
+        processId: 12_345,
+        projectRoot: "/tmp/graph-live-reload-project",
+        runtimeUrl: "http://127.0.0.1:61003/",
+        startSource: "ui",
+        status: "running",
+        statusHost: "127.0.0.1",
+        statusPort: 61_001,
+        statusUrl: "http://127.0.0.1:61001/status",
+        sessionId: "graph-test-session",
+        watchedRoot: "/tmp/graph-live-reload-project",
+        websocketHost: "127.0.0.1",
+        websocketPort: 61_002,
+        websocketUrl: "ws://127.0.0.1:61002",
+        yypPath: "/tmp/graph-live-reload-project/Project.yyp",
+        ...overrides
+    };
+}
+
+/**
+ * Parsed JSON payload emitted by `graph visualize --serve` once the dev
+ * server has finished bootstrapping. Reused by the two serve-startup
+ * integration tests below so the JSON-extraction logic lives in exactly
+ * one place (and ESLint's `sonarjs/no-identical-functions` rule stays
+ * satisfied).
+ */
+type GraphServeStartupPayload = {
+    databasePath: string;
+    payload: { url: string };
+    projectRoot: string;
+};
+
+/**
+ * Returns a callback that drains the buffered stdout of a serve-startup
+ * child process, attempts to parse the first JSON object it contains, and
+ * resolves the surrounding promise once a complete payload is observed.
+ *
+ * The callback is intentionally tolerant of partial JSON: each `data`
+ * event joins the existing chunks and re-attempts the parse, only
+ * resolving once `JSON.parse` succeeds. The caller is responsible for
+ * wiring up the matching `error` and `exit` listeners that drive the
+ * `resolve({ skipped: true })` and rejection paths.
+ */
+function createServeStartupJsonResolver(
+    stdoutChunks: ReadonlyArray<string>,
+    timeout: ReturnType<typeof setTimeout>,
+    resolve: (value: GraphServeStartupPayload) => void
+): () => void {
+    return () => {
+        const stdoutText = stdoutChunks.join("");
+        const startIndex = stdoutText.indexOf("{");
+        if (startIndex === -1) {
+            return;
+        }
+
+        try {
+            const parsed = JSON.parse(stdoutText.slice(startIndex)) as GraphServeStartupPayload;
+            clearTimeout(timeout);
+            resolve(parsed);
+        } catch {
+            // Wait for more stdout if the JSON is incomplete.
+        }
     };
 }
 
@@ -122,83 +225,7 @@ void test("CLI command catalog includes graph leaf commands", async () => {
     assert.ok(!catalog.some((entry) => entry.displayName === "graph neighbors"));
     assert.ok(!catalog.some((entry) => entry.displayName === "graph usages"));
     assert.ok(catalog.some((entry) => entry.displayName === "symbol inspect"));
-    assert.ok(catalog.some((entry) => entry.displayName === "symbol context"));
-    assert.ok(catalog.some((entry) => entry.displayName === "symbol neighbors"));
-    assert.ok(catalog.some((entry) => entry.displayName === "symbol usages"));
     assert.ok(!catalog.some((entry) => entry.displayName === "performance"));
-});
-
-void test("graph live-reload ready model requires a runtime URL", () => {
-    const snapshot = createLiveReloadStatusSnapshot();
-    const model = __graphCommandTest__.createReadyGraphVisualizationLiveReloadModel(
-        {
-            model: __graphCommandTest__.createGraphVisualizationLiveReloadModel(null)
-        },
-        snapshot
-    );
-
-    assert.equal(model, null);
-});
-
-void test("graph live-reload ready model preserves runtime URL and status snapshot", () => {
-    const snapshot = createLiveReloadStatusSnapshot();
-    const model = __graphCommandTest__.createReadyGraphVisualizationLiveReloadModel(
-        {
-            model: __graphCommandTest__.createGraphVisualizationLiveReloadModel("http://127.0.0.1:51264/")
-        },
-        snapshot
-    );
-
-    assert.equal(model?.endpoints.runtimeUrl, "http://127.0.0.1:51264/");
-    assert.equal(model?.statusSnapshot, snapshot);
-});
-
-void test("graph live-reload ready model can adopt runtime URL from status snapshot", () => {
-    const snapshot = {
-        ...createLiveReloadStatusSnapshot(),
-        runtimeUrl: "http://127.0.0.1:51264/"
-    };
-    const model = __graphCommandTest__.createReadyGraphVisualizationLiveReloadModel(
-        {
-            model: null
-        },
-        snapshot
-    );
-
-    assert.equal(model?.endpoints.runtimeUrl, "http://127.0.0.1:51264/");
-    assert.equal(model?.statusSnapshot, snapshot);
-});
-
-void test("graph live-reload startup readiness requires a reachable runtime URL", async () => {
-    const snapshot = createLiveReloadStatusSnapshot();
-    const model = await __graphCommandTest__.createReachableGraphVisualizationLiveReloadModel(
-        {
-            model: __graphCommandTest__.createGraphVisualizationLiveReloadModel("http://127.0.0.1:51264/")
-        },
-        snapshot
-    );
-
-    assert.equal(model, null);
-});
-
-void test("graph live-reload runtime URL reachability accepts successful HEAD responses", async () => {
-    const isReachable = await __graphCommandTest__.isGraphVisualizationLiveReloadRuntimeUrlReachable(
-        "http://127.0.0.1:51264/",
-        async () => new Response(null, { status: 200 })
-    );
-
-    assert.equal(isReachable, true);
-});
-
-void test("graph live-reload runtime URL reachability rejects failed probes", async () => {
-    const isReachable = await __graphCommandTest__.isGraphVisualizationLiveReloadRuntimeUrlReachable(
-        "http://127.0.0.1:51264/",
-        async () => {
-            throw new Error("Connection refused");
-        }
-    );
-
-    assert.equal(isReachable, false);
 });
 
 void test("graph command rejects removed symbol-centric subcommands", async () => {
@@ -372,13 +399,18 @@ void test("graph visualize builds a missing database before exporting an HTML+as
         assert.equal(payload.payload.entryHtmlPath, "index.html");
         await fs.access(databasePath);
         const assetNames = await fs.readdir(path.join(outputDirectory, "assets"));
-        const scriptAsset = assetNames.find((assetName) => assetName.endsWith(".js"));
+        const scriptAssets = assetNames.filter((assetName) => assetName.endsWith(".js"));
         const styleAsset = assetNames.find((assetName) => assetName.endsWith(".css"));
-        assert.ok(scriptAsset);
+        assert.ok(scriptAssets.length > 0);
         assert.ok(styleAsset);
         const html = await fs.readFile(path.join(outputDirectory, "index.html"), "utf8");
-        const script = await fs.readFile(path.join(outputDirectory, "assets", scriptAsset), "utf8");
-        assert.match(script, /gm-app-shell/u);
+        const scripts = await Promise.all(
+            scriptAssets.map((scriptAsset) => fs.readFile(path.join(outputDirectory, "assets", scriptAsset), "utf8"))
+        );
+        assert.ok(
+            scripts.some((script) => /gm-app-shell/u.test(script)),
+            "Expected a bundle script asset to register the gm-app-shell element."
+        );
         assert.match(html, /shared_toolset_fn/u);
         assert.match(html, /gmloop_format/u);
         assert.match(html, /Format GameMaker Language files using the prettier plugin\./u);
@@ -392,7 +424,7 @@ void test("graph visualize builds a missing database before exporting an HTML+as
     }
 });
 
-void test("graph visualize reuses an existing graph index instead of rebuilding it implicitly", async () => {
+void test("graph visualize reconciles stale semantic records before exporting", async () => {
     const cliModule = await loadCliModule();
     const fixture = await createDualRootFixture();
 
@@ -430,8 +462,8 @@ void test("graph visualize reuses an existing graph index instead of rebuilding 
         const scriptAsset = assetNames.find((assetName) => assetName.endsWith(".js"));
         assert.ok(scriptAsset);
         const indexHtml = await fs.readFile(path.join(outputDirectory, "index.html"), "utf8");
-        assert.match(indexHtml, /return 42;/u);
-        assert.doesNotMatch(indexHtml, /return 999;/u);
+        assert.match(indexHtml, /return 999;/u);
+        assert.doesNotMatch(indexHtml, /return 42;/u);
     } finally {
         await fixture.cleanup();
     }
@@ -444,7 +476,15 @@ void test("graph visualize --serve boots without a project path and waits for UI
     try {
         serveProcess = spawn(
             process.execPath,
-            [path.resolve(REPO_ROOT, "src/cli/dist/index.js"), "graph", "visualize", "--serve", "--json", "--no-open"],
+            [
+                "--disable-warning=ExperimentalWarning",
+                path.resolve(REPO_ROOT, "src/cli/dist/index.js"),
+                "graph",
+                "visualize",
+                "--serve",
+                "--json",
+                "--no-open"
+            ],
             {
                 cwd: emptyWorkingDirectory,
                 stdio: ["ignore", "pipe", "pipe"]
@@ -475,25 +515,7 @@ void test("graph visualize --serve boots without a project path and waits for UI
                 );
             }, 5000);
 
-            const maybeResolve = (): void => {
-                const stdoutText = stdoutChunks.join("");
-                const startIndex = stdoutText.indexOf("{");
-                if (startIndex === -1) {
-                    return;
-                }
-
-                try {
-                    const parsed = JSON.parse(stdoutText.slice(startIndex)) as {
-                        databasePath: string;
-                        payload: { url: string };
-                        projectRoot: string;
-                    };
-                    clearTimeout(timeout);
-                    resolve(parsed);
-                } catch {
-                    // Wait for more stdout if the JSON is incomplete.
-                }
-            };
+            const maybeResolve = createServeStartupJsonResolver(stdoutChunks, timeout, resolve);
 
             serveProcess.on("error", (error) => {
                 clearTimeout(timeout);
@@ -677,12 +699,8 @@ void test("graph visualize live-reload startup options honor runtime.liveReload 
     assert.equal(startupOptions.websocketPort, 17_890);
 });
 
-void test("graph visualize live-reload startup timeout allows long build-first startup", () => {
-    assert.equal(__graphCommandTest__.GRAPH_VISUALIZATION_LIVE_RELOAD_START_TIMEOUT_MS, 600_000);
-});
-
-void test("graph visualize live-reload dev args include configured startup paths", () => {
-    const args = __graphCommandTest__.createGraphVisualizationLiveReloadDevCommandArgs("/tmp/project", {
+void test("graph visualize live-reload worker args include configured startup paths and UI ownership", () => {
+    const args = __graphCommandTest__.createGraphVisualizationLiveReloadStartArguments({
         gmTempRoot: "/tmp/project/.gm-temp/html5",
         hasBuildConfiguration: true,
         html5OutputRoot: "/tmp/project/dist/html5",
@@ -693,9 +711,6 @@ void test("graph visualize live-reload dev args include configured startup paths
     });
 
     assert.deepEqual(args, [
-        "live-reload",
-        "dev",
-        "/tmp/project",
         "--html5-output",
         "/tmp/project/dist/html5",
         "--gm-temp-root",
@@ -708,8 +723,242 @@ void test("graph visualize live-reload dev args include configured startup paths
         "47911",
         "--status-host",
         "127.0.0.1",
+        "--start-source",
+        "ui",
         "--quiet"
     ]);
+});
+
+void test("graph live-reload adoption preserves registry endpoints without allocating ports", async () => {
+    const session = createRegisteredLiveReloadSession();
+    let allocationCount = 0;
+    let receivedStartArguments: ReadonlyArray<string> | null = null;
+    const state = __graphCommandTest__.createGraphVisualizationLiveReloadSessionState();
+
+    const model = await __graphCommandTest__.ensureGraphVisualizationLiveReloadSession(
+        state,
+        { projectConfig: {}, projectRoot: session.projectRoot, restart: false },
+        {
+            allocateEndpointOptions: async () => {
+                allocationCount += 1;
+                return {
+                    statusHost: "127.0.0.1",
+                    statusPort: 61_001,
+                    websocketHost: "127.0.0.1",
+                    websocketPort: 61_002
+                };
+            },
+            discoverSession: async () => ({
+                alive: true,
+                registryPath: path.join(session.projectRoot, ".gmloop/live-reload-session.json"),
+                session,
+                status: createLiveReloadStatusPayload("http://127.0.0.1:61999/")
+            }),
+            manageSession: async (options) => {
+                receivedStartArguments = options.startArguments;
+                return { mode: "attached", session, status: createLiveReloadStatusPayload("http://127.0.0.1:61999/") };
+            }
+        }
+    );
+
+    assert.equal(allocationCount, 0);
+    assert.deepEqual(receivedStartArguments, []);
+    assert.deepEqual(model.endpoints, {
+        runtimeUrl: session.runtimeUrl,
+        statusUrl: session.statusUrl,
+        websocketUrl: session.websocketUrl
+    });
+    assert.equal(state.session?.sessionId, session.sessionId);
+    assert.equal(state.ownedSession, null);
+});
+
+void test("graph live-reload startup allocates dynamic endpoints only for a new worker", async () => {
+    const session = createRegisteredLiveReloadSession({
+        runtimeUrl: "http://127.0.0.1:62003/",
+        statusPort: 62_001,
+        websocketPort: 62_002
+    });
+    let allocationCount = 0;
+    let receivedStartArguments: ReadonlyArray<string> | null = null;
+    const state = __graphCommandTest__.createGraphVisualizationLiveReloadSessionState();
+
+    await __graphCommandTest__.ensureGraphVisualizationLiveReloadSession(
+        state,
+        { projectConfig: {}, projectRoot: session.projectRoot, restart: false },
+        {
+            allocateEndpointOptions: async () => {
+                allocationCount += 1;
+                return {
+                    statusHost: "127.0.0.1",
+                    statusPort: 62_001,
+                    websocketHost: "127.0.0.1",
+                    websocketPort: 62_002
+                };
+            },
+            discoverSession: async () => ({
+                alive: false,
+                registryPath: path.join(session.projectRoot, ".gmloop/live-reload-session.json"),
+                session: null,
+                status: null
+            }),
+            manageSession: async (options) => {
+                receivedStartArguments = options.startArguments;
+                return { mode: "started", session, status: createLiveReloadStatusPayload(session.runtimeUrl) };
+            }
+        }
+    );
+
+    assert.equal(allocationCount, 1);
+    assert.ok(receivedStartArguments?.includes("--start-source"));
+    assert.ok(receivedStartArguments?.includes("ui"));
+    assert.ok(receivedStartArguments?.includes("62001"));
+    assert.ok(receivedStartArguments?.includes("62002"));
+    assert.equal(state.session?.sessionId, session.sessionId);
+    assert.equal(state.ownedSession?.sessionId, session.sessionId);
+});
+
+void test("graph live-reload new sessions receive distinct dynamic status and websocket ports", async () => {
+    const sessions = [
+        createRegisteredLiveReloadSession({
+            projectRoot: "/tmp/graph-live-reload-project-one",
+            watchedRoot: "/tmp/graph-live-reload-project-one"
+        }),
+        createRegisteredLiveReloadSession({
+            projectRoot: "/tmp/graph-live-reload-project-two",
+            watchedRoot: "/tmp/graph-live-reload-project-two",
+            sessionId: "graph-test-session-two"
+        })
+    ];
+    const allocatedEndpoints: Array<{ statusPort: number; websocketPort: number }> = [];
+    let nextPort = 62_100;
+
+    for (const session of sessions) {
+        const state = __graphCommandTest__.createGraphVisualizationLiveReloadSessionState();
+        await __graphCommandTest__.ensureGraphVisualizationLiveReloadSession(
+            state,
+            { projectConfig: {}, projectRoot: session.projectRoot, restart: false },
+            {
+                allocateEndpointOptions: async () => {
+                    const endpointOptions = {
+                        statusHost: "127.0.0.1",
+                        statusPort: nextPort,
+                        websocketHost: "127.0.0.1",
+                        websocketPort: nextPort + 1
+                    };
+                    nextPort += 2;
+                    allocatedEndpoints.push(endpointOptions);
+                    return endpointOptions;
+                },
+                discoverSession: async (targetPath) => ({
+                    alive: false,
+                    registryPath: path.join(targetPath, ".gmloop/live-reload-session.json"),
+                    session: null,
+                    status: null
+                }),
+                manageSession: async (options) => {
+                    assert.ok(options.startArguments.includes("--start-source"));
+                    assert.ok(options.startArguments.includes("ui"));
+                    const registeredSession = sessions.find(({ projectRoot }) => projectRoot === options.targetPath);
+                    assert.ok(registeredSession);
+                    return {
+                        mode: "started",
+                        session: registeredSession,
+                        status: createLiveReloadStatusPayload(registeredSession.runtimeUrl)
+                    };
+                }
+            }
+        );
+    }
+
+    const firstEndpoints = allocatedEndpoints[0];
+    const secondEndpoints = allocatedEndpoints[1];
+    assert.ok(firstEndpoints);
+    assert.ok(secondEndpoints);
+    assert.notEqual(firstEndpoints.statusPort, secondEndpoints.statusPort);
+    assert.notEqual(firstEndpoints.websocketPort, secondEndpoints.websocketPort);
+});
+
+void test("graph host shutdown does not stop a session owned outside the graph host", async () => {
+    const session = createRegisteredLiveReloadSession();
+    const state = __graphCommandTest__.createGraphVisualizationLiveReloadSessionState();
+    state.session = session;
+    state.model = __graphCommandTest__.createGraphVisualizationLiveReloadModelFromSession(session, null);
+    let stopCallCount = 0;
+
+    await __graphCommandTest__.stopOwnedGraphVisualizationLiveReloadSession(
+        state,
+        session.projectRoot,
+        async () => {
+            stopCallCount += 1;
+            return { mode: "stopped", session: null, status: null };
+        },
+        async () => ({
+            alive: true,
+            registryPath: path.join(session.projectRoot, ".gmloop/live-reload-session.json"),
+            session,
+            status: null
+        })
+    );
+
+    assert.equal(stopCallCount, 0);
+    assert.equal(state.model, null);
+});
+
+void test("graph live-reload explicit stop stops an externally owned session", async () => {
+    const state = __graphCommandTest__.createGraphVisualizationLiveReloadSessionState();
+    const externalSession = createRegisteredLiveReloadSession();
+    state.session = externalSession;
+    state.model = __graphCommandTest__.createGraphVisualizationLiveReloadModelFromSession(
+        externalSession,
+        createLiveReloadStatusPayload(externalSession.runtimeUrl)
+    );
+    let stopCalls = 0;
+
+    await __graphCommandTest__.stopGraphVisualizationLiveReloadSession(
+        state,
+        externalSession.projectRoot,
+        async () => {
+            stopCalls += 1;
+            return { mode: "stopped", session: null, status: null };
+        },
+        async () => ({
+            alive: true,
+            registryPath: path.join(externalSession.projectRoot, ".gmloop/live-reload-session.json"),
+            session: externalSession,
+            status: createLiveReloadStatusPayload(externalSession.runtimeUrl)
+        })
+    );
+
+    assert.equal(stopCalls, 1);
+    assert.equal(state.model, null);
+    assert.equal(state.session, null);
+});
+
+void test("graph live-reload project switching stops only the previously owned matching session", async () => {
+    const state = __graphCommandTest__.createGraphVisualizationLiveReloadSessionState();
+    const ownedSession = createRegisteredLiveReloadSession();
+    state.ownedSession = ownedSession;
+    state.session = ownedSession;
+    let stopTargetPath = "";
+
+    await __graphCommandTest__.stopOwnedGraphVisualizationLiveReloadSession(
+        state,
+        ownedSession.projectRoot,
+        async (options) => {
+            stopTargetPath = options.targetPath;
+            return { mode: "stopped", session: null, status: null };
+        },
+        async () => ({
+            alive: true,
+            registryPath: path.join(ownedSession.projectRoot, ".gmloop/live-reload-session.json"),
+            session: ownedSession,
+            status: createLiveReloadStatusPayload(ownedSession.runtimeUrl)
+        })
+    );
+
+    assert.equal(stopTargetPath, ownedSession.projectRoot);
+    assert.equal(state.ownedSession, null);
+    assert.equal(state.model, null);
 });
 
 void test("graph visualize serve defaults to the bundled 3DSpider demo from the repository root", () => {
@@ -725,6 +974,174 @@ void test("graph visualize serve has no bundled demo fallback outside the reposi
         assert.equal(__graphCommandTest__.resolveDefaultGraphVisualizationServeTargetPath(temporaryDirectory), null);
     } finally {
         await fs.rm(temporaryDirectory, { force: true, recursive: true });
+    }
+});
+
+void test("resolveGraphVisualizationServeStartupState reads active project path from projectState state file", async () => {
+    const fixture = await createDualRootFixture();
+    const tempStateDir = await fs.mkdtemp(path.join(os.tmpdir(), "cli-graph-state-"));
+    const statePath = path.join(tempStateDir, "gm-cli-active-project.json");
+
+    try {
+        await writeGameMakerCliActiveProjectState({
+            env: {},
+            projectPath: fixture.projectRoot,
+            statePathOption: statePath
+        });
+
+        const resolvedTargets = new Array<{ selectedPaths: ReadonlyArray<string>; source: string }>();
+        const startupState = await __graphCommandTest__.resolveGraphVisualizationServeStartupState(
+            {
+                projectState: statePath
+            },
+            null,
+            (target) => {
+                resolvedTargets.push(target);
+            }
+        );
+
+        assert.equal(startupState.source, "active-project-state");
+        assert.equal(resolvedTargets.length, 1);
+        assert.equal(resolvedTargets[0]?.source, "active-project-state");
+        assert.deepEqual(resolvedTargets[0]?.selectedPaths, startupState.selectedPaths);
+        assert.equal(startupState.selectedPaths.length, 1);
+        assert.equal(path.resolve(startupState.selectedPaths[0]), path.resolve(fixture.projectRoot, "Project.yyp"));
+        assert.notEqual(startupState.context, null);
+        assert.equal(startupState.context?.projectRoot, fixture.projectRoot);
+    } finally {
+        await fixture.cleanup();
+        await fs.rm(tempStateDir, { force: true, recursive: true });
+    }
+});
+
+void test("graph visualize --serve writes active project path to projectState file when a project is opened in the UI", async () => {
+    const fixture = await createDualRootFixture();
+    const tempStateDir = await fs.mkdtemp(path.join(os.tmpdir(), "cli-graph-state-serve-"));
+    const statePath = path.join(tempStateDir, "gm-cli-active-project.json");
+    let serveProcess: ReturnType<typeof spawn> | null = null;
+
+    try {
+        serveProcess = spawn(
+            process.execPath,
+            [
+                "--disable-warning=ExperimentalWarning",
+                path.resolve(REPO_ROOT, "src/cli/dist/index.js"),
+                "graph",
+                "visualize",
+                "--serve",
+                "--json",
+                "--no-open",
+                "--project-state",
+                statePath
+            ],
+            {
+                cwd: fixture.projectRoot,
+                stdio: ["ignore", "pipe", "pipe"]
+            }
+        );
+
+        const stdoutChunks: Array<string> = [];
+        const stderrChunks: Array<string> = [];
+        if (serveProcess.stdout) {
+            serveProcess.stdout.on("data", (chunk: Buffer | string) => {
+                stdoutChunks.push(typeof chunk === "string" ? chunk : chunk.toString("utf8"));
+            });
+        }
+        if (serveProcess.stderr) {
+            serveProcess.stderr.on("data", (chunk: Buffer | string) => {
+                stderrChunks.push(typeof chunk === "string" ? chunk : chunk.toString("utf8"));
+            });
+        }
+
+        const outputPayload = await new Promise<
+            { databasePath: string; payload: { url: string }; projectRoot: string } | { skipped: true }
+        >((resolve, reject) => {
+            const timeout = setTimeout(() => {
+                reject(
+                    new Error(
+                        `Timed out waiting for serve startup.\nSTDOUT:\n${stdoutChunks.join("")}\nSTDERR:\n${stderrChunks.join("")}`
+                    )
+                );
+            }, 10_000);
+
+            const maybeResolve = createServeStartupJsonResolver(stdoutChunks, timeout, resolve);
+
+            serveProcess.on("error", (error) => {
+                clearTimeout(timeout);
+                reject(error);
+            });
+            serveProcess.on("exit", (code) => {
+                clearTimeout(timeout);
+                const stderrText = stderrChunks.join("");
+                if (stderrText.includes("listen EPERM")) {
+                    resolve({ skipped: true });
+                    return;
+                }
+                reject(
+                    new Error(
+                        `Serve process exited before startup with code ${String(code)}.\nSTDOUT:\n${stdoutChunks.join("")}\nSTDERR:\n${stderrText}`
+                    )
+                );
+            });
+            serveProcess.stdout?.on("data", maybeResolve);
+        });
+
+        if ("skipped" in outputPayload) {
+            return;
+        }
+
+        const serverUrl = outputPayload.payload.url;
+
+        const invalidProjectPath = path.join(tempStateDir, "NotAProject.yyp");
+        await fs.writeFile(
+            invalidProjectPath,
+            JSON.stringify({ name: "NotAProject", resourceType: "GMScript" }),
+            "utf8"
+        );
+
+        const invalidProjectResponse = await fetch(`${serverUrl}/api/open`, {
+            method: "POST",
+            body: JSON.stringify({ path: invalidProjectPath }),
+            headers: {
+                "Content-Type": "application/json"
+            }
+        });
+
+        assert.equal(invalidProjectResponse.status, 400);
+        const invalidProjectResult = (await invalidProjectResponse.json()) as { error: string };
+        assert.match(invalidProjectResult.error, /valid GameMaker project manifest/u);
+
+        const folderResponse = await fetch(`${serverUrl}/api/open`, {
+            method: "POST",
+            body: JSON.stringify({ path: fixture.projectRoot }),
+            headers: {
+                "Content-Type": "application/json"
+            }
+        });
+
+        assert.equal(folderResponse.status, 400);
+        const folderResult = (await folderResponse.json()) as { error: string };
+        assert.match(folderResult.error, /selecting its \.yyp file/u);
+
+        const response = await fetch(`${serverUrl}/api/open`, {
+            method: "POST",
+            body: JSON.stringify({ path: path.join(fixture.projectRoot, "Project.yyp") }),
+            headers: {
+                "Content-Type": "application/json"
+            }
+        });
+
+        assert.equal(response.status, 200);
+        const result = (await response.json()) as { ok: boolean };
+        assert.equal(result.ok, true);
+
+        const stateContents = await waitForFileContents(statePath);
+        const parsedState = JSON.parse(stateContents) as { projectPath: string };
+        assert.equal(path.resolve(parsedState.projectPath), path.resolve(fixture.projectRoot, "Project.yyp"));
+    } finally {
+        serveProcess?.kill("SIGTERM");
+        await fixture.cleanup();
+        await fs.rm(tempStateDir, { force: true, recursive: true });
     }
 });
 
@@ -876,4 +1293,127 @@ void test("streamProcessOutputByLine removes all listeners on error", async () =
     );
     assert.equal(mockStream.listenerCount("error"), 0, "Expected zero 'error' listeners after error.");
     assert.equal(mockStream.listenerCount("end"), 0, "Expected zero 'end' listeners after error.");
+});
+
+void test("graph visualize feather metadata watcher only calls onChanged if content hash changes", async () => {
+    let watchListener: (event: string) => void = () => {};
+    let closeCount = 0;
+    const fakeWatcher = {
+        close() {
+            closeCount++;
+        },
+        on(eventName: string, listener: () => void) {
+            void eventName;
+            void listener;
+            return fakeWatcher;
+        }
+    } as unknown as FSWatcher;
+
+    const watchFactory = (_path: string, listener?: WatchListener<string>): FSWatcher => {
+        if (listener) {
+            watchListener = listener as any;
+        }
+        return fakeWatcher;
+    };
+
+    let readCount = 0;
+    const fileContents = [
+        "initial content", // initial load
+        "initial content", // first change (same content)
+        "different content", // second change (different content)
+        "different content" // third change (same content)
+    ];
+
+    const readFileFn = async (_path: string, _options: "utf8"): Promise<string> => {
+        const content = fileContents[readCount];
+        readCount = Math.min(readCount + 1, fileContents.length - 1);
+        return content;
+    };
+
+    let changedCount = 0;
+    let resolveChanged: (() => void) | null = null;
+
+    const watcher = __graphCommandTest__.startGraphVisualizationFeatherMetadataWatcher({
+        featherMetadataPath: "feather-metadata.json",
+        onChanged: () => {
+            changedCount++;
+            if (resolveChanged) {
+                resolveChanged();
+            }
+        },
+        onError: (err) => {
+            assert.fail(`Should not trigger error: ${Core.getErrorMessage(err)}`);
+        },
+        watchFactory,
+        readFileFn
+    });
+
+    // Wait for the initialization promise to finish
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    // Initially readCount is 1 (read once on initialization), changedCount is 0
+    assert.equal(changedCount, 0);
+
+    // Fire watch callback - content is still "initial content"
+    watchListener("change");
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    assert.equal(changedCount, 0); // content hash did not change
+
+    // Fire watch callback - content is now "different content"
+    const changedPromise = new Promise<void>((resolve) => {
+        resolveChanged = resolve;
+    });
+    watchListener("change");
+    await changedPromise;
+    assert.equal(changedCount, 1); // content hash changed, onChanged called!
+
+    // Fire watch callback - content is still "different content"
+    watchListener("change");
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    assert.equal(changedCount, 1); // content hash did not change
+
+    // Close watcher
+    watcher.close();
+    assert.equal(closeCount, 1);
+});
+
+void test("graph visualize feather metadata watcher routes errors to onError", async () => {
+    let errorListener: ((err: Error) => void) | null = null;
+    const fakeWatcher = {
+        close() {},
+        on(eventName: string, listener: (err: Error) => void) {
+            if (eventName === "error") {
+                errorListener = listener;
+            }
+            return fakeWatcher;
+        }
+    } as unknown as FSWatcher;
+
+    const watchFactory = (_path: string, _listener?: WatchListener<string>): FSWatcher => {
+        return fakeWatcher;
+    };
+
+    const errors: Array<unknown> = [];
+    const watcher = __graphCommandTest__.startGraphVisualizationFeatherMetadataWatcher({
+        featherMetadataPath: "feather-metadata.json",
+        onChanged: () => {},
+        onError: (err) => {
+            errors.push(err);
+        },
+        watchFactory,
+        readFileFn: async () => {
+            throw new Error("synthetic read error");
+        }
+    });
+
+    // Wait for init (errors during initial read are ignored)
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    assert.deepEqual(errors, []);
+
+    // Trigger synthetic watcher error
+    errorListener?.(new Error("synthetic watcher error"));
+    assert.equal(errors.length, 1);
+    assert.match((errors[0] as Error).message, /synthetic watcher error/);
+
+    watcher.close();
 });

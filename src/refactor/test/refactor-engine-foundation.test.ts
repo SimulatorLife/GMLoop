@@ -213,7 +213,7 @@ void test("planRename checks symbol existence with semantic analyzer", async () 
     );
 });
 
-void test("planRename detects reserved keyword conflicts", async () => {
+void test("planRename detects reserved GameMaker identifier conflicts", async () => {
     const mockSemantic = {
         hasSymbol: () => true,
         getSymbolOccurrences: () => [{ path: "test.gml", start: 0, end: 10, scopeId: "scope-1" }]
@@ -227,7 +227,7 @@ void test("planRename detects reserved keyword conflicts", async () => {
                 newName: "if"
             }),
         {
-            message: /reserved keyword/
+            message: /reserved GameMaker identifier/
         }
     );
 });
@@ -253,6 +253,20 @@ void test("planRename creates workspace edit with occurrences", async () => {
     assert.equal(workspace.edits.length, 2);
     assert.equal(workspace.edits[0].newText, "scr_new");
     assert.equal(workspace.edits[1].newText, "scr_new");
+});
+
+void test("planRename blocks a Tier 2 semantic rename-safety gap", async () => {
+    const message = "Cannot safely rename 'scr_old': an ambiguous binding exists at scripts/caller.gml:8-17.";
+    const semantic: PartialSemanticAnalyzer = {
+        getRenameSafetyGaps: async () => [{ message, path: "scripts/caller.gml" }],
+        getSymbolOccurrences: async () => [{ end: 7, path: "scripts/test.gml", start: 0 }],
+        hasSymbol: async () => true
+    };
+    const engine = new RefactorEngineClass({ semantic });
+
+    await assert.rejects(() => engine.planRename({ symbolId: "gml/script/scr_old", newName: "scr_new" }), {
+        message: new RegExp(message)
+    });
 });
 
 void test("planRename drops metadata-file text edits when a full metadata rewrite is staged", async () => {
@@ -584,8 +598,16 @@ void test("prepareHotReloadUpdates includes transitive dependents from cascade",
     assert.equal(grandchildUpdate?.filePath, "deps/grandchild.gml");
 });
 
-void test("findSymbolAtLocation returns null without semantic", async () => {
-    const engine = new RefactorEngineClass();
+void test("findSymbolAtLocation rejects parser-only rename targets without semantic facts", async () => {
+    const parser: ParserBridge = {
+        parse: async () => ({
+            children: [{ end: 10, name: "syntactic_only", start: 0, type: "identifier" }],
+            end: 10,
+            start: 0,
+            type: "program"
+        })
+    };
+    const engine = new RefactorEngineClass({ parser });
     const result = await engine.findSymbolAtLocation("test.gml", 10);
     assert.equal(result, null);
 });
@@ -784,6 +806,37 @@ void test("applyWorkspaceEdit rejects malformed text edit ranges before writing"
     );
 
     assert.equal(writeCount, 0);
+});
+
+void test("applyWorkspaceEdit rejects stale out-of-bounds edit ranges before writing", async () => {
+    const engine = new RefactorEngineClass();
+    const ws = new WorkspaceEditFactory();
+    ws.addEdit("scripts/first.gml", 0, 4, "show_debug_message");
+    ws.addEdit("scripts/stale.gml", 8, 12, "renamed");
+
+    const writes: Record<string, string> = {};
+
+    await assert.rejects(
+        () =>
+            engine.applyWorkspaceEdit(ws, {
+                readFile: async (filePath) => {
+                    if (filePath === "scripts/first.gml") {
+                        return "call();";
+                    }
+
+                    return "tiny";
+                },
+                writeFile: async (filePath, content) => {
+                    writes[filePath] = content;
+                },
+                dryRun: false
+            }),
+        {
+            message: /targets range 8-12, but the file length is 4/
+        }
+    );
+
+    assert.deepEqual(writes, {});
 });
 
 void test("executeRename validates required parameters", async () => {

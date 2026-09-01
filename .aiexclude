@@ -1,9 +1,6 @@
-.aiderignore
 .qwenignore
 .geminiignore
 .aiexclude
-
-.aider.conf.yml
 
 .qwen/
 .gemini/
@@ -12,6 +9,10 @@
 .husky/
 .github/
 .gmloop/
+.playwright-mcp/
+.gmcache/
+cache/
+**/cache/
 
 scripts/
 vendor/

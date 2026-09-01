@@ -18,8 +18,7 @@ switch (cannonball_type) {
 }
 
 var matrix = scr_matrix_build(
-    x,
-    y,
+    x, y,
     z + zfight,
     xrotation,
     yrotation,
@@ -30,8 +29,7 @@ var matrix = scr_matrix_build(
 );
 
 var matrix2 = scr_matrix_build(
-    x,
-    y,
+    x, y,
     z + zfight,
     xrotation,
     yrotation,

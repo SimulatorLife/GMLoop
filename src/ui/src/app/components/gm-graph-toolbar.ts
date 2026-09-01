@@ -1,18 +1,9 @@
 import { html } from "lit";
-import { ref } from "lit/directives/ref.js";
 
+import type { GraphVisualizationProjectWorkflow } from "../../graph/index.js";
 import { type GraphVisualizationUiModel, hasLoadedGraphIndex, hasLoadedGraphProject } from "../contracts.js";
-import { LIVE_RELOAD_RUNTIME_TAB_TARGET, resolveLiveReloadRuntimeUrl } from "../live-reload-runtime-tab.js";
-import type { GraphVisualizationUiPage, GraphVisualizationUiState } from "../state/types.js";
-import { createGraphVisualizationDocsPanelContent } from "./docs-panel-content.js";
 import {
-    createSearchResultSummary,
-    normalizeCatalogSearchQuery,
-    searchCliEntries,
-    searchMcpEntries,
-    searchRulesSections
-} from "./docs-search.js";
-import {
+    GRAPH_UI_EVENT_CONFIG_DRAFT_CHANGED,
     GRAPH_UI_EVENT_CYCLE_LABEL_MODE,
     GRAPH_UI_EVENT_NAVIGATE_PAGE,
     GRAPH_UI_EVENT_RESET_DEFAULTS,
@@ -20,6 +11,8 @@ import {
     GRAPH_UI_EVENT_SET_DOCS_VIEW,
     GRAPH_UI_EVENT_SET_SEARCH_QUERY,
     GRAPH_UI_EVENT_TOGGLE_GRAPH_VIEW,
+    GRAPH_UI_EVENT_TOGGLE_PLAYGROUND_CONTROLS,
+    GRAPH_UI_EVENT_TRIGGER_CANCEL_FIX,
     GRAPH_UI_EVENT_TRIGGER_FIX,
     GRAPH_UI_EVENT_TRIGGER_REGENERATE,
     GRAPH_UI_EVENT_TRIGGER_START_LIVE_RELOAD,
@@ -27,15 +20,67 @@ import {
     type GraphUiNavigatePageDetail,
     type GraphUiSetConfigViewDetail,
     type GraphUiSetDocsViewDetail,
-    type GraphUiSetSearchQueryDetail
-} from "./events.js";
+    type GraphUiSetSearchQueryDetail,
+    type GraphUiTriggerFixDetail
+} from "../events/events.js";
+import { LIVE_RELOAD_RUNTIME_TAB_TARGET, resolveLiveReloadRuntimeUrl } from "../live-reload-runtime-tab.js";
+import type {
+    GraphVisualizationUiDocsView,
+    GraphVisualizationUiPage,
+    GraphVisualizationUiState
+} from "../state/types.js";
+import { createGraphVisualizationDocsPanelContent } from "./docs-panel-content.js";
+import {
+    createSearchResultSummary,
+    normalizeCatalogSearchQuery,
+    searchCatalogEntries,
+    searchCliEntries,
+    searchLspEntries,
+    searchMcpEntries
+} from "./docs-search.js";
+import { EventBusManager } from "./event-bus-mixin.js";
+import type { GmConfigPanel } from "./gm-config-panel.js";
+import {
+    evaluateToolbarKeyboardShortcut,
+    resolveKeyboardShortcutTarget,
+    type ToolbarKeyboardShortcutAction
+} from "./keyboard-shortcut-policy.js";
+import { LifecycleParticipantsController } from "./lifecycle-participants-controller.js";
 import { LightDomLitElement } from "./light-dom-lit-element.js";
+import { renderProcessButtonContent } from "./primitives/gm-button.js";
 import type { GmStatusChipStatus } from "./primitives/gm-status-chip.js";
 
 const CLASS_BTN_CHIP_ACTIVE = "gm-btn--chip active";
 const CLASS_BTN_CHIP = "gm-btn--chip";
 
 const LIVE_RELOAD_PAGE: GraphVisualizationUiPage = "live-reload";
+
+const DOCS_VIEW_LABELS: Readonly<Record<GraphVisualizationUiDocsView, string>> = Object.freeze({
+    cli: "CLI",
+    codemods: "Codemods",
+    formatting: "Formatting",
+    linting: "Linting",
+    lsp: "LSP",
+    mcp: "MCP"
+});
+
+const DOCS_VIEW_ORDER: ReadonlyArray<GraphVisualizationUiDocsView> = Object.freeze([
+    "cli",
+    "lsp",
+    "mcp",
+    "linting",
+    "formatting",
+    "codemods"
+]);
+
+const DOCS_VIEW_CONTENT_IDS: Readonly<Record<GraphVisualizationUiDocsView, string>> = Object.freeze({
+    cli: "cli-page",
+    codemods: "codemods-page",
+    formatting: "formatting-page",
+    linting: "linting-page",
+    lsp: "lsp-page",
+    mcp: "docs-mcp-page"
+});
 
 function formatLiveReloadUptime(uptimeMs: number): string {
     const totalSeconds = Math.max(0, Math.floor(uptimeMs / 1000));
@@ -44,24 +89,29 @@ function formatLiveReloadUptime(uptimeMs: number): string {
     return `${String(minutes)}m ${String(seconds).padStart(2, "0")}s`;
 }
 
-function resolveMcpStatusChipStatus(status: GraphVisualizationUiModel["mcpServerStatus"]): GmStatusChipStatus {
+function resolveAutoGameStatusChipStatus(model: GraphVisualizationUiModel): GmStatusChipStatus {
+    const status = model.autoGamePipeline?.status ?? "idle";
     if (status === "running") {
         return "running";
     }
-    if (status === "stopped") {
+    if (status === "success") {
+        return "success";
+    }
+    if (status === "error") {
+        return "error";
+    }
+    if (status === "blocked") {
         return "stopped";
     }
     return "not-running";
 }
 
-function resolveMcpStatusSummary(status: GraphVisualizationUiModel["mcpServerStatus"]): string {
-    if (status === "running") {
-        return "The MCP bridge is available for connected clients.";
+function resolveAutoGameStatusSummary(model: GraphVisualizationUiModel): string {
+    const pipeline = model.autoGamePipeline;
+    if (pipeline?.status === "running" && pipeline.statusText) {
+        return pipeline.statusText;
     }
-    if (status === "stopped") {
-        return "The MCP bridge stopped. Restart it to continue.";
-    }
-    return "The MCP bridge has not started in this session yet.";
+    return "Run autonomous game-development pipelines and one-time tasks using AI agent skills.";
 }
 
 function resolveLiveReloadStatusChipStatus(model: GraphVisualizationUiModel): GmStatusChipStatus {
@@ -108,16 +158,35 @@ function resolveFixStatusChipStatus(
 }
 
 function resolveFixStatusSummary(state: GraphVisualizationUiState): string {
+    const workflowLabel =
+        state.fixWorkflow === "format"
+            ? "Formatting"
+            : state.fixWorkflow === "lint"
+              ? "Linting"
+              : state.fixWorkflow === "refactor"
+                ? "Refactoring"
+                : "Applying fixes";
+    const completedWorkflowLabel =
+        state.fixWorkflow === "format"
+            ? "Formatting"
+            : state.fixWorkflow === "lint"
+              ? "Linting"
+              : state.fixWorkflow === "refactor"
+                ? "Refactoring"
+                : "All fixes";
+
     if (state.isFixPending) {
-        return "Applying fixes to your project.";
+        return `${workflowLabel} your project (this may take a while).`;
     }
 
     if (state.fixStatus === "success") {
-        return "All fixes have been applied successfully.";
+        return `${completedWorkflowLabel} completed successfully.`;
     }
 
     if (state.fixStatus === "error") {
-        return "Fixes encountered errors. Review the run log for details.";
+        return state.fixWorkflow === "fix"
+            ? "Fixes encountered errors. Review the run log for details."
+            : `${workflowLabel} encountered errors. Review the run log for details.`;
     }
 
     return "Run the opened project's gmloop-configured repair workflow.";
@@ -125,11 +194,67 @@ function resolveFixStatusSummary(state: GraphVisualizationUiState): string {
 
 function resolveDocsStatusSummary(model: GraphVisualizationUiModel, state: GraphVisualizationUiState): string {
     const docsPanelContent = createGraphVisualizationDocsPanelContent(model.documentationCatalogs);
-    return state.activeDocsView === "cli"
-        ? docsPanelContent.cliMetaText
-        : state.activeDocsView === "mcp"
-          ? docsPanelContent.mcpMetaText
-          : docsPanelContent.rulesMetaText;
+    if (state.activeDocsView === "cli") {
+        return `CLI: ${docsPanelContent.cliMetaText} Commands and flags for local project workflows.`;
+    }
+    if (state.activeDocsView === "mcp") {
+        return `MCP: ${docsPanelContent.mcpMetaText} Agent-facing tools and input fields.`;
+    }
+    if (state.activeDocsView === "linting") {
+        return `Linting: ${docsPanelContent.lintingMetaText} Rule diagnostics and autofix metadata.`;
+    }
+    if (state.activeDocsView === "formatting") {
+        return `Formatting: ${docsPanelContent.formattingMetaText} Formatter options and defaults.`;
+    }
+    return `Codemods: ${docsPanelContent.codemodsMetaText} Project-wide refactors exposed by GMLoop.`;
+}
+
+/**
+ * Return true when toolbar keyboard shortcuts should yield to native text entry.
+ */
+export function isToolbarKeyboardShortcutTextEntryTarget(target: EventTarget | null): boolean {
+    const check = (el: EventTarget | null): boolean => {
+        if (el && "tagName" in el && typeof el.tagName === "string") {
+            const tagName = el.tagName.toUpperCase();
+            if (tagName === "TEXTAREA" || tagName === "SELECT") {
+                return true;
+            }
+
+            if (tagName === "INPUT") {
+                const inputType = ((el as any).type || "text").toLowerCase();
+                return !["button", "checkbox", "color", "file", "image", "radio", "range", "reset", "submit"].includes(
+                    inputType
+                );
+            }
+        }
+
+        if (typeof Element !== "undefined" && el instanceof Element) {
+            if (el instanceof HTMLTextAreaElement || el instanceof HTMLSelectElement) {
+                return true;
+            }
+
+            if (el instanceof HTMLInputElement) {
+                const inputType = el.type.toLowerCase();
+                return !["button", "checkbox", "color", "file", "image", "radio", "range", "reset", "submit"].includes(
+                    inputType
+                );
+            }
+
+            return typeof HTMLElement !== "undefined" && el instanceof HTMLElement && el.isContentEditable;
+        }
+
+        return false;
+    };
+
+    if (check(target)) {
+        return true;
+    }
+
+    if (typeof document !== "undefined" && document.activeElement && check(document.activeElement)) {
+        return true;
+    }
+
+    return false;
 }
 
 function resolveConfigStatusSummary(model: GraphVisualizationUiModel): string {
@@ -139,6 +264,23 @@ function resolveConfigStatusSummary(model: GraphVisualizationUiModel): string {
 
 /**
  * Graph surface toolbar controls and contextual page headings.
+ *
+ * Lifecycle wiring is delegated to injected collaborators so this class
+ * does not deepen the `LightDomLitElement` subclass with
+ * `connectedCallback` / `disconnectedCallback` overrides. Two distinct
+ * event sources are managed by separate `EventBusManager` instances and
+ * registered with a single `LifecycleParticipantsController`:
+ *
+ * - The local `keydown` listener is registered against the host element so
+ *   toolbar keyboard shortcuts only fire when the toolbar is on screen.
+ * - The global `GRAPH_UI_EVENT_CONFIG_DRAFT_CHANGED` listener is registered
+ *   against `globalThis` so the toolbar can refresh its save-state badge
+ *   even when the config panel is the active surface.
+ *
+ * The `LifecycleParticipantsController` ensures both buses connect in
+ * declaration order and disconnect in reverse order, mirroring the
+ * previously hand-rolled `connectedCallback` / `disconnectedCallback`
+ * overrides.
  */
 export class GmGraphToolbar extends LightDomLitElement {
     public static properties = {
@@ -150,7 +292,15 @@ export class GmGraphToolbar extends LightDomLitElement {
 
     public accessor state: GraphVisualizationUiState | null = null;
 
-    #searchInput: HTMLInputElement | null = null;
+    public constructor() {
+        super();
+        new LifecycleParticipantsController(this, [
+            new EventBusManager(this, [{ event: "keydown", handler: this.#onKeyDown }]),
+            new EventBusManager(globalThis, [
+                { event: GRAPH_UI_EVENT_CONFIG_DRAFT_CHANGED, handler: this.#onConfigDraftChanged }
+            ])
+        ]);
+    }
 
     #canUseGraphControls(): boolean {
         return this.model !== null && hasLoadedGraphIndex(this.model);
@@ -161,90 +311,46 @@ export class GmGraphToolbar extends LightDomLitElement {
             return;
         }
 
-        if (event.key === "Escape" && this.state.searchQuery) {
-            event.preventDefault();
-            this.#emitSearchQuery("");
-            return;
-        }
+        const action = evaluateToolbarKeyboardShortcut({
+            canUseGraphControls: this.#canUseGraphControls(),
+            hasModifier: event.altKey || event.metaKey || event.ctrlKey,
+            hasSearchQuery: this.state.searchQuery.length > 0,
+            isTextEntryTarget: isToolbarKeyboardShortcutTextEntryTarget(resolveKeyboardShortcutTarget(event)),
+            key: event.key
+        });
 
-        if (event.altKey || event.metaKey || event.ctrlKey) {
-            return;
-        }
-
-        switch (event.key.toLowerCase()) {
-            case "g": {
-                if (document.activeElement === this.#searchInput) {
-                    return;
-                }
-                if (!this.#canUseGraphControls()) {
-                    return;
-                }
-                event.preventDefault();
-                this.#emitToggleGraphView();
-                break;
-            }
-            case "l": {
-                if (document.activeElement === this.#searchInput) {
-                    return;
-                }
-                if (!this.#canUseGraphControls()) {
-                    return;
-                }
-                event.preventDefault();
-                this.#emitCycleLabelMode();
-                break;
-            }
-            case "r": {
-                if (document.activeElement === this.#searchInput) {
-                    return;
-                }
-                if (!this.#canUseGraphControls()) {
-                    return;
-                }
-                event.preventDefault();
-                this.#emitResetDefaults();
-                break;
-            }
-            case "1": {
-                if (!this.#canUseGraphControls()) {
-                    return;
-                }
-                event.preventDefault();
-                this.#emitNavigatePage("graph");
-                break;
-            }
-            case "2": {
-                event.preventDefault();
-                this.#emitNavigatePage("docs");
-                break;
-            }
-            case "3": {
-                event.preventDefault();
-                this.#emitNavigatePage("config");
-                break;
-            }
-            case "4": {
-                event.preventDefault();
-                this.#emitNavigatePage("fix");
-                break;
-            }
-            case "5": {
-                event.preventDefault();
-                this.#emitNavigatePage("playground");
-                break;
-            }
-            case "6": {
-                event.preventDefault();
-                this.#emitNavigatePage("mcp");
-                break;
-            }
-            case "7": {
-                event.preventDefault();
-                this.#emitNavigatePage(LIVE_RELOAD_PAGE);
-                break;
-            }
-        }
+        this.#applyToolbarKeyboardShortcut(event, action);
     };
+
+    #applyToolbarKeyboardShortcut(event: KeyboardEvent, action: ToolbarKeyboardShortcutAction): void {
+        if (action.kind === "none") {
+            return;
+        }
+
+        event.preventDefault();
+
+        switch (action.kind) {
+            case "clear-search": {
+                this.#emitSearchQuery("");
+                return;
+            }
+            case "toggle-graph-view": {
+                this.#emitToggleGraphView();
+                return;
+            }
+            case "cycle-label-mode": {
+                this.#emitCycleLabelMode();
+                return;
+            }
+            case "reset-defaults": {
+                this.#emitResetDefaults();
+                return;
+            }
+            case "navigate-page": {
+                this.#emitNavigatePage(action.page);
+            }
+        }
+    }
 
     #onSearchInput = (eventValue: Event): void => {
         const target = eventValue.target;
@@ -254,16 +360,9 @@ export class GmGraphToolbar extends LightDomLitElement {
         this.#emitSearchQuery(target.value);
     };
 
-    public connectedCallback(): void {
-        super.connectedCallback();
-        this.addEventListener("keydown", this.#onKeyDown);
-    }
-
-    public disconnectedCallback(): void {
-        super.disconnectedCallback();
-        this.removeEventListener("keydown", this.#onKeyDown);
-        this.#searchInput = null;
-    }
+    #onConfigDraftChanged = (): void => {
+        this.requestUpdate();
+    };
 
     #emitSearchQuery(searchQuery: string): void {
         if (this.state?.activePage === "graph" && !this.#canUseGraphControls()) {
@@ -279,22 +378,22 @@ export class GmGraphToolbar extends LightDomLitElement {
         );
     }
 
-    #emitDocsView(docsView: GraphVisualizationUiState["activeDocsView"]): void {
-        this.dispatchEvent(
-            new CustomEvent<GraphUiSetDocsViewDetail>(GRAPH_UI_EVENT_SET_DOCS_VIEW, {
-                bubbles: true,
-                composed: true,
-                detail: { docsView }
-            })
-        );
-    }
-
     #emitConfigView(configView: GraphVisualizationUiState["activeConfigView"]): void {
         this.dispatchEvent(
             new CustomEvent<GraphUiSetConfigViewDetail>(GRAPH_UI_EVENT_SET_CONFIG_VIEW, {
                 bubbles: true,
                 composed: true,
                 detail: { configView }
+            })
+        );
+    }
+
+    #emitDocsView(docsView: GraphVisualizationUiDocsView): void {
+        this.dispatchEvent(
+            new CustomEvent<GraphUiSetDocsViewDetail>(GRAPH_UI_EVENT_SET_DOCS_VIEW, {
+                bubbles: true,
+                composed: true,
+                detail: { docsView }
             })
         );
     }
@@ -325,11 +424,19 @@ export class GmGraphToolbar extends LightDomLitElement {
         );
     }
 
+    /**
+     * Forward every top-level navigation request unchanged.
+     *
+     * The shell's navigation listener now treats every page the same and
+     * lets each surface decide what to render when it has no data, so the
+     * toolbar must not intercept requests for graph navigation even when
+     * the graph index has not loaded yet. Toolbar-owned graph controls
+     * (search, view toggle, regenerate, reset) keep using
+     * `#canUseGraphControls()` to disable themselves when they have
+     * nothing to operate on; that gate belongs on the control, not on the
+     * page navigation that arrives here.
+     */
     #emitNavigatePage(page: GraphVisualizationUiPage): void {
-        if (page === "graph" && !this.#canUseGraphControls()) {
-            return;
-        }
-
         this.dispatchEvent(
             new CustomEvent<GraphUiNavigatePageDetail>(GRAPH_UI_EVENT_NAVIGATE_PAGE, {
                 bubbles: true,
@@ -383,13 +490,23 @@ export class GmGraphToolbar extends LightDomLitElement {
         );
     }
 
-    #emitFix(): void {
+    #emitFix(workflow: GraphVisualizationProjectWorkflow): void {
         if (!this.model || !hasLoadedGraphProject(this.model)) {
             return;
         }
 
         this.dispatchEvent(
-            new CustomEvent(GRAPH_UI_EVENT_TRIGGER_FIX, {
+            new CustomEvent<GraphUiTriggerFixDetail>(GRAPH_UI_EVENT_TRIGGER_FIX, {
+                bubbles: true,
+                composed: true,
+                detail: { workflow }
+            })
+        );
+    }
+
+    #emitCancelFix(): void {
+        this.dispatchEvent(
+            new CustomEvent(GRAPH_UI_EVENT_TRIGGER_CANCEL_FIX, {
                 bubbles: true,
                 composed: true
             })
@@ -404,9 +521,9 @@ export class GmGraphToolbar extends LightDomLitElement {
         return html`
             <span
                 class="pending-badge"
-                aria-label="${this.state.pendingActionCount} background operation${this.state.pendingActionCount > 1
-                    ? "s"
-                    : ""} in progress"
+                aria-label="${this.state.pendingActionCount} background operation${
+                    this.state.pendingActionCount > 1 ? "s" : ""
+                } in progress"
                 role="status"
             >
                 ${this.state.pendingActionCount}
@@ -419,10 +536,8 @@ export class GmGraphToolbar extends LightDomLitElement {
             return null;
         }
 
-        if (this.state.activePage === "mcp") {
-            return html`<gm-status-chip
-                .status=${resolveMcpStatusChipStatus(this.model.mcpServerStatus)}
-            ></gm-status-chip>`;
+        if (this.state.activePage === "auto-game") {
+            return html`<gm-status-chip .status=${resolveAutoGameStatusChipStatus(this.model)}></gm-status-chip>`;
         }
 
         if (this.state.activePage === LIVE_RELOAD_PAGE) {
@@ -438,7 +553,35 @@ export class GmGraphToolbar extends LightDomLitElement {
         return null;
     }
 
-    #renderDocsControls() {
+    #renderDocsSubTabs(
+        activeDocsView: GraphVisualizationUiDocsView,
+        counts: Readonly<Record<GraphVisualizationUiDocsView, number>>
+    ) {
+        return html`
+            <div class="gm-view-selector toolbar-docs-subtabs" role="tablist" aria-label="Documentation view selector">
+                ${DOCS_VIEW_ORDER.map((docsView) => {
+                    const isActive = docsView === activeDocsView;
+                    return html`<button
+                        id=${`docs-view-${docsView}`}
+                        type="button"
+                        class=${isActive ? CLASS_BTN_CHIP_ACTIVE : CLASS_BTN_CHIP}
+                        role="tab"
+                        aria-selected=${isActive}
+                        aria-controls=${DOCS_VIEW_CONTENT_IDS[docsView]}
+                        tabindex=${isActive ? "0" : "-1"}
+                        @click=${() => this.#emitDocsView(docsView)}
+                    >
+                        <span class="toolbar-docs-subtabs-label">${DOCS_VIEW_LABELS[docsView]}</span>
+                        <span class="toolbar-docs-subtabs-count" aria-label=${`${String(counts[docsView])} entries`}
+                            >${counts[docsView]}</span
+                        >
+                    </button>`;
+                })}
+            </div>
+        `;
+    }
+
+    #renderDocsSearchControls() {
         if (!this.model || !this.state) {
             return null;
         }
@@ -446,67 +589,50 @@ export class GmGraphToolbar extends LightDomLitElement {
         const docsPanelContent = createGraphVisualizationDocsPanelContent(this.model.documentationCatalogs);
         const searchQuery = normalizeCatalogSearchQuery(this.state.searchQuery);
         const cliSearchResult = searchCliEntries(docsPanelContent.cliEntries, searchQuery);
+        const lspSearchResult = searchLspEntries(docsPanelContent.lspEntries, searchQuery);
         const mcpSearchResult = searchMcpEntries(docsPanelContent.mcpEntries, searchQuery);
-        const rulesSearchResult = searchRulesSections(docsPanelContent.rulesSections, searchQuery);
-        const totalCount =
-            this.state.activeDocsView === "cli"
-                ? cliSearchResult.totalCount
-                : this.state.activeDocsView === "mcp"
-                  ? mcpSearchResult.totalCount
-                  : rulesSearchResult.totalCount;
+        const lintingSearchResult = searchCatalogEntries(docsPanelContent.lintingEntries, searchQuery);
+        const formattingSearchResult = searchCatalogEntries(docsPanelContent.formattingEntries, searchQuery);
+        const codemodsSearchResult = searchCatalogEntries(docsPanelContent.codemodsEntries, searchQuery);
+        const counts: Readonly<Record<GraphVisualizationUiDocsView, number>> = {
+            cli: cliSearchResult.totalCount,
+            codemods: codemodsSearchResult.totalCount,
+            formatting: formattingSearchResult.totalCount,
+            linting: lintingSearchResult.totalCount,
+            lsp: lspSearchResult.totalCount,
+            mcp: mcpSearchResult.totalCount
+        };
+        const totalCount = counts[this.state.activeDocsView];
         const searchResultSummary = createSearchResultSummary(searchQuery, this.state.activeDocsView, totalCount);
 
-        // Docs subview and catalog search controls stay in the shared page toolbar
-        // so the Docs panel remains content-only and every tab has one control surface.
         return html`
-            <div class="gm-view-selector" role="group" aria-label="Documentation view selector">
-                <button
-                    id="docs-view-cli"
-                    aria-pressed=${this.state.activeDocsView === "cli"}
-                    class=${this.state.activeDocsView === "cli" ? CLASS_BTN_CHIP_ACTIVE : CLASS_BTN_CHIP}
-                    @click=${() => this.#emitDocsView("cli")}
-                >
-                    CLI
-                </button>
-                <button
-                    id="docs-view-mcp"
-                    aria-pressed=${this.state.activeDocsView === "mcp"}
-                    class=${this.state.activeDocsView === "mcp" ? CLASS_BTN_CHIP_ACTIVE : CLASS_BTN_CHIP}
-                    @click=${() => this.#emitDocsView("mcp")}
-                >
-                    MCP
-                </button>
-                <button
-                    id="docs-view-rules"
-                    aria-pressed=${this.state.activeDocsView === "rules"}
-                    class=${this.state.activeDocsView === "rules" ? CLASS_BTN_CHIP_ACTIVE : CLASS_BTN_CHIP}
-                    @click=${() => this.#emitDocsView("rules")}
-                >
-                    Rules
-                </button>
-            </div>
-            <div class="docs-search-panel" role="search" aria-label="Filter documentation catalog">
-                <label class="docs-search-label" for="docs-search-input">Search current docs view</label>
-                <div class="docs-search-controls">
-                    <input
-                        id="docs-search-input"
-                        class="docs-search-input"
-                        type="search"
-                        .value=${this.state.searchQuery}
-                        aria-describedby="toolbar-subheading docs-search-summary"
-                        placeholder="Search names, descriptions, flags, and badges"
-                        @input=${this.#onSearchInput}
-                    />
-                    <button
-                        class="docs-search-clear"
-                        type="button"
-                        ?disabled=${this.state.searchQuery.length === 0}
-                        @click=${() => this.#emitSearchQuery("")}
-                    >
-                        Clear
-                    </button>
+            <div class="toolbar-docs-controls" aria-label="Documentation view and search controls">
+                ${this.#renderDocsSubTabs(this.state.activeDocsView, counts)}
+                <div class="toolbar-docs-search" role="search" aria-label="Filter documentation catalog">
+                    <div class="docs-search-controls">
+                        <input
+                            id="docs-search-input"
+                            class="docs-search-input"
+                            type="search"
+                            aria-label="Search current docs view"
+                            .value=${this.state.searchQuery}
+                            aria-describedby="toolbar-subheading docs-search-summary"
+                            placeholder="Search docs"
+                            @input=${this.#onSearchInput}
+                        />
+                        <button
+                            class="docs-search-clear"
+                            type="button"
+                            ?disabled=${this.state.searchQuery.length === 0}
+                            @click=${() => this.#emitSearchQuery("")}
+                        >
+                            Clear
+                        </button>
+                    </div>
+                    <p id="docs-search-summary" class="docs-search-summary" aria-live="polite">
+                        ${searchResultSummary}
+                    </p>
                 </div>
-                <p id="docs-search-summary" class="docs-search-summary" aria-live="polite">${searchResultSummary}</p>
             </div>
         `;
     }
@@ -516,51 +642,138 @@ export class GmGraphToolbar extends LightDomLitElement {
             return null;
         }
 
+        const configPanel =
+            typeof document === "undefined" ? null : document.querySelector<GmConfigPanel>("gm-config-panel");
+        const isDirty = configPanel?.isDraftDirty === true;
+        const isValid = configPanel?.isDraftValid !== false;
+        const validationError = configPanel?.draftValidationError ?? null;
+        const isSavePending = this.state.isConfigSavePending === true;
+        const isSaveDisabled = !isValid || !isDirty || isSavePending;
+        const isResetDisabled = !isDirty || isSavePending;
+
+        const badgeLabel = isValid ? (isDirty ? "Unsaved" : "Saved") : "Invalid";
+        const badgeTone = isValid ? (isDirty ? "warning" : "success") : "error";
+
         return html`
-            <div class="gm-view-selector" role="group" aria-label="Configuration view selector">
-                <button
-                    id="config-view-rendered"
-                    type="button"
-                    aria-pressed=${this.state.activeConfigView === "rendered"}
-                    class=${this.state.activeConfigView === "rendered" ? CLASS_BTN_CHIP_ACTIVE : CLASS_BTN_CHIP}
-                    @click=${() => this.#emitConfigView("rendered")}
-                >
-                    Rendered
-                </button>
-                <button
-                    id="config-view-raw"
-                    type="button"
-                    aria-pressed=${this.state.activeConfigView === "raw"}
-                    class=${this.state.activeConfigView === "raw" ? CLASS_BTN_CHIP_ACTIVE : CLASS_BTN_CHIP}
-                    @click=${() => this.#emitConfigView("raw")}
-                >
-                    Raw JSON
-                </button>
+            <div class="toolbar-config-actions-container">
+                <div class="gm-view-selector" role="group" aria-label="Configuration view selector">
+                    <button
+                        id="config-view-rendered"
+                        type="button"
+                        aria-pressed=${this.state.activeConfigView === "rendered"}
+                        class=${this.state.activeConfigView === "rendered" ? CLASS_BTN_CHIP_ACTIVE : CLASS_BTN_CHIP}
+                        @click=${() => this.#emitConfigView("rendered")}
+                    >
+                        Rendered
+                    </button>
+                    <button
+                        id="config-view-raw"
+                        type="button"
+                        aria-pressed=${this.state.activeConfigView === "raw"}
+                        class=${this.state.activeConfigView === "raw" ? CLASS_BTN_CHIP_ACTIVE : CLASS_BTN_CHIP}
+                        @click=${() => this.#emitConfigView("raw")}
+                    >
+                        Raw JSON
+                    </button>
+                </div>
+
+                <div class="toolbar-config-save-group">
+                    <gm-badge .label=${badgeLabel} .tone=${badgeTone}></gm-badge>
+
+                    <button
+                        type="button"
+                        class="gm-btn gm-btn--primary"
+                        ?disabled=${isSaveDisabled}
+                        aria-busy=${isSavePending}
+                        @click=${() => configPanel?.saveDraft()}
+                    >
+                        ${renderProcessButtonContent({
+                            label: "Save Config",
+                            pending: isSavePending
+                        })}
+                    </button>
+                    <button
+                        type="button"
+                        class="gm-btn gm-btn--chip"
+                        ?disabled=${isResetDisabled}
+                        @click=${() => configPanel?.resetDraft()}
+                    >
+                        Reset Draft
+                    </button>
+
+                    <span
+                        class=${isValid ? "config-validation is-valid" : "config-validation is-invalid"}
+                        aria-live="polite"
+                    >
+                        ${isValid ? "JSON is valid and ready to save." : validationError}
+                    </span>
+                </div>
             </div>
         `;
     }
 
     #renderFixControls() {
-        if (!this.model?.isServerMode || !hasLoadedGraphProject(this.model)) {
+        if (!this.model?.isServerMode) {
             return null;
         }
 
         const isPending = this.state?.isFixPending === true;
+        const isCancelPending = this.state?.isFixCancelPending === true;
+        // A project can be selected (and shown in the header) before its startup
+        // settles; fixes genuinely cannot run until then. Once loaded, this stays
+        // false so the buttons never sit disabled for longer than necessary.
+        const isProjectStillOpening = !hasLoadedGraphProject(this.model);
+        const activeWorkflow = isPending ? (this.state?.fixWorkflow ?? null) : null;
+        const workflows = [
+            { id: "run-fix", label: "Fix", workflow: "fix" },
+            { id: "run-format", label: "Format", workflow: "format" },
+            {
+                id: "run-refactor",
+                label: "Refactor / Codemods",
+                workflow: "refactor"
+            },
+            { id: "run-lint", label: "Lint", workflow: "lint" }
+        ] as const;
 
         return html`
             <div class="toolbar-control-group toolbar-fix-controls">
-                <button
-                    id="run-fix"
-                    type="button"
-                    class="gm-btn gm-btn--primary"
-                    ?disabled=${isPending}
-                    @click=${() => this.#emitFix()}
-                >
-                    <span class="button-content">
-                        ${isPending ? html`<span class="button-spinner" aria-hidden="true"></span>` : null}
-                        <span class="button-label">${isPending ? "Applying Fixes..." : "Apply Fixes"}</span>
-                    </span>
-                </button>
+                ${workflows.map(
+                    (entry, index) => html`
+                        <button
+                            id=${entry.id}
+                            type="button"
+                            class=${index === 0 ? "gm-btn gm-btn--primary" : "gm-btn"}
+                            ?disabled=${isPending || isProjectStillOpening}
+                            aria-busy=${activeWorkflow === entry.workflow ? "true" : "false"}
+                            @click=${() => this.#emitFix(entry.workflow)}
+                        >
+                            ${renderProcessButtonContent({
+                                label: entry.label,
+                                pending: activeWorkflow === entry.workflow
+                            })}
+                        </button>
+                    `
+                )}
+                ${
+                    isPending
+                        ? html`
+                              <button
+                                  id="cancel-fix"
+                                  type="button"
+                                  class="gm-btn gm-btn--destructive"
+                                  title="Stop the in-flight fix workflow"
+                                  ?disabled=${isCancelPending}
+                                  aria-busy=${isCancelPending ? "true" : "false"}
+                                  @click=${() => this.#emitCancelFix()}
+                              >
+                                  ${renderProcessButtonContent({
+                                      label: isCancelPending ? "Cancelling…" : "Cancel",
+                                      pending: isCancelPending
+                                  })}
+                              </button>
+                          `
+                        : null
+                }
             </div>
         `;
     }
@@ -572,9 +785,10 @@ export class GmGraphToolbar extends LightDomLitElement {
 
         const hasActiveSession = this.model.liveReload !== null;
         const isStartPending = this.state?.isLiveReloadStartPending === true;
+        const isStopPending = this.state?.isLiveReloadStopPending === true;
         const runtimeUrl = resolveLiveReloadRuntimeUrl(this.model.liveReload);
         const isRetry = this.state?.liveReloadErrorMessage !== null && !hasActiveSession;
-        const isStopDisabled = !hasActiveSession || isStartPending;
+        const isStopDisabled = !hasActiveSession || isStartPending || isStopPending;
         const startButtonTitle = isStartPending
             ? "Starting Live Reload"
             : isRetry
@@ -633,37 +847,75 @@ export class GmGraphToolbar extends LightDomLitElement {
                     title=${startButtonTitle}
                     @click=${() => this.#emitStartLiveReload()}
                 >
-                    ${isStartPending
-                        ? html`<span class="live-reload-btn-spinner" aria-hidden="true"></span>`
-                        : isRetry
-                          ? playIcon
-                          : hasActiveSession
-                            ? restartIcon
-                            : playIcon}
+                    ${renderProcessButtonContent({
+                        idleVisual: isRetry ? playIcon : hasActiveSession ? restartIcon : playIcon,
+                        label: "Start Live Reload",
+                        pending: isStartPending,
+                        visuallyHiddenLabel: true
+                    })}
                 </button>
-                ${runtimeUrl === null
-                    ? null
-                    : html`
-                          <a
-                              id="open-live-reload-runtime"
-                              class="live-reload-btn live-reload-btn--runtime"
-                              href=${runtimeUrl}
-                              target=${LIVE_RELOAD_RUNTIME_TAB_TARGET}
-                              rel="noreferrer"
-                              title="Open Runtime"
-                          >
-                              ${openRuntimeIcon}
-                          </a>
-                      `}
+                ${
+                    runtimeUrl === null
+                        ? null
+                        : html`
+                              <a
+                                  id="open-live-reload-runtime"
+                                  class="live-reload-btn live-reload-btn--runtime"
+                                  href=${runtimeUrl}
+                                  target=${LIVE_RELOAD_RUNTIME_TAB_TARGET}
+                                  rel="noreferrer"
+                                  title="Open Runtime"
+                              >
+                                  ${openRuntimeIcon}
+                              </a>
+                          `
+                }
                 <button
                     id="stop-live-reload"
                     type="button"
                     class="live-reload-btn live-reload-btn--destructive"
                     ?disabled=${isStopDisabled}
+                    aria-busy=${isStopPending ? "true" : "false"}
                     title=${stopButtonTitle}
                     @click=${() => this.#emitStopLiveReload()}
                 >
-                    ${stopIcon}
+                    ${renderProcessButtonContent({
+                        idleVisual: stopIcon,
+                        label: "Stop Live Reload",
+                        pending: isStopPending,
+                        visuallyHiddenLabel: true
+                    })}
+                </button>
+            </div>
+        `;
+    }
+
+    #emitTogglePlaygroundControls(): void {
+        this.dispatchEvent(
+            new CustomEvent(GRAPH_UI_EVENT_TOGGLE_PLAYGROUND_CONTROLS, {
+                bubbles: true,
+                composed: true
+            })
+        );
+    }
+
+    #renderPlaygroundControls() {
+        const isOpen = this.state?.playgroundControlsOpen === true;
+        return html`
+            <div class="toolbar-control-group">
+                <button
+                    type="button"
+                    class="playground-controls-toggle ${isOpen ? "is-open" : "is-closed"}"
+                    aria-controls="playground-controls-panel"
+                    aria-expanded=${isOpen ? "true" : "false"}
+                    @click=${() => this.#emitTogglePlaygroundControls()}
+                >
+                    <span class="playground-controls-toggle-icon" aria-hidden="true">
+                        <span></span>
+                        <span></span>
+                        <span></span>
+                    </span>
+                    <span>${isOpen ? "Hide Controls" : "Show Controls"}</span>
                 </button>
             </div>
         `;
@@ -685,8 +937,8 @@ export class GmGraphToolbar extends LightDomLitElement {
                       ? "Fix"
                       : this.state.activePage === "playground"
                         ? "Playground"
-                        : this.state.activePage === "mcp"
-                          ? "MCP"
+                        : this.state.activePage === "auto-game"
+                          ? "Auto-Game"
                           : "Live Reload";
         const subheading =
             this.state.activePage === "graph"
@@ -699,8 +951,8 @@ export class GmGraphToolbar extends LightDomLitElement {
                       ? resolveFixStatusSummary(this.state)
                       : this.state.activePage === "playground"
                         ? "Interactive GML playground for parsing, formatting, and rule experiments."
-                        : this.state.activePage === "mcp"
-                          ? resolveMcpStatusSummary(this.model.mcpServerStatus)
+                        : this.state.activePage === "auto-game"
+                          ? resolveAutoGameStatusSummary(this.model)
                           : resolveLiveReloadStatusSummary(this.model);
         const hasLoadedIndex = hasLoadedGraphIndex(this.model);
         const hasLoadedProject = hasLoadedGraphProject(this.model);
@@ -710,9 +962,7 @@ export class GmGraphToolbar extends LightDomLitElement {
         const liveReloadControlsClassName =
             this.state.activePage === LIVE_RELOAD_PAGE ? "toolbar-live-reload-controls" : "";
         const fixControlsClassName = this.state.activePage === "fix" ? "toolbar-fix-controls" : "";
-        const docsControlsClassName = this.state.activePage === "docs" ? "toolbar-docs-controls" : "";
         const configControlsClassName = this.state.activePage === "config" ? "toolbar-config-controls" : "";
-
         return html`
             <div id="page-toolbar" class="page-toolbar">
                 <div class="toolbar-heading-row">
@@ -723,21 +973,30 @@ export class GmGraphToolbar extends LightDomLitElement {
                         </div>
                         <span id="toolbar-subheading">${subheading}</span>
                     </div>
-                    ${this.state.activePage === "config"
-                        ? html`<div class=${configControlsClassName}>${this.#renderConfigControls()}</div>`
-                        : null}
-                    ${this.state.activePage === "fix"
-                        ? html`<div class=${fixControlsClassName}>${this.#renderFixControls()}</div>`
-                        : null}
-                    ${this.state.activePage === LIVE_RELOAD_PAGE
-                        ? html`<div id="live-reload-controls" class=${liveReloadControlsClassName}>
-                              ${this.#renderLiveReloadControls()}
-                          </div>`
-                        : null}
+                    ${
+                        this.state.activePage === "config"
+                            ? html`<div class=${configControlsClassName}>${this.#renderConfigControls()}</div>`
+                            : null
+                    }
+                    ${
+                        this.state.activePage === "fix"
+                            ? html`<div class=${fixControlsClassName}>${this.#renderFixControls()}</div>`
+                            : null
+                    }
+                    ${
+                        this.state.activePage === LIVE_RELOAD_PAGE
+                            ? html`<div id="live-reload-controls" class=${liveReloadControlsClassName}>
+                                  ${this.#renderLiveReloadControls()}
+                              </div>`
+                            : null
+                    }
+                    ${
+                        this.state.activePage === "playground"
+                            ? html`<div class="toolbar-playground-controls">${this.#renderPlaygroundControls()}</div>`
+                            : null
+                    }
+                    ${this.state.activePage === "docs" ? this.#renderDocsSearchControls() : null}
                 </div>
-                ${this.state.activePage === "docs"
-                    ? html`<div id="docs-controls" class=${docsControlsClassName}>${this.#renderDocsControls()}</div>`
-                    : null}
                 <div id="graph-controls" class=${graphControlsClassName}>
                     <div class="toolbar-control-group toolbar-search-group">
                         <input
@@ -747,9 +1006,6 @@ export class GmGraphToolbar extends LightDomLitElement {
                             .value=${this.state.searchQuery}
                             placeholder="Search nodes…"
                             ?disabled=${!hasLoadedIndex}
-                            ${ref((element) => {
-                                this.#searchInput = element as HTMLInputElement | null;
-                            })}
                             @input=${this.#onSearchInput}
                         />
                     </div>
@@ -770,11 +1026,13 @@ export class GmGraphToolbar extends LightDomLitElement {
                             @click=${() => this.#emitCycleLabelMode()}
                         >
                             Labels:
-                            ${this.state.labelMode === "always"
-                                ? "On"
-                                : this.state.labelMode === "hidden"
-                                  ? "Off"
-                                  : "Auto"}
+                            ${
+                                this.state.labelMode === "always"
+                                    ? "On"
+                                    : this.state.labelMode === "hidden"
+                                      ? "Off"
+                                      : "Auto"
+                            }
                         </button>
                     </div>
                     <div class="toolbar-control-group">
@@ -786,25 +1044,24 @@ export class GmGraphToolbar extends LightDomLitElement {
                         >
                             Reset
                         </button>
-                        ${this.model.isServerMode
-                            ? html`
-                                  <button
-                                      id="regenerate"
-                                      class="gm-btn--chip"
-                                      ?disabled=${this.state.isRegeneratePending || !hasLoadedProject}
-                                      @click=${() => this.#emitRegenerate()}
-                                  >
-                                      <span class="button-content">
-                                          ${this.state.isRegeneratePending
-                                              ? html`<span class="button-spinner" aria-hidden="true"></span>`
-                                              : null}
-                                          <span class="button-label"
-                                              >${this.state.isRegeneratePending ? "Regenerating…" : "Regenerate"}</span
-                                          >
-                                      </span>
-                                  </button>
-                              `
-                            : null}
+                        ${
+                            this.model.isServerMode
+                                ? html`
+                                      <button
+                                          id="regenerate"
+                                          class="gm-btn--chip"
+                                          ?disabled=${this.state.isRegeneratePending || !hasLoadedProject}
+                                          aria-busy=${this.state.isRegeneratePending ? "true" : "false"}
+                                          @click=${() => this.#emitRegenerate()}
+                                      >
+                                          ${renderProcessButtonContent({
+                                              label: "Regenerate",
+                                              pending: this.state.isRegeneratePending
+                                          })}
+                                      </button>
+                                  `
+                                : null
+                        }
                         ${this.#renderPendingBadge()}
                     </div>
                 </div>

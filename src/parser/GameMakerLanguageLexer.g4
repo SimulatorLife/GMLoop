@@ -43,7 +43,7 @@ MinusMinus:                     '--';
 Plus:                           '+';
 Minus:                          '-';
 BitNot:                         '~';
-Not:                            '!' | 'not';
+Not:                            '!';
 Multiply:                       '*';
 Divide:                         '/';
 IntegerDivide:                  'div';

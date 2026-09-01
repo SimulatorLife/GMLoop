@@ -565,7 +565,7 @@ void test("require-argument-separators reports precise location and fixes commen
         true,
         { recovery: "limited" }
     );
-    assertEquals(fixedResult.output, "show_debug_message_ext(name, /* keep */ payload);\n");
+    assertEquals(fixedResult.output, undefined);
 });
 
 void test("require-control-flow-braces reports else-if chain bodies without autofixing", async () => {
@@ -713,8 +713,7 @@ void test("location projection maps CRLF boundaries without line/column drift", 
     }
 
     const secondStatement = result.ast.body?.[1] as
-        | { loc?: { start?: { line?: number; column?: number } } }
-        | undefined;
+        { loc?: { start?: { line?: number; column?: number } } } | undefined;
     assertEquals(secondStatement?.loc?.start?.line, 2);
     assertEquals(secondStatement?.loc?.start?.column, 0);
 });

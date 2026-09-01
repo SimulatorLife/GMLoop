@@ -1,7 +1,98 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { IdentifierCacheManager } from "../src/scopes/identifier-cache-manager.js";
+import {
+    type IdentifierCacheContract,
+    type IdentifierCacheDiagnostics,
+    type IdentifierCacheInvalidator,
+    IdentifierCacheManager,
+    type IdentifierCacheReader,
+    type IdentifierCacheWriter
+} from "../src/scopes/identifier-cache-manager.js";
+
+/**
+ * Compile-time checks that the concrete cache satisfies every role interface
+ * and the composite contract. Keeping these assignments inside the test file
+ * means TypeScript flags any drift immediately during `tsc -b`, even when
+ * the runtime assertions below are never executed.
+ */
+void test("IdentifierCacheManager satisfies every role interface and the composite contract", () => {
+    const cache = new IdentifierCacheManager();
+
+    const reader: IdentifierCacheReader = cache;
+    const writer: IdentifierCacheWriter = cache;
+    const invalidator: IdentifierCacheInvalidator = cache;
+    const diagnostics: IdentifierCacheDiagnostics = cache;
+    const contract: IdentifierCacheContract = cache;
+
+    assert.strictEqual(typeof reader.read, "function");
+    assert.strictEqual(typeof writer.write, "function");
+    assert.strictEqual(typeof invalidator.invalidate, "function");
+    assert.strictEqual(typeof invalidator.invalidateScopes, "function");
+    assert.strictEqual(typeof diagnostics.countRetainedEntries, "function");
+    assert.strictEqual(typeof contract.read, "function");
+    assert.strictEqual(typeof contract.write, "function");
+    assert.strictEqual(typeof contract.invalidate, "function");
+    assert.strictEqual(typeof contract.invalidateScopes, "function");
+    assert.strictEqual(typeof contract.countRetainedEntries, "function");
+});
+
+/**
+ * Each role interface should only expose the members its named concern
+ * requires. This guards against accidental widening of a narrow role's
+ * surface (the original ISP violation we are trying to prevent).
+ *
+ * Each test destructures the role-specific member out of the narrow role
+ * type so TypeScript's type checker enforces that the role interface
+ * declares exactly that member and no others. A future widening of the
+ * role with stray members would still type-check (extra members are
+ * structural extras), but the destructuring bindings below prove each role
+ * fulfils its named members at compile time.
+ */
+void test("IdentifierCacheReader exposes the read member required by the role", () => {
+    const reader: IdentifierCacheReader = new IdentifierCacheManager();
+    const { read } = reader;
+    assert.strictEqual(typeof read, "function");
+});
+
+void test("IdentifierCacheWriter exposes the write member required by the role", () => {
+    const writer: IdentifierCacheWriter = new IdentifierCacheManager();
+    const { write } = writer;
+    assert.strictEqual(typeof write, "function");
+});
+
+void test("IdentifierCacheInvalidator exposes the two invalidation members required by the role", () => {
+    const invalidator: IdentifierCacheInvalidator = new IdentifierCacheManager();
+    const { invalidate, invalidateScopes } = invalidator;
+    assert.strictEqual(typeof invalidate, "function");
+    assert.strictEqual(typeof invalidateScopes, "function");
+});
+
+void test("IdentifierCacheDiagnostics exposes the countRetainedEntries member required by the role", () => {
+    const diagnostics: IdentifierCacheDiagnostics = new IdentifierCacheManager();
+    const { countRetainedEntries } = diagnostics;
+    assert.strictEqual(typeof countRetainedEntries, "function");
+});
+
+void test("IdentifierCacheContract composes every role member exactly once", () => {
+    const cache = new IdentifierCacheManager();
+    cache.write("n", "s", null);
+    cache.write("n2", "s2", null);
+    cache.invalidate("n");
+    cache.invalidateScopes(["s2"]);
+    const beforeCount = (cache as IdentifierCacheDiagnostics).countRetainedEntries();
+
+    const contract: IdentifierCacheContract = cache;
+    const read = contract.read("n", "s");
+    contract.write("n", "s", null);
+    contract.invalidate("n");
+    contract.invalidateScopes(["s2"]);
+    const afterCount = contract.countRetainedEntries();
+
+    assert.strictEqual(read, undefined);
+    assert.strictEqual(beforeCount, 0);
+    assert.strictEqual(afterCount, 0);
+});
 
 void test("IdentifierCacheManager constructor clamps and normalizes cache size options", () => {
     const cache = new IdentifierCacheManager({
@@ -69,17 +160,48 @@ void test("IdentifierCacheManager treats 0 for maxScopesPerName as fallback to d
     assert.strictEqual(cache.read("name-B", "scope-1"), null);
 });
 
+void test("IdentifierCacheManager invalidateScopes removes only entries for the given scopes", () => {
+    const cache = new IdentifierCacheManager();
+
+    cache.write("name-A", "scope-1", null);
+    cache.write("name-A", "scope-2", null);
+    cache.write("name-B", "scope-1", null);
+    cache.write("name-B", "scope-3", null);
+    cache.write("name-C", "scope-3", null);
+
+    cache.invalidateScopes(["scope-1"]);
+
+    // scope-1 entries are gone for both name-A and name-B.
+    assert.strictEqual(cache.read("name-A", "scope-1"), undefined);
+    assert.strictEqual(cache.read("name-B", "scope-1"), undefined);
+    // Entries for other scopes are untouched.
+    assert.strictEqual(cache.read("name-A", "scope-2"), null);
+    assert.strictEqual(cache.read("name-B", "scope-3"), null);
+    assert.strictEqual(cache.read("name-C", "scope-3"), null);
+    assert.strictEqual(cache.countRetainedEntries(), 3);
+
+    cache.invalidateScopes(["scope-2", "scope-3"]);
+
+    // Everything is now gone since every remaining entry pointed at scope-2 or scope-3.
+    assert.strictEqual(cache.countRetainedEntries(), 0);
+});
+
 void test("IdentifierCacheManager accepts Infinity for maxScopesPerName to disable per-name eviction", () => {
     const cache = new IdentifierCacheManager({ maxTrackedNames: 2, maxScopesPerName: Infinity });
 
-    // Add many scopes for a single name — with Infinity, no per-name eviction occurs.
-    for (let i = 0; i < 10; i++) {
+    // Write well over the default cap (64) to confirm `Infinity` is preserved
+    // as the documented "disable per-name eviction entirely" sentinel rather
+    // than silently coerced to the default. With the previous coercion the
+    // 65th scope entry would evict the oldest one and this loop would expose
+    // the regression.
+    const scopeCount = 100;
+    for (let i = 0; i < scopeCount; i++) {
         cache.write("shared-name", `scope-${i}`, null);
     }
 
-    // All 10 scope entries for "shared-name" should be retained because
-    // maxScopesPerName is Infinity (per-name eviction disabled).
-    for (let i = 0; i < 10; i++) {
+    // Every scope entry should survive because per-name eviction is disabled.
+    for (let i = 0; i < scopeCount; i++) {
         assert.strictEqual(cache.read("shared-name", `scope-${i}`), null);
     }
+    assert.strictEqual(cache.countRetainedEntries(), scopeCount);
 });

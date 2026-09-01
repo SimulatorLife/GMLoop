@@ -3,7 +3,10 @@ import test, { type TestContext } from "node:test";
 
 import { UI } from "@gmloop/ui";
 
-import { startGraphVisualizationServer } from "../src/modules/server/graph-visualization-server.js";
+import {
+    type GraphVisualizationServerOptions,
+    startGraphVisualizationServer
+} from "../src/modules/server/graph-visualization-server.js";
 
 function createSampleGraphVisualizationData() {
     return {
@@ -91,18 +94,52 @@ async function withGraphVisualizationServer(
     }
 }
 
+/**
+ * Build the shared server options used by every `/api/fix/cancel` test.
+ *
+ * The two cancelFix tests (success and declined) only differ in the
+ * `cancelFix` callback they inject, so the regenerate/runFix/renderBundle
+ * boilerplate lives here once instead of being repeated in each test body.
+ */
+function createCancelFixServerOptions(
+    cancelFix: NonNullable<GraphVisualizationServerOptions["cancelFix"]>
+): GraphVisualizationServerOptions {
+    return {
+        cancelFix,
+        regenerate: async () => ({ changed: false }),
+        runFix: async () => ({ logLines: [] }),
+        renderBundle: (isServerMode) =>
+            UI.renderGraphVisualizationBundle(createSampleGraphVisualizationData(), {
+                isServerMode,
+                title: "/tmp/project"
+            })
+    };
+}
+
 void test("graph visualization server serves UI-rendered HTML and exposes regeneration JSON", async (testContext) => {
     let openedPath: string | null = null;
+    let requestedWorkflow: string | null = null;
     let fixProgressLogLines: ReadonlyArray<string> = ["[1/3 Refactor Codemods]"];
     let handle;
     try {
         handle = await startGraphVisualizationServer({
             regenerate: async () => ({ changed: true }),
-            runFix: async () => {
+            runFix: async ({ workflow }) => {
+                requestedWorkflow = workflow;
                 fixProgressLogLines = ["Project root: /tmp/project", "Success!"];
                 return { logLines: fixProgressLogLines };
             },
             getFixProgress: () => ({ isRunning: false, logLines: fixProgressLogLines }),
+            getSemanticIndexProgress: () => ({
+                current: 2,
+                isRunning: true,
+                logLines: ["Parsing GML files... (2/4)"],
+                operationId: "op-1",
+                stage: "gml-parse",
+                status: "running",
+                summary: null,
+                total: 4
+            }),
             clearFixProgress: () => {
                 fixProgressLogLines = [];
             },
@@ -159,10 +196,29 @@ void test("graph visualization server serves UI-rendered HTML and exposes regene
             ok: true
         });
 
-        const fixResponse = await fetch(`${handle.url}/api/fix`, { method: "POST" });
+        const graphIndexProgressResponse = await fetch(`${handle.url}/api/graph-index/progress`);
+        assert.equal(graphIndexProgressResponse.status, 200);
+        assert.deepEqual(await graphIndexProgressResponse.json(), {
+            current: 2,
+            isRunning: true,
+            logLines: ["Parsing GML files... (2/4)"],
+            ok: true,
+            operationId: "op-1",
+            stage: "gml-parse",
+            status: "running",
+            summary: null,
+            total: 4
+        });
+
+        const fixResponse = await fetch(`${handle.url}/api/fix`, {
+            body: JSON.stringify({ workflow: "format" }),
+            headers: { "Content-Type": "application/json" },
+            method: "POST"
+        });
         assert.equal(fixResponse.status, 200);
         const fixPayload = (await fixResponse.json()) as { logLines: ReadonlyArray<string>; ok: boolean };
         assert.deepEqual(fixPayload, { logLines: ["Project root: /tmp/project", "Success!"], ok: true });
+        assert.equal(requestedWorkflow, "format");
 
         const fixProgressAfterRunResponse = await fetch(`${handle.url}/api/fix/progress`);
         assert.equal(fixProgressAfterRunResponse.status, 200);
@@ -202,6 +258,63 @@ void test("graph visualization server serves UI-rendered HTML and exposes regene
     } finally {
         await handle.stop();
     }
+});
+
+void test("graph visualization server rejects unknown project workflows", async (testContext) => {
+    await withGraphVisualizationServer(
+        testContext,
+        {
+            regenerate: async () => ({ changed: false }),
+            runFix: async () => ({ logLines: [] }),
+            renderBundle: (isServerMode) =>
+                UI.renderGraphVisualizationBundle(createSampleGraphVisualizationData(), {
+                    isServerMode,
+                    title: "/tmp/project"
+                })
+        },
+        async (handle) => {
+            const response = await fetch(`${handle.url}/api/fix`, {
+                body: JSON.stringify({ workflow: "unknown" }),
+                headers: { "Content-Type": "application/json" },
+                method: "POST"
+            });
+
+            assert.equal(response.status, 400);
+            assert.deepEqual(await response.json(), { error: "Unknown project workflow." });
+        }
+    );
+});
+
+void test("graph visualization server routes POST /api/fix/cancel to the cancelFix callback", async (testContext) => {
+    let cancelFixCallCount = 0;
+
+    await withGraphVisualizationServer(
+        testContext,
+        createCancelFixServerOptions(async () => {
+            cancelFixCallCount += 1;
+            return { cancelled: true };
+        }),
+        async (handle) => {
+            const response = await fetch(`${handle.url}/api/fix/cancel`, { method: "POST" });
+
+            assert.equal(response.status, 200);
+            assert.deepEqual(await response.json(), { cancelled: true, ok: true });
+            assert.equal(cancelFixCallCount, 1);
+        }
+    );
+});
+
+void test("graph visualization server reports no in-flight fix workflow when cancelFix declines to cancel", async (testContext) => {
+    await withGraphVisualizationServer(
+        testContext,
+        createCancelFixServerOptions(async () => ({ cancelled: false })),
+        async (handle) => {
+            const response = await fetch(`${handle.url}/api/fix/cancel`, { method: "POST" });
+
+            assert.equal(response.status, 200);
+            assert.deepEqual(await response.json(), { cancelled: false, ok: true });
+        }
+    );
 });
 
 void test("graph visualization server keeps the current view accessible while regeneration is pending", async (testContext) => {
@@ -574,7 +687,7 @@ void test("graph visualization server forwards sanitized lint rule ids for playg
                 lint: true,
                 lintRuleIds: ["@gmloop/no-constructor-assignment", 42, "", "no-undef"],
                 refactor: false,
-                codemodIds: ["docCommentAlignment", "", 123, "scientificNotation"],
+                codemodIds: ["globalvarToGlobal", "", 123, "scientificNotation"],
                 transpileMode: "none"
             }),
             headers: { "Content-Type": "application/json" },
@@ -583,7 +696,7 @@ void test("graph visualization server forwards sanitized lint rule ids for playg
         assert.equal(response.status, 200);
         assert.deepEqual(receivedFormatOptionNames, ["printWidth", "useTabs"]);
         assert.deepEqual(receivedLintRuleIds, ["@gmloop/no-constructor-assignment", "no-undef"]);
-        assert.deepEqual(receivedCodemodIds, ["docCommentAlignment", "scientificNotation"]);
+        assert.deepEqual(receivedCodemodIds, ["globalvarToGlobal", "scientificNotation"]);
     } finally {
         await handle.stop();
     }
@@ -729,6 +842,112 @@ void test("graph visualization server rejects malformed config save payloads", a
             assert.equal(response.status, 400);
             const payload = (await response.json()) as { error: string };
             assert.equal(payload.error, "Invalid JSON or non-object payload");
+        }
+    );
+});
+
+void test("graph visualization server initializes and toggles project Auto-Game skills", async (testContext) => {
+    let initialized = 0;
+    let initializationInput: Readonly<{
+        agentTargets: ReadonlyArray<"codex" | "gemini" | "qwen">;
+        includeGitIgnore: boolean;
+        includeVSCode: boolean;
+    }> | null = null;
+    let toggleInput: Readonly<{ enabled: boolean; name: string }> | null = null;
+    await withGraphVisualizationServer(
+        testContext,
+        {
+            initializeAutoGameAgentPack: async (input) => {
+                initialized += 1;
+                initializationInput = input;
+                return { changed: true };
+            },
+            regenerate: async () => ({ changed: true }),
+            renderBundle: (isServerMode) =>
+                UI.renderGraphVisualizationBundle(createSampleGraphVisualizationData(), {
+                    isServerMode,
+                    title: "/tmp/project"
+                }),
+            setAutoGameSkillEnabled: async (input) => {
+                toggleInput = input;
+                return { changed: true };
+            }
+        },
+        async (handle) => {
+            const initResponse = await fetch(`${handle.url}/api/auto-game/agent-pack/init`, {
+                body: JSON.stringify({ agentTargets: ["qwen"], includeGitIgnore: false, includeVSCode: true }),
+                headers: { "Content-Type": "application/json" },
+                method: "POST"
+            });
+            assert.equal(initResponse.status, 200);
+            assert.equal(initialized, 1);
+            assert.deepEqual(initializationInput, {
+                agentTargets: ["qwen"],
+                includeGitIgnore: false,
+                includeVSCode: true
+            });
+
+            const defaultInitResponse = await fetch(`${handle.url}/api/auto-game/agent-pack/init`, {
+                method: "POST"
+            });
+            assert.equal(defaultInitResponse.status, 200);
+            assert.equal(initialized, 2);
+            assert.deepEqual(initializationInput, { agentTargets: [], includeGitIgnore: true, includeVSCode: false });
+
+            const invalidInitResponse = await fetch(`${handle.url}/api/auto-game/agent-pack/init`, {
+                body: JSON.stringify({ includeGitIgnore: "yes" }),
+                headers: { "Content-Type": "application/json" },
+                method: "POST"
+            });
+            assert.equal(invalidInitResponse.status, 400);
+            assert.equal(initialized, 2);
+
+            const invalidVSCodeInitResponse = await fetch(`${handle.url}/api/auto-game/agent-pack/init`, {
+                body: JSON.stringify({ includeVSCode: "yes" }),
+                headers: { "Content-Type": "application/json" },
+                method: "POST"
+            });
+            assert.equal(invalidVSCodeInitResponse.status, 400);
+            assert.equal(initialized, 2);
+
+            const invalidAgentTargetResponse = await fetch(`${handle.url}/api/auto-game/agent-pack/init`, {
+                body: JSON.stringify({ agentTargets: ["claude"], includeGitIgnore: true }),
+                headers: { "Content-Type": "application/json" },
+                method: "POST"
+            });
+            assert.equal(invalidAgentTargetResponse.status, 400);
+            assert.equal(initialized, 2);
+
+            const toggleResponse = await fetch(`${handle.url}/api/auto-game/skills/toggle`, {
+                body: JSON.stringify({ enabled: false, name: "game-design" }),
+                headers: { "Content-Type": "application/json" },
+                method: "POST"
+            });
+            assert.equal(toggleResponse.status, 200);
+            assert.deepEqual(toggleInput, { enabled: false, name: "game-design" });
+        }
+    );
+});
+
+void test("graph visualization server rejects malformed Auto-Game skill toggles", async (testContext) => {
+    await withGraphVisualizationServer(
+        testContext,
+        {
+            regenerate: async () => ({ changed: true }),
+            renderBundle: (isServerMode) =>
+                UI.renderGraphVisualizationBundle(createSampleGraphVisualizationData(), {
+                    isServerMode,
+                    title: "/tmp/project"
+                }),
+            setAutoGameSkillEnabled: async () => ({ changed: true })
+        },
+        async (handle) => {
+            const response = await fetch(`${handle.url}/api/auto-game/skills/toggle`, {
+                body: JSON.stringify({ enabled: "yes", name: "game-design" }),
+                headers: { "Content-Type": "application/json" },
+                method: "POST"
+            });
+            assert.equal(response.status, 400);
         }
     );
 });

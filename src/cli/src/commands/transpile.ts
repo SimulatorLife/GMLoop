@@ -3,7 +3,6 @@ import path from "node:path";
 import process from "node:process";
 
 import { Core } from "@gmloop/core";
-import { Transpiler } from "@gmloop/transpiler";
 import { Command } from "commander";
 
 import { applyStandardCommandOptions } from "../cli-core/command-standard-options.js";
@@ -15,8 +14,13 @@ import {
     createVerboseOption,
     createWriteOption
 } from "../cli-core/shared-command-options.js";
-import { type TranspilationContext, transpileFile } from "../modules/transpilation/index.js";
+import {
+    createGmlTranspilerAdapter,
+    type TranspilationContext,
+    transpileFile
+} from "../modules/transpilation/index.js";
 import { formatPathForDisplay } from "../workflow/display-path.js";
+import { resolveWorkflowTargetPath } from "../workflow/project-root.js";
 
 const TRANSPILE_COMMAND_CLI_EXAMPLE = "pnpm dlx gmloop transpile --path path/to/script.gml";
 const TRANSPILE_COMMAND_FIX_EXAMPLE = "pnpm dlx gmloop transpile --write --path path/to/project";
@@ -51,21 +55,17 @@ function createUsageError(message: string, command: CommanderCommandLike): CliUs
     return new CliUsageError(message, { usage: command.helpInformation() });
 }
 
-function resolvePathOptionValue(command: CommanderCommandLike): string {
+async function resolvePathOptionValue(command: CommanderCommandLike): Promise<string> {
     const options = (command.opts() ?? {}) as TranspileCommandOptions;
-    // Positional argument takes precedence over --path option.
-    const positionalPath = Array.isArray(command.args) && command.args.length > 0 ? command.args[0] : null;
-    const configuredPath =
-        typeof (positionalPath ?? options.path) === "string" ? (positionalPath ?? options.path).trim() : "";
-    if (configuredPath.length === 0) {
-        return process.cwd();
-    }
-
-    return path.resolve(configuredPath);
+    return await resolveWorkflowTargetPath({
+        explicitPath: options.path,
+        fallbackPath: process.cwd(),
+        scope: "file"
+    });
 }
 
 async function resolveTranspileTarget(command: CommanderCommandLike): Promise<ResolvedTranspileTarget> {
-    const configuredPath = resolvePathOptionValue(command);
+    const configuredPath = await resolvePathOptionValue(command);
 
     let targetStats: Awaited<ReturnType<typeof stat>>;
     try {
@@ -152,7 +152,7 @@ function countLines(sourceText: string): number {
 
 function createTranspilationContext(): TranspilationContext {
     return {
-        transpiler: new Transpiler.GmlTranspiler(),
+        transpiler: createGmlTranspilerAdapter(),
         patches: [],
         lastSuccessfulPatches: new Map(),
         sourcePathToPatchIds: new Map(),
@@ -194,9 +194,8 @@ function emitDryRunOutput(parameters: { outputs: Array<{ sourcePath: string; jsB
 export function createTranspileCommand(): Command {
     return applyStandardCommandOptions(
         new Command("transpile")
-            .usage("[path] [options]")
+            .usage("[options]")
             .description("Transpile GameMaker Language files to JavaScript using @gmloop/transpiler")
-            .argument("[path]", "Target .gml file, GameMaker project directory, or .yyp path")
             .addOption(createPathOption())
             .addOption(createWriteOption())
             .addOption(createListOption())

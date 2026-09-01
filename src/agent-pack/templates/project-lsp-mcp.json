@@ -1,0 +1,15 @@
+{
+  "servers": [
+    {
+      "id": "gml",
+      "extensions": [".gml"],
+      "languageIds": ["gml"],
+      "command": "gmloop",
+      "args": ["lsp"],
+      "rootPatterns": ["*.yyp"],
+      "requestTimeout": 60000,
+      "autoStart": true,
+      "idleTimeout": 1800000
+    }
+  ]
+}

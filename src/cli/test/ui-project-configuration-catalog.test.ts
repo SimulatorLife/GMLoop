@@ -6,7 +6,14 @@ import { createGraphVisualizationProjectConfigurationCatalog } from "../src/modu
 void test("project configuration catalog exposes all lint rules and available rulesets", async () => {
     const catalog = await createGraphVisualizationProjectConfigurationCatalog(
         {
-            projectConfig: { lintRuleset: "recommended" },
+            projectConfig: {
+                lintRuleset: "recommended",
+                refactor: {
+                    codemods: {
+                        loopLengthHoisting: {}
+                    }
+                }
+            },
             projectRoot: "/tmp/gmloop-ui-catalog"
         },
         {},
@@ -49,13 +56,87 @@ void test("project configuration catalog exposes all lint rules and available ru
     const ruleLevels = new Set(catalog.lint.rules.map((rule) => rule.level));
 
     assert.ok(rulesetNames.has("recommended"));
+    assert.ok(rulesetNames.has("all"));
     assert.ok(rulesetNames.has("feather"));
     assert.ok(rulesetNames.has("performance"));
-    assert.ok(catalog.lint.rules.length > catalog.lint.rulesets[0].ruleIds.length);
+    assert.ok(rulesetNames.has("fixible"));
+    const recommendedRuleset = catalog.lint.rulesets.find((ruleset) => ruleset.name === "recommended");
+    assert.ok(recommendedRuleset);
+    assert.ok(catalog.lint.rules.length > recommendedRuleset.ruleIds.length);
     assert.ok(catalog.lint.rules.some((rule) => rule.ruleId === "gml/no-globalvar" && rule.level === "warn"));
+    assert.ok(
+        catalog.lint.rules.some((rule) => rule.ruleId === "gml/prefer-direct-boolean-return" && rule.level === "warn")
+    );
+    const performanceRuleset = catalog.lint.rulesets.find((ruleset) => ruleset.name === "performance");
+    assert.ok(performanceRuleset);
+    assert.ok(performanceRuleset.ruleIds.includes("gml/prefer-direct-boolean-return"));
     assert.ok(ruleLevels.has("off"));
     assert.equal(catalog.gameMakerCli.available, true);
     assert.equal(catalog.gameMakerCli.cliCommands[0]?.displayName, "manual read");
     assert.equal(catalog.gameMakerCli.mcpTools[0]?.name, "status");
     assert.equal(catalog.gameMakerCli.mcpServer.serverId, "gamemaker-resource-tool");
+
+    const loopLengthHoistingCodemod = catalog.refactor.codemods.find((c) => c.id === "loopLengthHoisting");
+    assert.ok(loopLengthHoistingCodemod);
+    assert.equal(loopLengthHoistingCodemod.enabled, true);
+
+    const namingConventionCodemod = catalog.refactor.codemods.find((c) => c.id === "namingConvention");
+    assert.ok(namingConventionCodemod);
+    assert.equal(namingConventionCodemod.enabled, false);
+
+    // Verify rulesets include ruleLevels with proper severity mappings
+    assert.ok(recommendedRuleset.ruleLevels);
+    assert.ok(Object.keys(recommendedRuleset.ruleLevels).length > 0);
+    assert.equal(recommendedRuleset.ruleLevels["gml/no-globalvar"], "warn");
+});
+
+void test("fixible ruleset includes ruleLevels for all fixable rules", async () => {
+    const catalog = await createGraphVisualizationProjectConfigurationCatalog(
+        {
+            projectConfig: { lintRuleset: "fixible" },
+            projectRoot: "/tmp/gmloop-ui-fixible"
+        },
+        {},
+        {
+            loadGameMakerCliCatalog: async () => ({
+                available: false,
+                cliCommands: [],
+                error: null,
+                invocation: null,
+                mcpServer: {
+                    available: false,
+                    error: null,
+                    name: null,
+                    projectPath: null,
+                    serverId: null,
+                    sourcePath: null,
+                    version: null
+                },
+                mcpTools: [],
+                version: null
+            })
+        }
+    );
+
+    const fixibleRuleset = catalog.lint.rulesets.find((ruleset) => ruleset.name === "fixible");
+    assert.ok(fixibleRuleset);
+    assert.ok(fixibleRuleset.ruleIds.length > 0, "fixible ruleset should have rules");
+    assert.ok(Object.keys(fixibleRuleset.ruleLevels).length > 0, "fixible ruleset should have ruleLevels");
+
+    // Every rule in the fixible ruleset should have a non-off severity level
+    for (const ruleId of fixibleRuleset.ruleIds) {
+        const level = fixibleRuleset.ruleLevels[ruleId];
+        assert.ok(
+            level === "warn" || level === "error",
+            `fixible ruleset rule ${ruleId} should have warn or error level, got ${level}`
+        );
+    }
+
+    // With fixible as the active ruleset, fixable rules should reflect the ruleset's levels
+    for (const rule of catalog.lint.rules) {
+        const rulesetLevel = fixibleRuleset.ruleLevels[rule.ruleId];
+        if (rulesetLevel !== undefined) {
+            assert.equal(rule.level, rulesetLevel, `rule ${rule.ruleId} level should match fixible ruleset level`);
+        }
+    }
 });

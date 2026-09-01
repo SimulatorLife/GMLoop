@@ -12,7 +12,7 @@ Treat these as **golden fixtures**:
 This directory follows a test-driven workflow: fixtures document what the linter should do, and implementation must conform to that expected result.
 
 Each fixture directory must include `gmloop.json`. The file can select a preset
-via `lintRuleset` (`recommended`, `feather`, or `performance`) and/or explicitly
+via `lintRuleset` (`all`, `recommended`, `feather`, or `performance`) and/or explicitly
 enable the rule(s) under test via `lintRules`, then identify the fixture kind:
 
 ```json

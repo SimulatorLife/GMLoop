@@ -4,12 +4,37 @@ import { assertPlainObject } from "../utils/object.js";
 import { toTrimmedString } from "../utils/string.js";
 import { resolveBundledResourcePath, resolveBundledResourceUrl } from "./resource-locator.js";
 
-export const FEATHER_METADATA_URL = resolveBundledResourceUrl("feather-metadata.json");
+// The metadata URL/path constants are exposed as lazy accessors rather
+// than top-level `const` bindings. Resolving them at module load would
+// touch Node-only APIs (`node:url`, `node:path`, `node:fs`) that are
+// externalized to empty stubs in the browser bundle, which would crash
+// any non-Node consumer that imports `@gmloop/core` for its AST/utility
+// surface. Deferring the resolution to first access keeps module load
+// safe in browser contexts while preserving eager access for Node-side
+// callers (which invoke the accessor at module load, the same instant
+// the previous `const` would have evaluated).
 
-export const FEATHER_METADATA_PATH = resolveBundledResourcePath("feather-metadata.json");
+let cachedFeatherMetadataUrl: URL | null = null;
+let cachedFeatherMetadataPath: string | null = null;
+
+export function getFeatherMetadataUrl(): URL {
+    if (cachedFeatherMetadataUrl === null) {
+        cachedFeatherMetadataUrl = resolveBundledResourceUrl("feather-metadata.json");
+    }
+    return cachedFeatherMetadataUrl;
+}
+
+export function getFeatherMetadataPath(): string {
+    if (cachedFeatherMetadataPath === null) {
+        cachedFeatherMetadataPath = resolveBundledResourcePath("feather-metadata.json");
+    }
+    return cachedFeatherMetadataPath;
+}
 
 export type FeatherDiagnostic = {
     id?: string | null;
+    title?: string | null;
+    description?: string | null;
     [key: string]: unknown;
 };
 
@@ -20,7 +45,7 @@ export type FeatherMetadata = {
 };
 
 export function loadBundledFeatherMetadata() {
-    const contents = readTextFileSync(FEATHER_METADATA_PATH);
+    const contents = readTextFileSync(getFeatherMetadataPath());
     return JSON.parse(contents);
 }
 

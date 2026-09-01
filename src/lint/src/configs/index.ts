@@ -1,6 +1,7 @@
-import type { LintPluginShape } from "../contracts/index.js";
 import {
+    ALL_RULE_LEVELS,
     FEATHER_RULE_LEVELS,
+    FIXIBLE_RULE_LEVELS,
     type LintRuleLevel,
     PERFORMANCE_RULE_LEVELS,
     RECOMMENDED_GML_RULE_LEVELS,
@@ -22,6 +23,16 @@ export {
 } from "./rule-entries.js";
 
 /**
+ * Minimal runtime shape for the lint plugin objects consumed by lint config
+ * presets. Lives next to the configs that consume it so the config layer has
+ * a single, direct dependency without a separate contract module.
+ */
+export type LintPluginShape = Readonly<{
+    rules: Record<string, unknown>;
+    languages?: Record<string, unknown>;
+}>;
+
+/**
  * Represents a pinned lint flat-config entry exposed by the lint namespace.
  */
 export type FlatConfig = Readonly<{
@@ -40,9 +51,11 @@ export const GML_LINT_FILES_GLOB = Object.freeze(["**/*.gml"]);
  * Represents the immutable lint config sets exported through `Lint.configs`.
  */
 export type LintConfigSets = Readonly<{
+    all: ReadonlyArray<FlatConfig>;
     recommended: ReadonlyArray<FlatConfig>;
     feather: ReadonlyArray<FlatConfig>;
     performance: ReadonlyArray<FlatConfig>;
+    fixible: ReadonlyArray<FlatConfig>;
 }>;
 
 /**
@@ -56,6 +69,19 @@ type LintConfigPluginSet = Readonly<{
 }>;
 
 export function createLintConfigsWithPlugins(plugins: LintConfigPluginSet): LintConfigSets {
+    const all: ReadonlyArray<FlatConfig> = Object.freeze([
+        Object.freeze({
+            files: GML_LINT_FILES_GLOB,
+            plugins: Object.freeze({
+                gml: plugins.gmlPlugin,
+                feather: plugins.featherPlugin
+            }),
+            language: "gml/gml",
+            languageOptions: Object.freeze({ recovery: "limited" }),
+            rules: ALL_RULE_LEVELS
+        })
+    ]);
+
     const recommended: ReadonlyArray<FlatConfig> = Object.freeze([
         Object.freeze({
             files: GML_LINT_FILES_GLOB,
@@ -89,5 +115,18 @@ export function createLintConfigsWithPlugins(plugins: LintConfigPluginSet): Lint
         })
     ]);
 
-    return Object.freeze({ recommended, feather, performance });
+    const fixible: ReadonlyArray<FlatConfig> = Object.freeze([
+        Object.freeze({
+            files: GML_LINT_FILES_GLOB,
+            plugins: Object.freeze({
+                gml: plugins.gmlPlugin,
+                feather: plugins.featherPlugin
+            }),
+            language: "gml/gml",
+            languageOptions: Object.freeze({ recovery: "limited" }),
+            rules: FIXIBLE_RULE_LEVELS
+        })
+    ]);
+
+    return Object.freeze({ recommended, all, feather, performance, fixible });
 }

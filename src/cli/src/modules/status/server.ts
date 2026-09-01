@@ -9,6 +9,7 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { Socket } from "node:net";
 
+import { DEFAULT_LIVE_RELOAD_STATUS_HOST, DEFAULT_LIVE_RELOAD_STATUS_PORT } from "../live-reload/config.js";
 import type { ServerEndpoint, ServerLifecycle } from "../server/index.js";
 import {
     DEFAULT_STATUS_HEALTH_POLICY_CONFIG,
@@ -34,6 +35,12 @@ export interface StatusSnapshot {
         filePath: string;
         /** End-to-end hot-reload latency from file-change detection to patch broadcast, when available. */
         hotReloadLatencyMs?: number;
+        patchResult?: {
+            delivered: boolean;
+            failureCount: number;
+            successCount: number;
+            totalClients: number;
+        };
     }>;
     recentErrors: Array<{
         timestamp: number;
@@ -45,10 +52,38 @@ export interface StatusSnapshot {
     scanComplete?: boolean;
     /** Runtime static server URL for clients that need to reconnect after UI reloads. */
     runtimeUrl?: string | null;
+    statusUrl?: string;
+    watchedRoot?: string;
+    websocketConnectionCount?: number;
+    websocketUrl?: string;
+    lastChangedFile?: string | null;
+    lastPatchId?: string | null;
+    lastPatchResult?: {
+        delivered: boolean;
+        failureCount: number;
+        successCount: number;
+        totalClients: number;
+    } | null;
+    transpileErrors?: Array<{
+        error: string;
+        filePath: string;
+        timestamp: number;
+    }>;
+    runtimeErrors?: Array<{
+        error: string;
+        filePath: string;
+        timestamp: number;
+    }>;
     /** Average end-to-end hot-reload latency (ms) across all patches in the current metrics window. */
     avgHotReloadLatencyMs?: number;
     /** 95th-percentile end-to-end hot-reload latency (ms) across all patches in the current metrics window. */
     p95HotReloadLatencyMs?: number;
+    /** Identity of the managed live-reload worker, present only for project sessions. */
+    liveReloadSession?: {
+        processId: number;
+        projectRoot: string;
+        sessionId: string;
+    };
 }
 
 /**
@@ -156,29 +191,14 @@ export interface StatusServerOptions {
 }
 
 /**
- * Endpoint metadata for the status server.
- *
- * Keeps address information independent from lifecycle controls so consumers
- * can depend on only what they need.
- */
-export type StatusServerEndpoint = ServerEndpoint;
-
-/**
- * Lifecycle control for the status server.
- *
- * Provides shutdown capability without coupling to endpoint metadata.
- */
-export type StatusServerLifecycle = ServerLifecycle;
-
-/**
  * Combined status server handle.
  *
  * Provided for callers that need both endpoint metadata and lifecycle control.
  */
-export type StatusServerHandle = StatusServerEndpoint & StatusServerLifecycle;
+export type StatusServerHandle = ServerEndpoint & ServerLifecycle;
 
-const DEFAULT_STATUS_HOST = "127.0.0.1";
-const DEFAULT_STATUS_PORT = 17_891;
+const DEFAULT_STATUS_HOST = DEFAULT_LIVE_RELOAD_STATUS_HOST;
+const DEFAULT_STATUS_PORT = DEFAULT_LIVE_RELOAD_STATUS_PORT;
 
 function sendJsonResponse(res: ServerResponse, statusCode: number, data: unknown): void {
     res.writeHead(statusCode, {

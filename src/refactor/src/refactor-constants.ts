@@ -30,6 +30,17 @@ export const RENAME_VALIDATION_CACHE_MAX_SIZE = 4096;
 export const APPLY_WORKSPACE_EDIT_IO_CONCURRENCY_LIMIT = 8;
 
 /**
+ * Maximum number of concurrent I/O operations when running a single-file text
+ * codemod (e.g. scientificNotation, loopLengthHoisting) across many files.
+ * Each file is read, transformed, and optionally written independently, so
+ * bounding concurrency lets slow disk I/O overlap across files instead of
+ * serializing one read/transform/write cycle at a time.
+ *
+ * @default 8
+ */
+export const SINGLE_FILE_TEXT_CODEMOD_IO_CONCURRENCY_LIMIT = 8;
+
+/**
  * Minimum number of file entries to allocate in the codemod read-through cache.
  * The cache size is dynamically sized based on the project file count, but
  * will never fall below this floor to ensure meaningful caching for small projects.
@@ -48,9 +59,12 @@ export const CODEMOD_READ_THROUGH_CACHE_MAX_ENTRIES = 2048;
 
 /**
  * Maximum number of edits tracked in the duplicate-detection set for a single
- * workspace edit batch. When the edit count exceeds this threshold, duplicate
- * detection is skipped to avoid O(n²) overhead on very large edit sets.
- * The actual duplicate-check limit is this value squared.
+ * workspace edit batch. Each `addEdit` call checks and inserts into this set
+ * via `Set.has`/`Set.add`, so the check itself is O(1) regardless of set size.
+ * The cap instead bounds unbounded memory growth: once the set exceeds this
+ * threshold, it is dropped and duplicate detection stays permanently disabled
+ * for the remainder of that batch, so later exact-duplicate edits are no
+ * longer deduplicated.
  *
  * @default 1024
  */

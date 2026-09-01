@@ -1,0 +1,27 @@
+{
+  "servers": [
+    {
+      "id": "typescript",
+      "extensions": [".ts", ".tsx"],
+      "languageIds": ["typescript", "typescriptreact"],
+      "command": "pnpm",
+      "args": ["exec", "typescript-language-server", "--stdio"],
+      "rootPatterns": ["tsconfig.json", "package.json", "pnpm-workspace.yaml"]
+    },
+    {
+      "id": "gml",
+      "extensions": [".gml"],
+      "languageIds": ["gml"],
+      "command": "node",
+      "args": ["./src/cli/dist/index.js", "lsp"],
+      "rootPatterns": ["package.json", "pnpm-workspace.yaml"],
+      "requestTimeout": 60000,
+      "autoStart": true,
+      "idleTimeout": 1800000
+    }
+  ],
+  "requestTimeout": 60000,
+  "autoStart": true,
+  "logLevel": "warn",
+  "idleTimeout": 1800000
+}

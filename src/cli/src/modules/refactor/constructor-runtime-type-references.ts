@@ -4,6 +4,8 @@ import path from "node:path";
 import { Core } from "@gmloop/core";
 import { Parser } from "@gmloop/parser";
 
+import { pathExistsSync } from "../../shared/path-exists.js";
+
 type SemanticFileRecord = {
     declarations?: Array<Record<string, unknown>>;
     references?: Array<Record<string, unknown>>;
@@ -105,31 +107,45 @@ function collectConstructorRuntimeTypeReferencesFromAst(
     const occurrences: Array<ConstructorRuntimeTypeReferenceOccurrence> = [];
     const seenKeys = new Set<string>();
 
-    Core.walkAst(ast, (node) => {
-        if (isCallExpressionIdentifierMatch(node, "is_instanceof")) {
-            const constructorArg = Core.getCallExpressionArguments(node)[1];
-            pushUniqueOccurrence(occurrences, seenKeys, readIdentifierOccurrence(constructorArg));
-            return;
-        }
+    Core.traverseAst(ast, {
+        enter(node) {
+            if (isCallExpressionIdentifierMatch(node, "is_instanceof")) {
+                const constructorArg = Core.getCallExpressionArguments(node)[1];
+                pushUniqueOccurrence(occurrences, seenKeys, readIdentifierOccurrence(constructorArg));
+                return;
+            }
 
-        if (!Core.isBinaryExpressionNode(node)) {
-            return;
-        }
+            if (isCallExpressionIdentifierMatch(node, "static_get")) {
+                const constructorArg = Core.getCallExpressionArguments(node)[0];
+                pushUniqueOccurrence(occurrences, seenKeys, readIdentifierOccurrence(constructorArg));
+                return;
+            }
 
-        const operator = typeof node.operator === "string" ? node.operator : null;
-        if (operator === null || !CONSTRUCTOR_TYPE_COMPARISON_OPERATORS.has(operator)) {
-            return;
-        }
+            if (isCallExpressionIdentifierMatch(node, "scr_call_static")) {
+                const constructorArg = Core.getCallExpressionArguments(node)[0];
+                pushUniqueOccurrence(occurrences, seenKeys, readIdentifierOccurrence(constructorArg));
+                return;
+            }
 
-        const leftLiteral = readQuotedLiteralOccurrence(node.left);
-        const rightLiteral = readQuotedLiteralOccurrence(node.right);
+            if (!Core.isBinaryExpressionNode(node)) {
+                return;
+            }
 
-        if (leftLiteral !== null && isCallExpressionIdentifierMatch(node.right, "instanceof")) {
-            pushUniqueOccurrence(occurrences, seenKeys, leftLiteral);
-        }
+            const operator = typeof node.operator === "string" ? node.operator : null;
+            if (operator === null || !CONSTRUCTOR_TYPE_COMPARISON_OPERATORS.has(operator)) {
+                return;
+            }
 
-        if (rightLiteral !== null && isCallExpressionIdentifierMatch(node.left, "instanceof")) {
-            pushUniqueOccurrence(occurrences, seenKeys, rightLiteral);
+            const leftLiteral = readQuotedLiteralOccurrence(node.left);
+            const rightLiteral = readQuotedLiteralOccurrence(node.right);
+
+            if (leftLiteral !== null && isCallExpressionIdentifierMatch(node.right, "instanceof")) {
+                pushUniqueOccurrence(occurrences, seenKeys, leftLiteral);
+            }
+
+            if (rightLiteral !== null && isCallExpressionIdentifierMatch(node.left, "instanceof")) {
+                pushUniqueOccurrence(occurrences, seenKeys, rightLiteral);
+            }
         }
     });
 
@@ -142,28 +158,32 @@ function collectConstructorRuntimeTypeReferencesFromText(
     const occurrences: Array<ConstructorRuntimeTypeReferenceOccurrence> = [];
     const seenKeys = new Set<string>();
     const isInstanceofPattern = /\bis_instanceof\s*\([^,()]+(?:\([^)]*\)[^,()]*)?,\s*([A-Za-z_][A-Za-z0-9_]*)\s*\)/g;
+    const staticGetPattern = /\bstatic_get\s*\(\s*([A-Za-z_][A-Za-z0-9_]*)\s*\)/g;
+    const scrCallStaticPattern = /\bscr_call_static\s*\(\s*([A-Za-z_][A-Za-z0-9_]*)\s*,/g;
     const instanceofLiteralPattern = /\binstanceof\s*\([^)]*\)\s*(?:==|!=|=|<>)\s*(['"])([A-Za-z_][A-Za-z0-9_]*)\1/g;
     const reversedInstanceofLiteralPattern =
         /(['"])([A-Za-z_][A-Za-z0-9_]*)\1\s*(?:==|!=|=|<>)\s*\binstanceof\s*\([^)]*\)/g;
 
-    for (const match of sourceText.matchAll(isInstanceofPattern)) {
-        const name = match[1];
-        const matchedText = match[0];
-        const matchIndex = match.index;
-        if (!Core.isNonEmptyString(name) || typeof matchIndex !== "number") {
-            continue;
-        }
+    for (const pattern of [isInstanceofPattern, staticGetPattern, scrCallStaticPattern]) {
+        for (const match of sourceText.matchAll(pattern)) {
+            const name = match[1];
+            const matchedText = match[0];
+            const matchIndex = match.index;
+            if (!Core.isNonEmptyString(name) || typeof matchIndex !== "number") {
+                continue;
+            }
 
-        const startOffset = matchedText.lastIndexOf(name);
-        if (startOffset === -1) {
-            continue;
-        }
+            const startOffset = matchedText.lastIndexOf(name);
+            if (startOffset === -1) {
+                continue;
+            }
 
-        pushUniqueOccurrence(occurrences, seenKeys, {
-            name,
-            start: matchIndex + startOffset,
-            end: matchIndex + startOffset + name.length
-        });
+            pushUniqueOccurrence(occurrences, seenKeys, {
+                name,
+                start: matchIndex + startOffset,
+                end: matchIndex + startOffset + name.length
+            });
+        }
     }
 
     for (const pattern of [instanceofLiteralPattern, reversedInstanceofLiteralPattern]) {
@@ -205,6 +225,8 @@ function collectConstructorRuntimeTypeReferences(sourceText: string): Array<Cons
  * These occurrences cover the GameMaker patterns that encode constructor names
  * outside the semantic index today:
  * - `is_instanceof(value, ConstructorName)`
+ * - `static_get(ConstructorName)`
+ * - `scr_call_static(ConstructorName, methodName, args)`
  * - `instanceof(value) == "ConstructorName"`
  *
  * @param context Files and project root to inspect.
@@ -221,7 +243,7 @@ export function listConstructorRuntimeTypeReferenceRecords(
         }
 
         const absolutePath = path.resolve(context.projectRoot, filePath);
-        if (!fs.existsSync(absolutePath)) {
+        if (!pathExistsSync(absolutePath)) {
             continue;
         }
 

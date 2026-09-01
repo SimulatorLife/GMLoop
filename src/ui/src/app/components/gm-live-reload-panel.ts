@@ -4,11 +4,18 @@ import type {
     GraphVisualizationLiveReloadRecentError,
     GraphVisualizationLiveReloadRecentPatch,
     GraphVisualizationLiveReloadRuntimeHealth,
-    GraphVisualizationLiveReloadStatusSnapshot
-} from "../../graph/types.js";
+    GraphVisualizationLiveReloadStatusSnapshot,
+    GraphVisualizationLiveReloadWatcherStatus
+} from "../../graph/index.js";
 import type { GraphVisualizationUiModel } from "../contracts.js";
+import {
+    GRAPH_UI_EVENT_CLEAR_PAGE_ERROR,
+    GRAPH_UI_EVENT_LIVE_RELOAD_STATUS_CHANGED,
+    type GraphUiLiveReloadStatusChangedDetail
+} from "../events/events.js";
 import type { GraphVisualizationUiState } from "../state/types.js";
-import { GRAPH_UI_EVENT_CLEAR_PAGE_ERROR } from "./events.js";
+import { EventBusManager } from "./event-bus-mixin.js";
+import { LifecycleParticipantsController } from "./lifecycle-participants-controller.js";
 import { LightDomLitElement } from "./light-dom-lit-element.js";
 import { LiveReloadPollingController } from "./live-reload-polling-controller.js";
 
@@ -28,6 +35,49 @@ function formatInteger(value: number | null): string {
     return value === null ? "-" : new Intl.NumberFormat().format(value);
 }
 
+function formatUptimeMs(value: number | null): string {
+    if (value === null) {
+        return "Waiting for status";
+    }
+
+    const totalSeconds = Math.max(0, Math.floor(value / 1000));
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    return `${String(minutes)}m ${String(seconds).padStart(2, "0")}s`;
+}
+
+function formatWatcherStatus(value: GraphVisualizationLiveReloadWatcherStatus | null): string {
+    if (value === null) {
+        return "Waiting";
+    }
+
+    if (value === "inactive") {
+        return "Inactive";
+    }
+
+    if (value === "offline") {
+        return "Offline";
+    }
+
+    if (value === "scanning") {
+        return "Scanning";
+    }
+
+    if (value === "running") {
+        return "Running";
+    }
+
+    return "Error";
+}
+
+function formatScanState(value: boolean | null): string {
+    if (value === null) {
+        return "Waiting for first scan";
+    }
+
+    return value ? "Scan complete" : "Scan in progress";
+}
+
 function formatTimestamp(timestamp: number): string {
     if (timestamp <= 0) {
         return "Unknown time";
@@ -41,7 +91,39 @@ function resolveEndpointLabel(value: string | null | undefined): string {
 }
 
 /**
+ * Format a recent live-reload error as plain text so it can be pasted whole
+ * into a bug report or chat message.
+ */
+function formatRecentErrorDetails(error: GraphVisualizationLiveReloadRecentError): string {
+    const lines = [`File: ${error.filePath}`, `Error: ${error.error}`];
+
+    if (error.recoveryHint) {
+        lines.push(`Recovery hint: ${error.recoveryHint}`);
+    }
+
+    lines.push(`Time: ${formatTimestamp(error.timestamp)}`);
+
+    return lines.join("\n");
+}
+
+/**
  * Live-reload observability surface for watcher, patch stream, and runtime-wrapper status.
+ *
+ * The panel no longer overrides `connectedCallback`, `disconnectedCallback`,
+ * or `updated()`. Lifecycle wiring is delegated to two injected
+ * collaborators:
+ *
+ * - {@link EventBusManager} owns the `gm-error-banner-dismiss` subscription
+ *   so the panel does not have to manage its own `addEventListener` /
+ *   `removeEventListener` calls.
+ * - {@link LiveReloadPollingController} owns the polling lifecycle and, via
+ *   its new `getStatusConfig` callback, reacts to model changes through
+ *   Lit's `hostUpdate()` hook instead of the host having to forward
+ *   `updated()` invocations.
+ *
+ * Both collaborators are wired up through a single
+ * {@link LifecycleParticipantsController} so connect/disconnect ordering
+ * stays explicit and the host stays a thin presentational shell.
  */
 export class GmLiveReloadPanel extends LightDomLitElement {
     public static properties = {
@@ -68,31 +150,42 @@ export class GmLiveReloadPanel extends LightDomLitElement {
         );
     };
 
-    #pollingController = new LiveReloadPollingController(this, {
-        onErrorMessageChange: (message: string | null): void => {
-            this.#pollErrorMessage = message;
-        },
-        onStatusChange: (status: GraphVisualizationLiveReloadStatusSnapshot | null): void => {
-            this.#polledStatus = status;
-        },
-        requestUpdate: (): void => {
-            this.requestUpdate();
-        }
-    });
-
-    public connectedCallback(): void {
-        super.connectedCallback();
-        this.addEventListener("gm-error-banner-dismiss", this.#onDismissErrorBanner);
-    }
-
-    public disconnectedCallback(): void {
-        this.removeEventListener("gm-error-banner-dismiss", this.#onDismissErrorBanner);
-        super.disconnectedCallback();
-    }
-
-    protected updated(): void {
-        const statusUrl = this.model?.liveReload?.endpoints.statusUrl ?? null;
-        this.#pollingController.restartPollingIfNeeded(statusUrl, this.model?.liveReload?.pollIntervalMs);
+    public constructor() {
+        super();
+        const eventBus = new EventBusManager(this, [
+            { event: "gm-error-banner-dismiss", handler: this.#onDismissErrorBanner }
+        ]);
+        new LiveReloadPollingController(
+            this,
+            {
+                onErrorMessageChange: (message: string | null): void => {
+                    this.#pollErrorMessage = message;
+                },
+                onStatusChange: (status: GraphVisualizationLiveReloadStatusSnapshot | null): void => {
+                    this.#polledStatus = status;
+                    this.dispatchEvent(
+                        new CustomEvent<GraphUiLiveReloadStatusChangedDetail>(
+                            GRAPH_UI_EVENT_LIVE_RELOAD_STATUS_CHANGED,
+                            {
+                                bubbles: true,
+                                composed: true,
+                                detail: { status }
+                            }
+                        )
+                    );
+                },
+                requestUpdate: (): void => {
+                    this.requestUpdate();
+                }
+            },
+            {
+                getStatusConfig: () => ({
+                    pollIntervalMs: this.model?.liveReload?.pollIntervalMs,
+                    statusUrl: this.model?.liveReload?.endpoints.statusUrl ?? null
+                })
+            }
+        );
+        new LifecycleParticipantsController(this, [eventBus]);
     }
 
     #resolveStatusSnapshot(): GraphVisualizationLiveReloadStatusSnapshot | null {
@@ -168,26 +261,68 @@ export class GmLiveReloadPanel extends LightDomLitElement {
         `;
     }
 
+    #renderSessionStatus(status: GraphVisualizationLiveReloadStatusSnapshot | null) {
+        return html`
+            <gm-card class="live-reload-panel-card" .heading=${"Session Status"}>
+                <dl class="live-reload-session-list" aria-label="Live reload session status">
+                    <div>
+                        <dt>Watcher</dt>
+                        <dd>${formatWatcherStatus(status?.watcherStatus ?? null)}</dd>
+                    </div>
+                    <div>
+                        <dt>Scan</dt>
+                        <dd>${formatScanState(status?.scanComplete ?? null)}</dd>
+                    </div>
+                    <div>
+                        <dt>Uptime</dt>
+                        <dd>${formatUptimeMs(status?.uptimeMs ?? null)}</dd>
+                    </div>
+                    <div>
+                        <dt>Errors</dt>
+                        <dd>${formatInteger(status?.errorCount ?? null)}</dd>
+                    </div>
+                </dl>
+            </gm-card>
+        `;
+    }
+
     #renderConnectionDetails() {
         const endpoints = this.model?.liveReload?.endpoints;
 
         return html`
             <gm-card class="live-reload-panel-card" .heading=${"Connection Details"}>
                 <dl class="live-reload-detail-list">
-                    <div>
-                        <dt>Status</dt>
-                        <dd><code>${resolveEndpointLabel(endpoints?.statusUrl)}</code></dd>
-                    </div>
-                    <div>
-                        <dt>WebSocket</dt>
-                        <dd><code>${resolveEndpointLabel(endpoints?.websocketUrl)}</code></dd>
-                    </div>
-                    <div>
-                        <dt>Runtime</dt>
-                        <dd><code>${resolveEndpointLabel(endpoints?.runtimeUrl)}</code></dd>
-                    </div>
+                    ${this.#renderEndpointDetail("Status", endpoints?.statusUrl)}
+                    ${this.#renderEndpointDetail("WebSocket", endpoints?.websocketUrl)}
+                    ${this.#renderEndpointDetail("Runtime", endpoints?.runtimeUrl)}
                 </dl>
             </gm-card>
+        `;
+    }
+
+    #renderEndpointDetail(label: string, value: string | null | undefined) {
+        const endpointLabel = resolveEndpointLabel(value);
+
+        return html`
+            <div>
+                <dt>${label}</dt>
+                <dd>
+                    <span class="live-reload-endpoint-value"><code>${endpointLabel}</code></span>
+                    ${
+                        value
+                            ? html`
+                                  <gm-copy-button
+                                      class="live-reload-endpoint-copy"
+                                      .value=${value}
+                                      accessibleLabel=${`Copy ${label.toLowerCase()} endpoint to clipboard`}
+                                      label="Copy"
+                                      hideLabel
+                                  ></gm-copy-button>
+                              `
+                            : null
+                    }
+                </dd>
+            </div>
         `;
     }
 
@@ -204,27 +339,29 @@ export class GmLiveReloadPanel extends LightDomLitElement {
     #renderRecentPatches(patches: ReadonlyArray<GraphVisualizationLiveReloadRecentPatch>) {
         return html`
             <gm-card class="live-reload-panel-card" .heading=${"Recent Patches"}>
-                ${patches.length === 0
-                    ? html`<p class="catalog-empty">No patches yet.</p>`
-                    : html`
-                          <ul class="live-reload-event-list">
-                              ${patches.map(
-                                  (patch) => html`
-                                      <li>
-                                          <strong>${patch.id}</strong>
-                                          <span>${patch.filePath}</span>
-                                          <div class="config-badge-row">
-                                              <gm-badge .label=${formatDurationMs(patch.durationMs)}></gm-badge>
-                                              <gm-badge
-                                                  .label=${`reload:${formatDurationMs(patch.hotReloadLatencyMs)}`}
-                                              ></gm-badge>
-                                              <gm-badge .label=${formatTimestamp(patch.timestamp)}></gm-badge>
-                                          </div>
-                                      </li>
-                                  `
-                              )}
-                          </ul>
-                      `}
+                ${
+                    patches.length === 0
+                        ? html`<p class="catalog-empty">No patches yet.</p>`
+                        : html`
+                              <ul class="live-reload-event-list">
+                                  ${patches.map(
+                                      (patch) => html`
+                                          <li>
+                                              <strong>${patch.id}</strong>
+                                              <span>${patch.filePath}</span>
+                                              <div class="config-badge-row">
+                                                  <gm-badge .label=${formatDurationMs(patch.durationMs)}></gm-badge>
+                                                  <gm-badge
+                                                      .label=${`reload:${formatDurationMs(patch.hotReloadLatencyMs)}`}
+                                                  ></gm-badge>
+                                                  <gm-badge .label=${formatTimestamp(patch.timestamp)}></gm-badge>
+                                              </div>
+                                          </li>
+                                      `
+                                  )}
+                              </ul>
+                          `
+                }
             </gm-card>
         `;
     }
@@ -232,24 +369,35 @@ export class GmLiveReloadPanel extends LightDomLitElement {
     #renderRecentErrors(errors: ReadonlyArray<GraphVisualizationLiveReloadRecentError>) {
         return html`
             <gm-card class="live-reload-panel-card" .heading=${"Recent Errors"}>
-                ${errors.length === 0
-                    ? html`<p class="catalog-empty">No errors reported.</p>`
-                    : html`
-                          <ul class="live-reload-event-list">
-                              ${errors.map(
-                                  (error) => html`
-                                      <li class="live-reload-error-item">
-                                          <strong>${error.filePath}</strong>
-                                          <span>${error.error}</span>
-                                          ${error.recoveryHint ? html`<p>${error.recoveryHint}</p>` : null}
-                                          <div class="config-badge-row">
-                                              <gm-badge .label=${formatTimestamp(error.timestamp)}></gm-badge>
-                                          </div>
-                                      </li>
-                                  `
-                              )}
-                          </ul>
-                      `}
+                ${
+                    errors.length === 0
+                        ? html`<p class="catalog-empty">No errors reported.</p>`
+                        : html`
+                              <ul class="live-reload-event-list">
+                                  ${errors.map(
+                                      (error) => html`
+                                          <li class="live-reload-error-item">
+                                              <div class="live-reload-error-header">
+                                                  <strong>${error.filePath}</strong>
+                                                  <gm-copy-button
+                                                      class="live-reload-error-copy"
+                                                      .value=${formatRecentErrorDetails(error)}
+                                                      accessibleLabel=${`Copy error details for ${error.filePath}`}
+                                                      label="Copy"
+                                                      hideLabel
+                                                  ></gm-copy-button>
+                                              </div>
+                                              <span>${error.error}</span>
+                                              ${error.recoveryHint ? html`<p>${error.recoveryHint}</p>` : null}
+                                              <div class="config-badge-row">
+                                                  <gm-badge .label=${formatTimestamp(error.timestamp)}></gm-badge>
+                                              </div>
+                                          </li>
+                                      `
+                                  )}
+                              </ul>
+                          `
+                }
             </gm-card>
         `;
     }
@@ -257,37 +405,40 @@ export class GmLiveReloadPanel extends LightDomLitElement {
     #renderRuntimeHealth(runtimeHealth: GraphVisualizationLiveReloadRuntimeHealth | null) {
         return html`
             <gm-card class="live-reload-panel-card" .heading=${"Runtime Health"}>
-                ${runtimeHealth === null
-                    ? html`<p class="catalog-empty">Runtime details unavailable.</p>`
-                    : html`
-                          <dl class="live-reload-health-list">
-                              <div>
-                                  <dt>Status</dt>
-                                  <dd>${runtimeHealth.runtimeStatus}</dd>
-                              </div>
-                              <div>
-                                  <dt>Registry Version</dt>
-                                  <dd>${String(runtimeHealth.registryVersion)}</dd>
-                              </div>
-                              <div>
-                                  <dt>Scripts / Events / Closures</dt>
-                                  <dd>
-                                      ${String(runtimeHealth.scriptCount)} / ${String(runtimeHealth.eventCount)} /
-                                      ${String(runtimeHealth.closureCount)}
-                                  </dd>
-                              </div>
-                              <div>
-                                  <dt>Patch Queue Depth</dt>
-                                  <dd>${String(runtimeHealth.patchQueueDepth)}</dd>
-                              </div>
-                              <div>
-                                  <dt>Applied / Failed</dt>
-                                  <dd>
-                                      ${String(runtimeHealth.appliedPatches)} / ${String(runtimeHealth.failedPatches)}
-                                  </dd>
-                              </div>
-                          </dl>
-                      `}
+                ${
+                    runtimeHealth === null
+                        ? html`<p class="catalog-empty">Runtime details unavailable.</p>`
+                        : html`
+                              <dl class="live-reload-health-list">
+                                  <div>
+                                      <dt>Status</dt>
+                                      <dd>${runtimeHealth.runtimeStatus}</dd>
+                                  </div>
+                                  <div>
+                                      <dt>Registry Version</dt>
+                                      <dd>${String(runtimeHealth.registryVersion)}</dd>
+                                  </div>
+                                  <div>
+                                      <dt>Scripts / Events / Closures</dt>
+                                      <dd>
+                                          ${String(runtimeHealth.scriptCount)} / ${String(runtimeHealth.eventCount)} /
+                                          ${String(runtimeHealth.closureCount)}
+                                      </dd>
+                                  </div>
+                                  <div>
+                                      <dt>Patch Queue Depth</dt>
+                                      <dd>${String(runtimeHealth.patchQueueDepth)}</dd>
+                                  </div>
+                                  <div>
+                                      <dt>Applied / Failed</dt>
+                                      <dd>
+                                          ${String(runtimeHealth.appliedPatches)} /
+                                          ${String(runtimeHealth.failedPatches)}
+                                      </dd>
+                                  </div>
+                              </dl>
+                          `
+                }
             </gm-card>
         `;
     }
@@ -307,19 +458,24 @@ export class GmLiveReloadPanel extends LightDomLitElement {
             <section id="live-reload-page" class=${activeClassName}>
                 ${errorMessage ? html`<gm-error-banner .message=${errorMessage}></gm-error-banner>` : null}
                 <div class="live-reload-stack" aria-live="polite">
-                    ${liveReload === null
-                        ? this.#renderSetupState()
-                        : html`
-                              ${this.#renderOverview(status)} ${this.#renderPipeline()}
-                              <div class="live-reload-activity-grid">
-                                  ${this.#renderRecentPatches(status?.recentPatches ?? [])}
-                                  ${this.#renderRecentErrors(status?.recentErrors ?? [])}
-                              </div>
-                              <div class="live-reload-grid">
-                                  ${this.#renderRuntimeHealth(liveReload.runtimeHealth)}
-                                  ${this.#renderConnectionDetails()}
-                              </div>
-                          `}
+                    ${
+                        liveReload === null
+                            ? this.#renderSetupState()
+                            : html`
+                                  ${this.#renderOverview(status)}
+                                  <div class="live-reload-status-grid">
+                                      ${this.#renderSessionStatus(status)} ${this.#renderPipeline()}
+                                  </div>
+                                  <div class="live-reload-activity-grid">
+                                      ${this.#renderRecentPatches(status?.recentPatches ?? [])}
+                                      ${this.#renderRecentErrors(status?.recentErrors ?? [])}
+                                  </div>
+                                  <div class="live-reload-grid">
+                                      ${this.#renderRuntimeHealth(liveReload.runtimeHealth)}
+                                      ${this.#renderConnectionDetails()}
+                                  </div>
+                              `
+                    }
                 </div>
             </section>
         `;

@@ -1,7 +1,6 @@
 export {
     assertRenameRequest,
     assertValidIdentifierName,
-    DEFAULT_RESERVED_KEYWORDS,
     extractSymbolName,
     parseSymbolIdParts,
     tryNormalizeIdentifierName
@@ -17,3 +16,4 @@ export {
     validateCrossFileConsistency,
     validateRenameStructure
 } from "./rename-validation.js";
+export { loadRefactorReservedIdentifierNames } from "./reserved-identifiers.js";

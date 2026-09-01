@@ -1,6 +1,6 @@
 import test from "node:test";
 
-import { printExpression } from "../src/language/autofix-printing.js";
+import { printExpression } from "../src/contracts/autofix-printing.js";
 import { assertEquals } from "./assertions.js";
 
 void test("printExpression renders MemberIndexExpression using index nodes", () => {
@@ -60,4 +60,31 @@ void test("printExpression preserves parser member accessors for MemberIndexExpr
     );
 
     assertEquals(rendered, "_player_verb_struct[$_verb_array[_i]]");
+});
+
+void test("printExpression parenthesizes nested ternary branches", () => {
+    const rendered = printExpression(
+        {
+            type: "ConditionalExpression",
+            test: { type: "Identifier", name: "outer" },
+            consequent: {
+                type: "ConditionalExpression",
+                test: { type: "Identifier", name: "leftCondition" },
+                consequent: { type: "Identifier", name: "leftValue" },
+                alternate: { type: "Identifier", name: "leftFallback" }
+            },
+            alternate: {
+                type: "ConditionalExpression",
+                test: { type: "Identifier", name: "rightCondition" },
+                consequent: { type: "Identifier", name: "rightValue" },
+                alternate: { type: "Identifier", name: "rightFallback" }
+            }
+        },
+        ""
+    );
+
+    assertEquals(
+        rendered,
+        "outer ? (leftCondition ? leftValue : leftFallback) : (rightCondition ? rightValue : rightFallback)"
+    );
 });

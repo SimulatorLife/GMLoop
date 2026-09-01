@@ -2,45 +2,31 @@ import { Buffer } from "node:buffer";
 
 import { Core } from "@gmloop/core";
 
-import { createIntegerEnvConfiguredValue } from "./env-configured-integer.js";
+import { createIntegerRuntimeOptionState } from "./integer-runtime-option-state.js";
 
-const {
-    callWithFallback,
-    clamp,
-    coercePositiveInteger,
-    createNumericTypeErrorFormatter,
-    describeValueForError,
-    isFiniteNumber,
-    resolveIntegerOption
-} = Core;
+const { callWithFallback, clamp, coercePositiveInteger, isFiniteNumber } = Core;
 
 const BYTE_UNITS = Object.freeze(["B", "KB", "MB", "GB", "TB", "PB"]);
 const DEFAULT_BYTE_FORMAT_RADIX = 1024;
 const BYTE_FORMAT_RADIX_ENV_VAR = "PRETTIER_PLUGIN_GML_BYTE_FORMAT_RADIX";
+const MAX_DISPLAYABLE_BYTE_COUNT = 2 ** 63;
+const MAX_DISPLAYABLE_BYTE_COUNT_BIGINT = 2n ** 63n;
 
-const createRadixErrorMessage = (received: unknown): string =>
-    `Byte format radix must be a positive integer (received ${describeValueForError(received)}).`;
-
-const createRadixTypeErrorMessage = createNumericTypeErrorFormatter("Byte format radix");
-
-const coerce = (value: unknown, context = {}) => {
-    const opts = { ...context, createErrorMessage: createRadixErrorMessage };
-    return coercePositiveInteger(value, opts);
-};
-
-const state = createIntegerEnvConfiguredValue({
+const runtimeOptionState = createIntegerRuntimeOptionState({
     defaultValue: DEFAULT_BYTE_FORMAT_RADIX,
     envVar: BYTE_FORMAT_RADIX_ENV_VAR,
-    coerce,
-    typeErrorMessage: createRadixTypeErrorMessage
+    optionLabel: "Byte format radix",
+    createValueErrorMessage: (receivedDescription) =>
+        `Byte format radix must be a positive integer (received ${receivedDescription}).`,
+    coerceInteger: coercePositiveInteger
 });
 
 function getDefaultByteFormatRadix(): number | undefined {
-    return state.get();
+    return runtimeOptionState.get();
 }
 
 function setDefaultByteFormatRadix(value?: unknown): number | undefined {
-    return state.set(value);
+    return runtimeOptionState.set(value);
 }
 
 function resolveByteFormatRadix(
@@ -50,17 +36,14 @@ function resolveByteFormatRadix(
         defaultRadix?: number;
     } = {}
 ): number | null | undefined {
-    const fallback = options.defaultRadix ?? options.defaultValue ?? state.get();
-    return resolveIntegerOption(rawValue, {
-        defaultValue: fallback,
-        coerce,
-        typeErrorMessage: createRadixTypeErrorMessage,
-        blankStringReturnsDefault: true
+    return runtimeOptionState.resolve(rawValue, {
+        defaultValue: options.defaultValue,
+        defaultOverride: options.defaultRadix
     });
 }
 
 function applyByteFormatRadixEnvOverride(env?: NodeJS.ProcessEnv): number | undefined {
-    return state.applyEnvOverride(env);
+    return runtimeOptionState.applyEnvOverride(env);
 }
 
 applyByteFormatRadixEnvOverride();
@@ -85,20 +68,22 @@ export interface FormatByteSizeDisplayOptions {
 
 function normalizeByteCount(value: NumericLike): number {
     if (typeof value === "bigint") {
-        const numericValue = Number(value);
-
-        if (!isFiniteNumber(numericValue)) {
-            return value > 0n ? Number.MAX_VALUE : 0;
+        if (value <= 0n) {
+            return 0;
         }
 
-        return clamp(numericValue, 0, Number.POSITIVE_INFINITY);
+        if (value >= MAX_DISPLAYABLE_BYTE_COUNT_BIGINT) {
+            return MAX_DISPLAYABLE_BYTE_COUNT;
+        }
+
+        return Number(value);
     }
 
     if (!isFiniteNumber(value)) {
         return 0;
     }
 
-    return clamp(value, 0, Number.POSITIVE_INFINITY);
+    return clamp(value, 0, MAX_DISPLAYABLE_BYTE_COUNT);
 }
 
 function resolveRadixOverride(radix: number | string | undefined, defaultRadix: number): number {
@@ -142,7 +127,7 @@ function formatByteSize(
     let formattedValue = value.toFixed(decimalPlaces);
 
     if (trimTrailingZeros && decimalPlaces > 0) {
-        formattedValue = formattedValue.replace(/(?:\.0+|(\.\d*?[1-9])0+)$/, "$1");
+        formattedValue = formattedValue.replace(/(?:\.0+|(?<trim>\.\d*?[1-9])0+)$/, "$<trim>");
     }
 
     const unitSeparator = typeof separator === "string" ? separator : "";

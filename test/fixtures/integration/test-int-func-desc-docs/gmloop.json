@@ -1,12 +1,9 @@
 {
   "printWidth": 120,
   "lintRules": {
-    "gml/normalize-doc-comments": "error"
-  },
-  "refactor": {
-    "codemods": {
-      "docCommentAlignment": {}
-    }
+    "gml/remove-doc-function-tags": "error",
+    "gml/normalize-doc-comments": "error",
+    "gml/normalize-doc-param-separators": "error"
   },
   "fixture": {
     "kind": "integration",

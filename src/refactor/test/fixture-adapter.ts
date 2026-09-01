@@ -2,9 +2,8 @@ import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { Core } from "@gmloop/core";
-import type { FixtureAdapter } from "@gmloop/fixture-runner";
+import { type FixtureAdapter, FixtureRunner } from "@gmloop/fixture-runner";
 
-import { createPathSelectionMatcher } from "../src/codemods/naming-convention/path-selection.js";
 import { normalizeRefactorProjectConfig } from "../src/project-config.js";
 import { RefactorEngine } from "../src/refactor-engine.js";
 
@@ -117,7 +116,11 @@ async function createFixtureSemanticAnalyzer(projectRoot: string, gmlFilePaths: 
                 return namingTargets;
             }
 
-            const isSelectedPath = createPathSelectionMatcher(projectRoot, filePaths, []);
+            const isSelectedPath = Core.createProjectPathBoundaryMatcher({
+                projectRoot,
+                allowedPaths: filePaths,
+                deniedPaths: []
+            });
             return namingTargets.filter((target) => isSelectedPath(target.path));
         },
         getSymbolOccurrences(symbolName: string) {
@@ -176,5 +179,23 @@ export function createRefactorFixtureAdapter(): FixtureAdapter {
                 changed: true
             };
         }
+    });
+}
+
+/**
+ * Create the canonical refactor fixture suite definition shared by workspace
+ * and aggregate fixture runs.
+ *
+ * @returns Refactor fixture suite registration metadata.
+ */
+export function createRefactorFixtureSuiteDefinition() {
+    return FixtureRunner.createFixtureSuiteDefinition({
+        workspaceName: "refactor",
+        suiteName: "refactor fixtures",
+        compiledWorkspaceTestFilePath: "src/refactor/dist/test/refactor-fixtures.test.js",
+        moduleUrl: import.meta.url,
+        sourceRelativeSegments: ["fixtures"],
+        distRelativeSegments: ["..", "..", "test", "fixtures"],
+        adapter: createRefactorFixtureAdapter()
     });
 }

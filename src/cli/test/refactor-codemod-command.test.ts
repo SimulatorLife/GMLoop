@@ -6,7 +6,8 @@ import test from "node:test";
 
 import { Parser } from "@gmloop/parser";
 
-import { runCliTestCommand } from "../src/cli.js";
+import { __test__, runCliTestCommand } from "../src/cli.js";
+import { createCodemodExecutionOrderTracker } from "../src/commands/refactor-codemod-execution-order.js";
 import {
     assertProjectGmlFilesParse,
     createSyntheticRefactorProject as createSyntheticProject,
@@ -16,6 +17,22 @@ import {
     writeProjectFile,
     writeScriptResource
 } from "./test-helpers/refactor-codemod-command-fixture.js";
+
+void test("codemod execution order tracker consumes callbacks in configured order", () => {
+    const tracker = createCodemodExecutionOrderTracker(["globalvarToGlobal", "loopLengthHoisting"]);
+
+    assert.equal(tracker.nextCodemodId(), "globalvarToGlobal");
+    tracker.consumeCompletedCodemod("globalvarToGlobal");
+    assert.equal(tracker.nextCodemodId(), "loopLengthHoisting");
+    tracker.consumeCompletedCodemod("loopLengthHoisting");
+    assert.equal(tracker.nextCodemodId(), undefined);
+
+    const driftTracker = createCodemodExecutionOrderTracker(["globalvarToGlobal"]);
+    assert.throws(
+        () => driftTracker.consumeCompletedCodemod("loopLengthHoisting"),
+        /expected globalvarToGlobal, received loopLengthHoisting/u
+    );
+});
 
 void test("refactor codemod --list discovers gmloop.json and tolerates unrelated top-level config", async () => {
     await withSyntheticRefactorProject(
@@ -168,6 +185,140 @@ void test("refactor codemod --write preserves valid bit-shift assignments and ne
     }
 });
 
+void test("refactor codemod --write repairs logical not before enum-member naming builds the semantic index", async () => {
+    const projectRoot = await createSyntheticProject({
+        refactor: {
+            codemods: {
+                repairLogicalNot: {},
+                namingConvention: {
+                    rules: {
+                        enumMember: {
+                            caseStyle: "upper_snake"
+                        }
+                    }
+                }
+            }
+        }
+    });
+
+    try {
+        await writeScriptResource(
+            projectRoot,
+            "group_test",
+            [
+                "enum eTestResultType {",
+                "    text,",
+                "    console",
+                "}",
+                "",
+                "function func_run_test_group(test_cases, result_type = eTestResultType.text, verbose = true) {",
+                "    switch (result_type) {",
+                "        case eTestResultType.console:",
+                "            return verbose;",
+                "    }",
+                "}",
+                ""
+            ].join("\n")
+        );
+        await writeScriptResource(
+            projectRoot,
+            "group_vertex_buffers",
+            [
+                "function test_vertex_buffers() {",
+                "    while(not file_text_eof(file_mtl)){",
+                "        break;",
+                "    }",
+                "    func_run_test_group(test_cases_uvs, eTestResultType.console, false);",
+                "}",
+                ""
+            ].join("\n")
+        );
+
+        const result = await runCliTestCommand({
+            argv: ["refactor", "codemod", "--write"],
+            cwd: projectRoot
+        });
+
+        assert.equal(result.exitCode, 0);
+
+        const enumSource = await readFile(path.join(projectRoot, "scripts/group_test/group_test.gml"), "utf8");
+        const usageSource = await readFile(
+            path.join(projectRoot, "scripts/group_vertex_buffers/group_vertex_buffers.gml"),
+            "utf8"
+        );
+
+        assert.match(enumSource, /CONSOLE/);
+        assert.match(enumSource, /case eTestResultType\.CONSOLE:/);
+        assert.match(usageSource, /while\(! file_text_eof\(file_mtl\)\)/);
+        assert.match(usageSource, /func_run_test_group\(test_cases_uvs, eTestResultType\.CONSOLE, false\);/);
+        assert.doesNotMatch(usageSource, /eTestResultType\.console/);
+        await assertProjectGmlFilesParse(projectRoot);
+    } finally {
+        await rm(projectRoot, { recursive: true, force: true });
+    }
+});
+
+void test("refactor codemod --write renames constructor declarations and constructor call sites together", async () => {
+    const projectRoot = await createSyntheticProject({
+        refactor: {
+            codemods: {
+                namingConvention: {
+                    rules: {
+                        constructorFunction: {
+                            caseStyle: "pascal"
+                        }
+                    }
+                }
+            }
+        }
+    });
+
+    try {
+        await writeScriptResource(
+            projectRoot,
+            "MPController",
+            [
+                "function MPController(cell_size, world_width = room_width, world_height = room_height) : Object() constructor {",
+                "    self.cell_size = cell_size;",
+                "}",
+                ""
+            ].join("\n")
+        );
+        await writeObjectResource(projectRoot, "obj_level_controller", {
+            "Create_0.gml": [
+                "function create_controller() {",
+                "    global.mp_controller = new MPController(GRID_SIZE);",
+                "}",
+                ""
+            ].join("\n")
+        });
+
+        const result = await runCliTestCommand({
+            argv: ["refactor", "codemod", "--write"],
+            cwd: projectRoot
+        });
+
+        assert.equal(result.exitCode, 0, `${result.stderr}\n${result.stdout}`);
+
+        const constructorSource = await readFile(
+            path.join(projectRoot, "scripts/MPController/MPController.gml"),
+            "utf8"
+        );
+        const objectSource = await readFile(
+            path.join(projectRoot, "objects/obj_level_controller/Create_0.gml"),
+            "utf8"
+        );
+
+        assert.match(constructorSource, /function MpController\(/);
+        assert.doesNotMatch(constructorSource, /function MPController\(/);
+        assert.match(objectSource, /new MpController\(GRID_SIZE\)/);
+        assert.doesNotMatch(objectSource, /new MPController\(GRID_SIZE\)/);
+        await assertProjectGmlFilesParse(projectRoot);
+    } finally {
+        await rm(projectRoot, { recursive: true, force: true });
+    }
+});
+
 void test("refactor codemod --write preserves allowed leading underscores while applying safe snake-case renames", async () => {
     const projectRoot = await createSyntheticProject({
         refactor: {
@@ -227,6 +378,56 @@ void test("refactor codemod --write preserves allowed leading underscores while 
         await assert.rejects(access(path.join(projectRoot, "scripts/input_error/input_error.gml")));
         await assert.rejects(access(path.join(projectRoot, "scripts/__InputError/__InputError.gml")));
         assert.match(result.stdout, /\[namingConvention\] changed/);
+    } finally {
+        await rm(projectRoot, { recursive: true, force: true });
+    }
+});
+
+void test("refactor codemod --write keeps multi-callable script resource and matching constructor aligned", async () => {
+    const projectRoot = await createSyntheticProject({
+        refactor: {
+            codemods: {
+                namingConvention: {
+                    rules: {
+                        scriptResourceName: {
+                            caseStyle: "lower"
+                        }
+                    }
+                }
+            }
+        }
+    });
+
+    try {
+        await writeScriptResource(
+            projectRoot,
+            "Attack",
+            [
+                "function Attack(sound_attack, attack_range_max = infinity, attack_range_min) : Object() constructor {",
+                "}",
+                "",
+                "function AttackProjectileCircle(sound_attack, projectile_index) : Attack(sound_attack, infinity, 0) constructor {",
+                "}",
+                ""
+            ].join("\n")
+        );
+
+        const result = await runCliTestCommand({
+            argv: ["refactor", "codemod", "--write"],
+            cwd: projectRoot
+        });
+
+        assert.equal(result.exitCode, 0);
+        await access(path.join(projectRoot, "scripts", "attack", "attack.gml"));
+        const source = await readFile(path.join(projectRoot, "scripts", "attack", "attack.gml"), "utf8");
+
+        assert.match(source, /function attack\(/);
+        assert.match(source, /function AttackProjectileCircle\(/);
+        assert.match(source, /: attack\(sound_attack, infinity, 0\) constructor/);
+        assert.doesNotMatch(source, /\bfunction Attack\(/);
+        assert.doesNotMatch(source, /: Attack\(/);
+
+        await assertProjectGmlFilesParse(projectRoot);
     } finally {
         await rm(projectRoot, { recursive: true, force: true });
     }
@@ -1791,6 +1992,208 @@ void test("refactor codemod --write skips argument renames that would collide wi
     }
 });
 
+void test("refactor codemod --write does not rename constructor fields captured by static function bodies as arguments", async () => {
+    const projectRoot = await createSyntheticProject({
+        refactor: {
+            codemods: {
+                namingConvention: {
+                    rules: {
+                        argument: {
+                            caseStyle: "lower_snake"
+                        }
+                    }
+                }
+            }
+        }
+    });
+
+    try {
+        await writeScriptResource(
+            projectRoot,
+            "ColmeshShape",
+            [
+                "function ColmeshDynamic(shape, M, group) constructor {",
+                "    self.M = matrix_build_identity();",
+                "    static set_matrix = function(_M, _moving = true) {",
+                "        array_copy(M, 0, _M, 0, 16);",
+                "    };",
+                "    static get_min_max = function(forceUpdate = true) {",
+                "        var t = matrix_transform_vertex(M, 0, 0, 0);",
+                "        return t;",
+                "    };",
+                "    set_matrix(M, false);",
+                "}",
+                ""
+            ].join("\n")
+        );
+
+        const result = await runCliTestCommand({
+            argv: ["refactor", "codemod", "--write"],
+            cwd: projectRoot
+        });
+
+        assert.equal(result.exitCode, 0);
+        const updatedSource = await readFile(path.join(projectRoot, "scripts/ColmeshShape/ColmeshShape.gml"), "utf8");
+
+        assert.match(updatedSource, /function ColmeshDynamic\(shape, m, group\) constructor/);
+        assert.match(updatedSource, /self\.M = matrix_build_identity\(\);/);
+        assert.match(updatedSource, /static set_matrix = function\(_m, _moving = true\)/);
+        assert.match(updatedSource, /array_copy\(M, 0, _m, 0, 16\);/);
+        assert.match(updatedSource, /matrix_transform_vertex\(M, 0, 0, 0\);/);
+        assert.match(updatedSource, /set_matrix\(m, false\);/);
+        assert.doesNotMatch(updatedSource, /array_copy\(m, 0, _m, 0, 16\);/);
+        assert.doesNotMatch(updatedSource, /matrix_transform_vertex\(m, 0, 0, 0\);/);
+
+        await assertProjectGmlFilesParse(projectRoot);
+    } finally {
+        await rm(projectRoot, { recursive: true, force: true });
+    }
+});
+
+void test("refactor codemod --write renames enum members that collide with built-in variables and enum initializer references", async () => {
+    const projectRoot = await createSyntheticProject({
+        refactor: {
+            codemods: {
+                namingConvention: {
+                    rules: {
+                        enumMember: {
+                            caseStyle: "upper_snake"
+                        }
+                    }
+                }
+            }
+        }
+    });
+
+    try {
+        await writeScriptResource(
+            projectRoot,
+            "SpartEmitter",
+            [
+                "enum eSpartEmitterType {",
+                "    None, Stream, Retired, Dynamic",
+                "}",
+                "",
+                "function use_spart_emitter_type() {",
+                "    return eSpartEmitterType.Dynamic;",
+                "}",
+                ""
+            ].join("\n")
+        );
+        await writeScriptResource(
+            projectRoot,
+            "TransitionController",
+            [
+                "enum eTransitionState {",
+                "    idle = 0,",
+                "    complete = 1,",
+                "    delaying,",
+                "    in,",
+                "    out,",
+                "    partway_in,",
+                "    partway_out",
+                "}",
+                "",
+                "enum eTransitionType {",
+                "    in = eTransitionState.in,",
+                "    out = eTransitionState.out,",
+                "    partway_in = eTransitionState.partway_in,",
+                "    partway_out = eTransitionState.partway_out",
+                "}",
+                "",
+                "function use_transition_state() {",
+                "    return eTransitionState.out + eTransitionType.partway_out;",
+                "}",
+                ""
+            ].join("\n")
+        );
+
+        const result = await runCliTestCommand({
+            argv: ["refactor", "codemod", "--write"],
+            cwd: projectRoot
+        });
+
+        assert.equal(result.exitCode, 0);
+        const emitterSource = await readFile(path.join(projectRoot, "scripts/SpartEmitter/SpartEmitter.gml"), "utf8");
+        const transitionSource = await readFile(
+            path.join(projectRoot, "scripts/TransitionController/TransitionController.gml"),
+            "utf8"
+        );
+
+        assert.match(emitterSource, /NONE, STREAM, RETIRED, DYNAMIC/);
+        assert.match(emitterSource, /eSpartEmitterType\.DYNAMIC/);
+        assert.doesNotMatch(result.stdout, /gml\/enum-member\/Dynamic.+reserved GameMaker identifier/);
+        assert.match(transitionSource, /IN = eTransitionState\.IN/);
+        assert.match(transitionSource, /OUT = eTransitionState\.OUT/);
+        assert.match(transitionSource, /PARTWAY_IN = eTransitionState\.PARTWAY_IN/);
+        assert.match(transitionSource, /PARTWAY_OUT = eTransitionState\.PARTWAY_OUT/);
+        assert.match(transitionSource, /eTransitionState\.OUT \+ eTransitionType\.PARTWAY_OUT/);
+
+        await assertProjectGmlFilesParse(projectRoot);
+    } finally {
+        await rm(projectRoot, { recursive: true, force: true });
+    }
+});
+
+void test("refactor codemod --write skips enum-member renames that would collide with macro expansion names", async () => {
+    const projectRoot = await createSyntheticProject({
+        refactor: {
+            codemods: {
+                namingConvention: {
+                    rules: {
+                        enumMember: {
+                            caseStyle: "upper_snake"
+                        }
+                    }
+                }
+            }
+        }
+    });
+
+    try {
+        await writeScriptResource(projectRoot, "group_debug_functions", '#macro UNKNOWN "unknown"\n');
+        await writeScriptResource(
+            projectRoot,
+            "aicontroller",
+            [
+                "function AIController() constructor {",
+                "    enum eTargetIntention {",
+                "        attack_target,",
+                "        evade,",
+                "        move_to,",
+                "        follow,",
+                "        interact_target,",
+                "        unknown",
+                "    }",
+                "",
+                "    targeting = { intention: eTargetIntention.unknown };",
+                "    if (targeting.intention == eTargetIntention.unknown) {",
+                "        targeting.intention = eTargetIntention.move_to;",
+                "    }",
+                "}",
+                ""
+            ].join("\n")
+        );
+
+        const result = await runCliTestCommand({
+            argv: ["refactor", "codemod", "--write"],
+            cwd: projectRoot
+        });
+
+        assert.equal(result.exitCode, 0);
+        assert.match(result.stdout, /gml\/enum-member\/eTargetIntention\/unknown/);
+        assert.match(result.stdout, /conflicts with macro 'gml\/macro\/UNKNOWN'/);
+
+        const aiSource = await readFile(path.join(projectRoot, "scripts/aicontroller/aicontroller.gml"), "utf8");
+        assert.match(aiSource, /unknown/);
+        assert.doesNotMatch(aiSource, /eTargetIntention\.UNKNOWN/);
+        assert.match(aiSource, /eTargetIntention\.MOVE_TO/);
+        await assertProjectGmlFilesParse(projectRoot);
+    } finally {
+        await rm(projectRoot, { recursive: true, force: true });
+    }
+});
+
 void test("refactor codemod --write updates constructor inheritance references when renaming struct declarations", async () => {
     const projectRoot = await createSyntheticProject({
         refactor: {
@@ -1871,6 +2274,14 @@ void test("refactor codemod --write updates constructor runtime type checks for 
                 "function input_value_is_binding_legacy(_value) {",
                 '    return instanceof(_value) == "__input_class_binding";',
                 "}",
+                "",
+                "function input_value_uses_static_binding() {",
+                '    return struct_get(static_get(__input_class_binding), "set_text");',
+                "}",
+                "",
+                "function input_value_calls_static_binding() {",
+                '    scr_call_static(__input_class_binding, "reset");',
+                "}",
                 ""
             ].join("\n")
         );
@@ -1881,9 +2292,9 @@ void test("refactor codemod --write updates constructor runtime type checks for 
         });
 
         assert.equal(result.exitCode, 0);
-        await access(path.join(projectRoot, "scripts", "__InputClassBinding", "__InputClassBinding.gml"));
+        await access(path.join(projectRoot, "scripts", "__input_class_binding", "__input_class_binding.gml"));
         const constructorSource = await readFile(
-            path.join(projectRoot, "scripts", "__InputClassBinding", "__InputClassBinding.gml"),
+            path.join(projectRoot, "scripts", "__input_class_binding", "__input_class_binding.gml"),
             "utf8"
         );
         const emptyBindingSource = await readFile(
@@ -1899,6 +2310,8 @@ void test("refactor codemod --write updates constructor runtime type checks for 
         assert.match(emptyBindingSource, /return new __InputClassBinding\(\);/);
         assert.match(bindingChecksSource, /is_instanceof\(_value, __InputClassBinding\);/);
         assert.match(bindingChecksSource, /instanceof\(_value\) == "__InputClassBinding";/);
+        assert.match(bindingChecksSource, /static_get\(__InputClassBinding\)/);
+        assert.match(bindingChecksSource, /scr_call_static\(__InputClassBinding, "reset"\);/);
         assert.doesNotMatch(bindingChecksSource, /\b__input_class_binding\b/);
 
         await assertProjectGmlFilesParse(projectRoot);
@@ -1967,7 +2380,7 @@ void test("refactor codemod --write does not rename plain functions in mixed mul
     }
 });
 
-void test("refactor codemod --write renames unique constructor static member calls across files", async () => {
+void test("refactor codemod --write renames receiver-resolved constructor static member calls across files", async () => {
     const projectRoot = await createSyntheticProject({
         refactor: {
             codemods: {
@@ -2001,7 +2414,16 @@ void test("refactor codemod --write renames unique constructor static member cal
         await writeScriptResource(
             projectRoot,
             "movement",
-            ["function movement(pos, prev_pos) {", "    return pos.Sub(prev_pos);", "}", ""].join("\n")
+            [
+                "function MovementSystem() constructor {",
+                "    self.pos = new Vector2(4, 8);",
+                "",
+                "    static move = function(prev_pos) {",
+                "        return pos.Sub(prev_pos);",
+                "    };",
+                "}",
+                ""
+            ].join("\n")
         );
 
         const result = await runCliTestCommand({
@@ -2023,7 +2445,7 @@ void test("refactor codemod --write renames unique constructor static member cal
     }
 });
 
-void test("refactor codemod --write renames unique constructor static member bare calls inside constructors and with blocks", async () => {
+void test("refactor codemod --write skips constructor static member renames with unresolved bare calls", async () => {
     const projectRoot = await createSyntheticProject({
         refactor: {
             codemods: {
@@ -2078,17 +2500,101 @@ void test("refactor codemod --write renames unique constructor static member bar
         });
 
         assert.equal(result.exitCode, 0);
+        assert.match(result.stdout + result.stderr, /Unresolved same-name bare call 'Reset'/);
+
         const stateSource = await readFile(
             path.join(projectRoot, "scripts/generator_state/generator_state.gml"),
             "utf8"
         );
         const initializeSource = await readFile(path.join(projectRoot, "scripts/initialize/initialize.gml"), "utf8");
 
-        assert.match(stateSource, /static reset = function\(\) \{/);
-        assert.match(stateSource, /\n {4}reset\(\);\n/u);
-        assert.doesNotMatch(stateSource, /\n {4}Reset\(\);\n/u);
-        assert.match(initializeSource, /with \(_generatorState\) \{\n {8}reset\(\);\n {4}\}/u);
-        assert.doesNotMatch(initializeSource, /\bReset\(\);/);
+        assert.match(stateSource, /static Reset = function\(\) \{/);
+        assert.match(stateSource, /\n {4}Reset\(\);\n/u);
+        assert.match(initializeSource, /with \(_generatorState\) \{\n {8}Reset\(\);\n {4}\}/u);
+
+        await assertProjectGmlFilesParse(projectRoot);
+    } finally {
+        await rm(projectRoot, { recursive: true, force: true });
+    }
+});
+
+void test("refactor codemod --write skips Colmesh-style ambiguous constructor static member renames", async () => {
+    const projectRoot = await createSyntheticProject({
+        refactor: {
+            codemods: {
+                namingConvention: {
+                    rules: {
+                        staticVariable: {
+                            caseStyle: "camel"
+                        }
+                    }
+                }
+            }
+        }
+    });
+
+    try {
+        await writeScriptResource(
+            projectRoot,
+            "Colmesh",
+            [
+                "function Colmesh() constructor {",
+                "    static get_shape = function(shape) {",
+                "        return shape;",
+                "    };",
+                "",
+                "    static add_shape = function(shape) {",
+                "        return get_shape(shape).get_min_max();",
+                "    };",
+                "}",
+                ""
+            ].join("\n")
+        );
+        await writeScriptResource(
+            projectRoot,
+            "ColmeshShape",
+            [
+                "function ColmeshShape() constructor {",
+                "    static get_min_max = function() {",
+                "        return [0, 0, 0, 1, 1, 1];",
+                "    };",
+                "}",
+                ""
+            ].join("\n")
+        );
+        await writeScriptResource(
+            projectRoot,
+            "ColmeshDynamic",
+            [
+                "function ColmeshDynamic(shape) constructor {",
+                "    static get_min_max = function() {",
+                "        return shape.get_min_max();",
+                "    };",
+                "}",
+                ""
+            ].join("\n")
+        );
+
+        const result = await runCliTestCommand({
+            argv: ["refactor", "codemod", "--write"],
+            cwd: projectRoot
+        });
+
+        assert.equal(result.exitCode, 0);
+        assert.match(result.stdout + result.stderr, /Unresolved same-name property access 'get_min_max'/);
+
+        const colmeshSource = await readFile(path.join(projectRoot, "scripts/Colmesh/Colmesh.gml"), "utf8");
+        const shapeSource = await readFile(path.join(projectRoot, "scripts/ColmeshShape/ColmeshShape.gml"), "utf8");
+        const dynamicSource = await readFile(
+            path.join(projectRoot, "scripts/ColmeshDynamic/ColmeshDynamic.gml"),
+            "utf8"
+        );
+
+        assert.match(colmeshSource, /get_shape\(shape\)\.get_min_max\(\)/);
+        assert.match(shapeSource, /static get_min_max = function\(\) \{/);
+        assert.match(dynamicSource, /static get_min_max = function\(\) \{/);
+        assert.match(dynamicSource, /shape\.get_min_max\(\)/);
+        assert.doesNotMatch(`${colmeshSource}\n${shapeSource}\n${dynamicSource}`, /getMinMax/);
 
         await assertProjectGmlFilesParse(projectRoot);
     } finally {
@@ -2221,14 +2727,18 @@ void test("refactor codemod --write skips semantic project indexing when all sel
         );
 
         const result = await runCliTestCommand({
-            argv: ["refactor", "codemod", "--write", "--verbose"],
+            argv: ["refactor", "codemod", "--write"],
             cwd: projectRoot
         });
 
         assert.equal(result.exitCode, 0);
         assert.match(result.stdout, /\[globalvarToGlobal\] changed/);
         assert.match(result.stdout, /\[loopLengthHoisting\] changed/);
-        assert.doesNotMatch(result.stdout, /DEBUG: Starting buildProjectIndex/);
+        assert.equal(
+            __test__.consumeLastRefactorSemanticBridge(),
+            null,
+            "Expected no semantic bridge construction when no semantic-index-dependent codemods run"
+        );
     } finally {
         await rm(projectRoot, { recursive: true, force: true });
     }
@@ -2267,13 +2777,19 @@ void test("refactor codemod --write only rebuilds the project index between chan
         );
 
         const result = await runCliTestCommand({
-            argv: ["refactor", "codemod", "--write", "--verbose"],
+            argv: ["refactor", "codemod", "--write"],
             cwd: projectRoot
         });
 
         assert.equal(result.exitCode, 0);
-        assert.match(result.stdout, /Rebuilding project index after codemod loopLengthHoisting/);
-        assert.doesNotMatch(result.stdout, /Rebuilding project index after codemod namingConvention/);
+
+        const bridge = __test__.consumeLastRefactorSemanticBridge();
+        assert.ok(bridge, "Expected the refactor orchestrator to construct a semantic bridge");
+        assert.equal(
+            bridge.getProjectIndexUpdateCount(),
+            1,
+            "Expected exactly one semantic index refresh after the non-semantic codemod finished and before the semantic codemod ran"
+        );
     } finally {
         await rm(projectRoot, { recursive: true, force: true });
     }
@@ -2314,7 +2830,7 @@ void test("refactor codemod --write batches semantic index rebuild until all non
         );
 
         const result = await runCliTestCommand({
-            argv: ["refactor", "codemod", "--write", "--verbose"],
+            argv: ["refactor", "codemod", "--write"],
             cwd: projectRoot
         });
 
@@ -2323,9 +2839,13 @@ void test("refactor codemod --write batches semantic index rebuild until all non
         assert.match(result.stdout, /\[loopLengthHoisting\] changed/);
         assert.match(result.stdout, /\[namingConvention\] changed/);
 
-        const rebuildLines = result.stdout.match(/Rebuilding project index after codemod /g) ?? [];
-        assert.equal(rebuildLines.length, 1);
-        assert.match(result.stdout, /Rebuilding project index after codemod loopLengthHoisting/);
+        const bridge = __test__.consumeLastRefactorSemanticBridge();
+        assert.ok(bridge, "Expected the refactor orchestrator to construct a semantic bridge");
+        assert.equal(
+            bridge.getProjectIndexUpdateCount(),
+            1,
+            "Expected exactly one semantic index refresh after both non-semantic codemods finished and before the semantic codemod ran"
+        );
     } finally {
         await rm(projectRoot, { recursive: true, force: true });
     }
@@ -2454,6 +2974,66 @@ void test("refactor codemod errors when gmloop.json cannot be found", async () =
 
         assert.equal(result.exitCode, 1);
         assert.match(result.stderr, /Could not find gmloop config file/);
+    } finally {
+        await rm(projectRoot, { recursive: true, force: true });
+    }
+});
+
+void test("refactor codemod --write suppresses indexing warning for files repaired by repairLogicalNot", async () => {
+    const projectRoot = await createSyntheticProject({
+        refactor: {
+            codemods: {
+                repairLogicalNot: {}
+            }
+        }
+    });
+
+    try {
+        await writeScriptResource(
+            projectRoot,
+            "demo_script",
+            'function demo_script(file) {\n    while (not file_text_eof(file)) {\n        show_debug_message("looping");\n    }\n}\n'
+        );
+
+        const result = await runCliTestCommand({
+            argv: ["refactor", "codemod", "--write"],
+            cwd: projectRoot
+        });
+
+        assert.equal(result.exitCode, 0);
+        const updatedSource = await readFile(path.join(projectRoot, "scripts/demo_script/demo_script.gml"), "utf8");
+        assert.match(updatedSource, /while \(! file_text_eof\(file\)\)/);
+        assert.doesNotMatch(result.stderr, /Warning: Skipping parse-invalid file/);
+    } finally {
+        await rm(projectRoot, { recursive: true, force: true });
+    }
+});
+
+void test("refactor codemod --write prints indexing warning for parse-invalid files when repairLogicalNot is not enabled", async () => {
+    const projectRoot = await createSyntheticProject({
+        refactor: {
+            codemods: {
+                namingConvention: {
+                    rules: {
+                        scriptResourceName: {
+                            caseStyle: "camel"
+                        }
+                    }
+                }
+            }
+        }
+    });
+
+    try {
+        await writeScriptResource(projectRoot, "demo_script", "function demo_script(file) {\n    while ( {\n}\n");
+
+        const result = await runCliTestCommand({
+            argv: ["refactor", "codemod", "--write"],
+            cwd: projectRoot
+        });
+
+        assert.equal(result.exitCode, 0);
+        assert.match(result.stderr, /Warning: Skipping parse-invalid file/);
     } finally {
         await rm(projectRoot, { recursive: true, force: true });
     }

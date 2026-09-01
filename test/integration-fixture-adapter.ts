@@ -104,9 +104,49 @@ export function createIntegrationFixtureAdapter() {
                         filePath: `${fixtureCase.caseId}.gml`
                     })
                 );
-                const lintedOutput = result.output ?? refactoredText;
+                let currentLintedOutput = result.output ?? refactoredText;
+
+                if (
+                    lintRuleEntries["gml/require-argument-separators"] &&
+                    lintRuleEntries["gml/require-argument-separators"] !== "off"
+                ) {
+                    const repairResult =
+                        Refactor.RepairArgumentSeparators.applyRepairArgumentSeparatorsCodemod(currentLintedOutput);
+                    if (repairResult.changed) {
+                        currentLintedOutput = repairResult.outputText;
+                    }
+                }
+
+                let afterLogicalNotOutput: string;
+                if (
+                    lintRuleEntries["gml/normalize-operator-aliases"] &&
+                    lintRuleEntries["gml/normalize-operator-aliases"] !== "off"
+                ) {
+                    const repairLogicalNotResult = await Refactor.RepairLogicalNot.applyRepairLogicalNotCodemod(
+                        currentLintedOutput,
+                        null
+                    );
+                    afterLogicalNotOutput = repairLogicalNotResult.changed
+                        ? repairLogicalNotResult.outputText
+                        : currentLintedOutput;
+                } else {
+                    afterLogicalNotOutput = currentLintedOutput;
+                }
+
+                let finalLintedOutput = afterLogicalNotOutput;
+                if (
+                    lintRuleEntries["gml/no-scientific-notation"] &&
+                    lintRuleEntries["gml/no-scientific-notation"] !== "off"
+                ) {
+                    const repairScientificResult =
+                        Refactor.ScientificNotation.applyScientificNotationCodemod(finalLintedOutput);
+                    if (repairScientificResult.changed) {
+                        finalLintedOutput = repairScientificResult.outputText;
+                    }
+                }
+
                 const outputText = await runProfiledStage("format", async () =>
-                    Format.format(lintedOutput, formatOptions)
+                    Format.format(finalLintedOutput, formatOptions)
                 );
 
                 return {

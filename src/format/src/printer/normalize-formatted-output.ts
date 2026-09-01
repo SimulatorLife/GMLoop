@@ -115,11 +115,43 @@ function updateBlockCommentState(line: string, isInside: boolean): boolean {
     return true;
 }
 
+/**
+ * Returns `true` when `line` is a single-line block comment (block comment
+ * opener and closer on the same line).  Multi-line block comment segments
+ * (opener-only, closer-only, and body lines) are excluded so that
+ * block-comment boundaries do not perturb the `inDocCommentRun` tracker.
+ */
+function isSingleLineBlockComment(line: string): boolean {
+    const startIndex = line.indexOf("/*");
+    if (startIndex === -1) {
+        return false;
+    }
+    return line.slice(startIndex + 2).includes("*/");
+}
+
+/**
+ * Tracks whether the formatter is currently emitting a run of doc-style
+ * (`///` / `//`) comments.  Single-line block comments are treated as
+ * transparent — they neither start nor end a run — so a block comment that
+ * appears between two doc comments does not falsely report a non-doc context
+ * to `ensureBlankLineBeforeTopLevelLineComments`.
+ */
+function updateDocCommentRun(line: string, inRun: boolean): boolean {
+    if (line.startsWith("///") || line.startsWith("//")) {
+        return true;
+    }
+    if (line.trim() === "" || isSingleLineBlockComment(line)) {
+        return inRun;
+    }
+    return false;
+}
+
 function ensureBlankLineBeforeTopLevelLineComments(formatted: string): string {
     const lines = formatted.split(/\r?\n/);
     const result: string[] = [];
     let previousLine: string | undefined;
     let insideBlockComment = false;
+    let inDocCommentRun = false;
 
     for (const line of lines) {
         if (
@@ -127,12 +159,17 @@ function ensureBlankLineBeforeTopLevelLineComments(formatted: string): string {
             isTopLevelLineComment(line) &&
             shouldInsertBlankLineBeforeTopLevelComment(previousLine)
         ) {
-            result.push("");
+            const previousIsSingleLineBlockComment =
+                typeof previousLine === "string" && isSingleLineBlockComment(previousLine);
+            if (!previousIsSingleLineBlockComment || !inDocCommentRun) {
+                result.push("");
+            }
         }
 
         result.push(line);
         previousLine = line;
         insideBlockComment = updateBlockCommentState(line, insideBlockComment);
+        inDocCommentRun = updateDocCommentRun(line, inDocCommentRun);
     }
 
     return result.join("\n");

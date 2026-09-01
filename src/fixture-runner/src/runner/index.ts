@@ -2,6 +2,7 @@ export { createFixtureSuiteDefinition } from "./create-fixture-suite-definition.
 export {
     compareDirectoryTrees,
     registerNodeFixtureSuite,
+    resolveFixtureCaseProfileBudgets,
     runDiscoveredFixtureCase,
     runFixtureSuite
 } from "./fixture-suite.js";

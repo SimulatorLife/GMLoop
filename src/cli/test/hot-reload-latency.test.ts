@@ -68,7 +68,6 @@ function launchWatchWithDefaults(
     }
 ): Promise<unknown> {
     return runWatchCommand(fixture.dir, {
-        extensions: [".gml"],
         verbose: false,
         quiet: true,
         websocketServer: false,
@@ -216,6 +215,52 @@ void describe("Hot reload latency tracking in watch pipeline", () => {
             assert.ok(
                 liveChangePatch !== undefined,
                 "At least one recent patch should have hotReloadLatencyMs recorded"
+            );
+        } finally {
+            ctx.abortController.abort();
+
+            try {
+                await watchPromise;
+            } catch {
+                // Expected when aborting
+            }
+        }
+    });
+
+    void it("records hotReloadLatencyMs when the watcher reports an unknown filename event", async () => {
+        if (!fixture) {
+            throw new Error("Watch fixture was not initialized");
+        }
+
+        const ctx = await createWatchTestContext(fixture);
+        const watchPromise = launchWatchWithDefaults(fixture, {
+            statusPort: Number.parseInt(new URL(ctx.statusBaseUrl).port, 10),
+            abortSignal: ctx.abortController.signal,
+            watchFactory: createMockWatchFactory(ctx.listenerCapture)
+        });
+
+        try {
+            await waitForScanComplete(ctx.statusBaseUrl, 5000, 25);
+
+            const initialStatus = await fetchStatusPayload(ctx.statusBaseUrl);
+            const initialPatchCount = initialStatus.totalPatchCount ?? initialStatus.patchCount ?? 0;
+
+            await writeFile(fixture.script1, "var unknown_latency_test = 1;", "utf8");
+            ctx.listenerCapture.listener?.("change", null);
+
+            await waitForPatchCount(ctx.statusBaseUrl, initialPatchCount + 1, 5000, 25);
+
+            const finalStatus = await fetchStatusPayload(ctx.statusBaseUrl);
+            const recentPatches = finalStatus.recentPatches ?? [];
+            const unknownChangePatch = recentPatches.find((patch) => typeof patch.hotReloadLatencyMs === "number");
+
+            assert.ok(
+                typeof finalStatus.avgHotReloadLatencyMs === "number",
+                "Unknown filename changes should contribute to average latency"
+            );
+            assert.ok(
+                unknownChangePatch !== undefined,
+                "Unknown filename changes should preserve hotReloadLatencyMs on the emitted patch"
             );
         } finally {
             ctx.abortController.abort();

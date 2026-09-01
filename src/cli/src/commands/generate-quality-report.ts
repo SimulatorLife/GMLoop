@@ -13,13 +13,13 @@ import { CliUsageError, handleCliError } from "../cli-core/errors.js";
 import { ParseResultStatus, ScanStatus, TestCaseStatus } from "../modules/quality-report/index.js";
 import { scanProjectHealth } from "../modules/quality-report/project-health.js";
 import { traverseDirectoryEntries } from "../shared/directory-traversal.js";
+import { pathExistsSync } from "../shared/path-exists.js";
 
 const {
     assertArray,
     compactArray,
     ensureMap,
     getErrorMessageOrFallback,
-    isNonEmptyArray,
     isNonEmptyTrimmedString,
     isObjectLike,
     parseJsonWithContext,
@@ -34,6 +34,7 @@ const parser = new XMLParser({
 });
 
 const NON_WORKSPACE_PATH_SEGMENTS = new Set(["dist", "test", "tests", "reports", "report", "node_modules"]);
+const NON_WORKSPACE_PATH_PATTERNS = [/^report-/u];
 const GENERIC_REPORT_FILE_STEMS = new Set([
     "junit",
     "junit-report",
@@ -219,7 +220,11 @@ function extractWorkspaceNameFromReportPath(reportFilePath: string): string {
     }
 
     const parentDirectoryName = path.basename(path.dirname(normalized));
-    if (!parentDirectoryName || NON_WORKSPACE_PATH_SEGMENTS.has(parentDirectoryName)) {
+    if (
+        !parentDirectoryName ||
+        NON_WORKSPACE_PATH_SEGMENTS.has(parentDirectoryName) ||
+        NON_WORKSPACE_PATH_PATTERNS.some((pattern) => pattern.test(parentDirectoryName))
+    ) {
         return "";
     }
     return parentDirectoryName;
@@ -398,15 +403,16 @@ function readCheckstyle(checkstyleFiles) {
 function normalizeLocator(testCase) {
     const node = testCase?.node || {};
     const rawFile = typeof node.file === "string" ? node.file.trim() : "";
+    const testName = typeof node.name === "string" ? node.name.trim() : "";
+    if (!testName) {
+        return null;
+    }
     if (rawFile) {
-        return `file:${path.normalize(rawFile).replaceAll("\\", "/").toLowerCase()}`;
+        return `file:${path.normalize(rawFile).replaceAll("\\", "/").toLowerCase()}${FILE_NAME_SEPARATOR}${testName}`;
     }
     const className = typeof node.classname === "string" ? node.classname.trim() : "";
     if (className) {
-        return `class:${className}`.toLowerCase();
-    }
-    if (isNonEmptyArray(testCase?.suitePath)) {
-        return `suite:${testCase.suitePath.join("::")}`.toLowerCase();
+        return `class:${className}${FILE_NAME_SEPARATOR}${testName}`.toLowerCase();
     }
     return null;
 }
@@ -439,13 +445,33 @@ function collectCaseDifferences(baseResults, targetResults) {
 
 function collectMissingCases(sourceResults, comparisonResults) {
     const comparableReportNames = collectComparableReportNames(sourceResults, comparisonResults);
+    const comparisonIdentities = collectComparableRecordIdentities(comparisonResults, comparableReportNames);
     const missing = [];
     for (const [key, record] of sourceResults.results.entries()) {
-        if (!comparisonResults.results.has(key) && isComparableReportRecord(record, comparableReportNames)) {
+        if (
+            !comparisonResults.results.has(key) &&
+            isComparableReportRecord(record, comparableReportNames) &&
+            !comparisonIdentities.has(normalizeLocator(record))
+        ) {
             missing.push(record);
         }
     }
     return missing;
+}
+
+function collectComparableRecordIdentities(resultSet, comparableReportNames) {
+    const identities = new Set();
+    for (const record of resultSet.results.values()) {
+        if (!isComparableReportRecord(record, comparableReportNames)) {
+            continue;
+        }
+
+        const identity = normalizeLocator(record);
+        if (identity) {
+            identities.add(identity);
+        }
+    }
+    return identities;
 }
 
 function collectComparableReportNames(sourceResults, comparisonResults) {
@@ -614,7 +640,7 @@ function readProjectHealth(files) {
 }
 
 function isExistingDirectory(resolvedPath) {
-    return fs.existsSync(resolvedPath) && fs.statSync(resolvedPath).isDirectory();
+    return pathExistsSync(resolvedPath, (stat) => stat.isDirectory());
 }
 
 /**
@@ -818,46 +844,23 @@ function isCheckstyleDocument(document) {
 }
 
 function documentContainsTestElements(document) {
-    const queue = [document];
-    let found = false;
+    if (Array.isArray(document)) {
+        return document.some((entry) => documentContainsTestElements(entry));
+    }
 
-    processTraversalQueue(queue, (current, queueRef) => {
-        if (Array.isArray(current)) {
-            enqueueTraversalValues(queueRef, current);
-            return;
-        }
+    if (!isObjectLike(document)) {
+        return false;
+    }
 
-        if (!isObjectLike(current)) {
-            return;
-        }
+    if (
+        Object.hasOwn(document, "testcase") ||
+        Object.hasOwn(document, "testsuite") ||
+        Object.hasOwn(document, "testsuites")
+    ) {
+        return true;
+    }
 
-        if (
-            Object.hasOwn(current, "testcase") ||
-            Object.hasOwn(current, "testsuite") ||
-            Object.hasOwn(current, "testsuites")
-        ) {
-            found = true;
-            return true; // Terminate early
-        }
-
-        enqueueObjectChildValues(queueRef, current);
-    });
-
-    return found;
-}
-
-/**
- * Appends traversal candidates to the queue.
- */
-function enqueueTraversalValues(queue, values) {
-    queue.push(...values);
-}
-
-/**
- * Appends all object child values to the traversal queue.
- */
-function enqueueObjectChildValues(queue, object) {
-    enqueueTraversalValues(queue, Object.values(object));
+    return Object.values(document).some((value) => documentContainsTestElements(value));
 }
 
 function recordTestCases(aggregates, testCases) {
@@ -1007,7 +1010,7 @@ function resolveDuplicatesWithFallback(scan: { duplicates: unknown }, directory:
     }
 
     const parentFile = path.join(directory.resolved, "..", "jscpd-report.json");
-    if (fs.existsSync(parentFile)) {
+    if (pathExistsSync(parentFile)) {
         return readDuplicates([parentFile]);
     }
 
@@ -1035,6 +1038,15 @@ function recordScanDiagnostics(
     }
 }
 
+function hasUsableReportPayload(scan: {
+    coverage: unknown;
+    lint: { warnings?: number; errors?: number } | null;
+    duplicates: unknown;
+    health: unknown;
+}): boolean {
+    return Boolean(scan.coverage || scan.duplicates || scan.health || scan.lint);
+}
+
 function readTestResults(candidateDirs, { workspace }: DetectTestResultsOptions = {}) {
     const workspaceRoot = workspace || process.env.GITHUB_WORKSPACE || process.cwd();
     const directories = normalizeResultDirectories(candidateDirs, workspaceRoot);
@@ -1048,7 +1060,7 @@ function readTestResults(candidateDirs, { workspace }: DetectTestResultsOptions 
 
         recordScanDiagnostics(scan, directory, { notes, missingDirs, emptyDirs });
 
-        if (scan.status === ScanStatus.MISSING || scan.status === ScanStatus.EMPTY) {
+        if (scan.status === ScanStatus.MISSING || (scan.status === ScanStatus.EMPTY && !hasUsableReportPayload(scan))) {
             continue;
         }
 

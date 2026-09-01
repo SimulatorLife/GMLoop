@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import type { PatchHistoryReader, PatchUndoController } from "../browser/runtime/types.js";
 import { RuntimeWrapper } from "../index.js";
+import type { PatchHistoryReader, PatchUndoController } from "../src/browser/runtime/types.js";
 
 void test("runtime wrapper exposes timing helpers through the dedicated timing namespace", () => {
     assert.strictEqual(typeof RuntimeWrapper.Timing.getHighResolutionTime, "function");
@@ -77,6 +77,23 @@ void test("script patch function executes correctly", () => {
     assert.ok(fn);
     const result = fn(null, null, [5, 3]) as number;
     assert.strictEqual(result, 8);
+});
+
+void test("script patch preserves static storage across calls and replacements", () => {
+    const wrapper = RuntimeWrapper.createRuntimeWrapper();
+    const jsBody =
+        'if (!Object.prototype.hasOwnProperty.call(__gml_static, "count")) { __gml_static["count"] = 0; }\nreturn __gml_static["count"]++;';
+
+    wrapper.applyPatch({ kind: "script", id: "script:counter", js_body: jsBody });
+    const firstFunction = wrapper.getScript("script:counter");
+    assert.ok(firstFunction);
+    assert.equal(firstFunction(null, null, []), 0);
+    assert.equal(firstFunction(null, null, []), 1);
+
+    wrapper.applyPatch({ kind: "script", id: "script:counter", js_body: jsBody });
+    const replacementFunction = wrapper.getScript("script:counter");
+    assert.ok(replacementFunction);
+    assert.equal(replacementFunction(null, null, []), 2);
 });
 
 void test("script patch prefers builtin constants over conflicting globals", () => {
@@ -484,6 +501,39 @@ void test("getPatchHistory tracks multiple patches in order", () => {
     assert.strictEqual(history[0].patch.id, "script:a");
     assert.strictEqual(history[1].patch.id, "obj_test#Create");
     assert.ok(history[0].timestamp <= history[1].timestamp);
+});
+
+void test("patch history is bounded by default to avoid retaining obsolete diagnostics", () => {
+    const wrapper = RuntimeWrapper.createRuntimeWrapper();
+
+    for (let i = 0; i < RuntimeWrapper.DEFAULT_MAX_PATCH_HISTORY_SIZE + 75; i++) {
+        wrapper.applyPatch({
+            kind: "script",
+            id: `script:history_bound_${i}`,
+            js_body: `return ${i};`
+        });
+    }
+
+    const history = wrapper.getPatchHistory();
+    assert.strictEqual(history.length, RuntimeWrapper.DEFAULT_MAX_PATCH_HISTORY_SIZE);
+    assert.strictEqual(history[0].patch.id, "script:history_bound_75");
+    assert.strictEqual(history.at(-1)?.patch.id, "script:history_bound_574");
+});
+
+void test("maxPatchHistorySize zero allows explicitly unbounded diagnostic history", () => {
+    const wrapper = RuntimeWrapper.createRuntimeWrapper({
+        maxPatchHistorySize: 0
+    });
+
+    for (let i = 0; i < RuntimeWrapper.DEFAULT_MAX_PATCH_HISTORY_SIZE + 25; i++) {
+        wrapper.applyPatch({
+            kind: "script",
+            id: `script:history_unbounded_${i}`,
+            js_body: `return ${i};`
+        });
+    }
+
+    assert.strictEqual(wrapper.getPatchHistory().length, RuntimeWrapper.DEFAULT_MAX_PATCH_HISTORY_SIZE + 25);
 });
 
 void test("getPatchHistory tracks undo operations", () => {

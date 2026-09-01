@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { applyLoopLengthHoistingCodemod } from "../src/codemods/loop-length-hoisting/index.js";
+import { applyLoopLengthHoistingCodemod } from "../src/codemods/loop-length-hoisting-codemod.js";
 
 void test("loopLengthHoisting hoists array_length from safe for-loop conditions", () => {
     const sourceText = [
@@ -44,6 +44,23 @@ void test("loopLengthHoisting returns unchanged text without parsing when no arr
         "function demo(items) {",
         "    for (var i = 0; i < items.length; i++) {",
         "        total += items[i];",
+        "    }",
+        "}",
+        ""
+    ].join("\n");
+
+    const result = applyLoopLengthHoistingCodemod(sourceText);
+
+    assert.equal(result.changed, false);
+    assert.equal(result.outputText, sourceText);
+    assert.equal(result.appliedEdits.length, 0);
+});
+
+void test("loopLengthHoisting returns unchanged text without parsing when no for keyword exists", () => {
+    const sourceText = [
+        "function demo(items) {",
+        "    if (array_length(items) > 0) {",
+        "        return items[0];",
         "    }",
         "}",
         ""

@@ -8,6 +8,7 @@ import { describe, it } from "node:test";
 import { runWatchCommand } from "../src/commands/watch.js";
 import type { StatusServerHandle } from "../src/modules/status/server.js";
 import { fetchStatusPayload, waitForStatusReady } from "./test-helpers/status-polling.js";
+import { createMockFsWatcher } from "./test-helpers/watch-fixtures.js";
 
 type EmfileWatchErrorListener = (error: Error & { code: "EMFILE" }) => void;
 
@@ -30,7 +31,6 @@ void describe("Watch command watcher error handling", () => {
         };
 
         await runWatchCommand(root, {
-            extensions: [".gml"],
             polling: false,
             verbose: false,
             websocketServer: false,
@@ -53,68 +53,18 @@ void describe("Watch command watcher error handling", () => {
         let errorListener: EmfileWatchErrorListener | null = null;
         let watcherClosed = false;
 
-        const watcher: FSWatcher = {
-            close() {
+        const watcher = createMockFsWatcher({
+            onClose: () => {
                 watcherClosed = true;
-                return undefined;
             },
-            ref() {
-                return this;
-            },
-            unref() {
-                return this;
-            },
-            addListener() {
-                return this;
-            },
-            on(eventName: string | symbol, listener: (...args: Array<unknown>) => void) {
+            onListener: (eventName, listener) => {
                 if (eventName === "error") {
                     errorListener = (error) => {
                         listener(error);
                     };
                 }
-                return this;
-            },
-            once() {
-                return this;
-            },
-            removeListener() {
-                return this;
-            },
-            off() {
-                return this;
-            },
-            removeAllListeners() {
-                return this;
-            },
-            setMaxListeners() {
-                return this;
-            },
-            getMaxListeners() {
-                return 0;
-            },
-            listeners() {
-                return [];
-            },
-            rawListeners() {
-                return [];
-            },
-            emit() {
-                return false;
-            },
-            listenerCount() {
-                return 0;
-            },
-            prependListener() {
-                return this;
-            },
-            prependOnceListener() {
-                return this;
-            },
-            eventNames() {
-                return [];
             }
-        };
+        });
 
         const watchFactory = (
             _path: PathLike,
@@ -131,7 +81,6 @@ void describe("Watch command watcher error handling", () => {
         await writeFile(scriptPath, "function scr_player() { return 1; }", "utf8");
 
         const watchPromise = runWatchCommand(root, {
-            extensions: [".gml"],
             polling: false,
             pollingInterval: 100,
             verbose: false,

@@ -306,9 +306,9 @@ newExpression
     ;
 
 lValueStartExpression
-    : identifier # IdentifierLValue
-    | newExpression # NewLValue
-    | Dot identifier # ImplicitMemberDotLValue
+    : newExpression # NewLValue
+    | identifier # IdentifierLValue
+    | Dot memberIdentifier # ImplicitMemberDotLValue
     | OpenParen expression CloseParen # ParenthesizedLValue
     | structLiteral # StructLiteralLValue
     ;
@@ -319,13 +319,13 @@ lValueExpression
 
 lValueChainOperator
     : accessor expressionSequence CloseBracket # MemberIndexLValue
-    | Dot identifier # MemberDotLValue
+    | Dot memberIdentifier # MemberDotLValue
     | arguments # CallLValue
     ;
 
 lValueFinalOperator
     : accessor expressionSequence CloseBracket # MemberIndexLValueFinal
-    | Dot identifier # MemberDotLValueFinal
+    | Dot memberIdentifier # MemberDotLValueFinal
     ;
 
 expressionSequence
@@ -369,7 +369,7 @@ callStatement
     ;
 
     implicitCallStatement
-        : Dot identifier arguments
+        : Dot memberIdentifier arguments
         | implicitCallStatement arguments
         ;
 
@@ -491,11 +491,11 @@ propertyIdentifier
     ;
 
 functionDeclaration
-    : Function_ Identifier? parameterList constructorClause? block
+    : Function_ identifier? parameterList constructorClause? block
     ;
 
 constructorClause
-    : (Colon Identifier arguments)? Constructor
+    : (Colon identifier arguments)? Constructor
     ;
 
 parameterList
@@ -508,6 +508,11 @@ parameterArgument
 
 identifier
     : Identifier | softKeyword
+    ;
+
+memberIdentifier
+    : identifier
+    | propertySoftKeyword
     ;
 
 enumeratorDeclaration
@@ -547,6 +552,13 @@ identifierStatement
 
 softKeyword
     : Constructor
+    | Not
+    | IntegerDivide
+    | Modulo
+    | And
+    | Or
+    | Xor
+    | New
     ;
 
 propertySoftKeyword

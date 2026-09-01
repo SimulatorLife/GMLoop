@@ -7,10 +7,8 @@
 import { Core } from "@gmloop/core";
 
 import type {
-    AstNode,
     DependentSymbol,
     FileSymbol,
-    ParserBridge,
     PartialSemanticAnalyzer,
     SymbolLocation,
     SymbolOccurrence
@@ -26,8 +24,7 @@ import type {
 export function findSymbolAtLocation(
     filePath: string,
     offset: number,
-    semantic: PartialSemanticAnalyzer | null,
-    parser: ParserBridge | null
+    semantic: PartialSemanticAnalyzer | null
 ): Promise<SymbolLocation | null> {
     if (!semantic) {
         return Promise.resolve(null);
@@ -39,79 +36,6 @@ export function findSymbolAtLocation(
     // symbols in different contexts (e.g., local variables vs. global functions).
     if (Core.hasMethods(semantic, "getSymbolAtPosition")) {
         return Promise.resolve(semantic.getSymbolAtPosition(filePath, offset) ?? null);
-    }
-
-    // Fallback to parser-only AST traversal when the semantic analyzer doesn't
-    // provide position-based lookup. This is less accurate because it can't
-    // resolve bindings, but it still lets us find the syntactic node at the
-    // given offset for basic rename operations.
-    return findSymbolAtLocationFallback(filePath, offset, parser);
-}
-
-/**
- * Fallback method to find AST node at a specific offset using the parser only.
- * Used when the semantic analyzer doesn't provide position-based lookup.
- */
-export async function findSymbolAtLocationFallback(
-    filePath: string,
-    offset: number,
-    parser: ParserBridge | null
-): Promise<SymbolLocation | null> {
-    if (Core.hasMethods(parser, "parse")) {
-        try {
-            const ast = await parser.parse(filePath);
-            return findNodeAtOffset(ast, offset);
-        } catch {
-            // Silently ignore parse errors and return null instead of propagating
-            // the exception. Symbol lookup is advisory—if the file contains syntax
-            // errors, the refactor engine will detect them during the main validation
-            // pass and present actionable diagnostics to the user. Letting parse
-            // failures here crash the symbol query would prevent partial symbol
-            // analysis on otherwise valid sections of the codebase and break workflows
-            // that rely on querying symbols in files with temporary syntax issues.
-            return null;
-        }
-    }
-
-    return null;
-}
-
-/**
- * Helper to find AST node at a specific offset.
- * @private
- */
-function findNodeAtOffset(node: AstNode | null, offset: number): SymbolLocation | null {
-    if (!node || typeof node !== "object") {
-        return null;
-    }
-
-    // Determine whether this node's source range encompasses the given offset.
-    // We use closed-interval semantics (<=) so that offsets at the exact start
-    // or end positions match the node, which is crucial for cursor-based
-    // refactorings where the user clicks on the first or last character.
-    if (node.start <= offset && offset <= node.end) {
-        // Recurse into child nodes first (depth-first traversal) to find the
-        // most specific node at the offset. This ensures we return the innermost
-        // identifier or expression rather than a containing block statement.
-        if (node.children) {
-            for (const child of node.children) {
-                const found = findNodeAtOffset(child, offset);
-                if (found) {
-                    return found;
-                }
-            }
-        }
-
-        // If no child matches, return this node if it's an identifier. We filter
-        // by type to avoid returning structural nodes like statements or blocks
-        // that happen to contain the offset but aren't meaningful rename targets.
-        if (node.type === "identifier" && node.name) {
-            return {
-                symbolId: `gml/identifier/${node.name}`,
-                name: node.name,
-                range: { start: node.start, end: node.end }
-            };
-        }
     }
 
     return null;

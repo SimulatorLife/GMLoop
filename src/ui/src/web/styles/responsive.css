@@ -1,6 +1,6 @@
 @media (max-width: 920px) {
   .app-header {
-    padding: var(--gm-space-lg) var(--gm-page-gutter-compact) var(--gm-space-md);
+    padding: var(--gm-space-lg) var(--gm-space-lg) var(--gm-space-md);
   }
 
   .topbar-row,
@@ -15,19 +15,19 @@
   }
 
   .page-toolbar {
-    margin: var(--gm-page-toolbar-gap) var(--gm-page-gutter-compact) 0;
+    margin: var(--gm-space-lg) var(--gm-space-lg) 0;
     padding: var(--gm-space-lg);
-    border-radius: 18px;
+    border-radius: var(--gm-radius-lg);
   }
 
   main {
-    padding: var(--gm-page-toolbar-gap) var(--gm-page-gutter-compact) var(--gm-page-gutter-compact);
+    padding: var(--gm-space-lg) var(--gm-space-lg) var(--gm-space-lg);
   }
 
   .loaded-target-stack {
     min-width: 0;
     grid-template-columns: 1fr;
-    border-radius: 18px;
+    border-radius: var(--gm-radius-lg);
   }
 
   #search {
@@ -38,7 +38,7 @@
   .toolbar-controls {
     width: 100%;
     justify-content: flex-start;
-    gap: var(--gm-space-control-gap);
+    gap: var(--gm-space-md);
   }
 
   .toolbar-heading-row {
@@ -47,22 +47,23 @@
   }
 
   .toolbar-control-group,
-  .toolbar-search-group {
+  .toolbar-search-group,
+  .toolbar-docs-search,
+  .toolbar-docs-controls {
     width: 100%;
+  }
+
+  .toolbar-heading-row .toolbar-docs-search,
+  .toolbar-heading-row .toolbar-docs-controls {
+    flex: 0 1 auto;
+    max-width: none;
   }
 
   .toolbar-control-group {
     flex-wrap: wrap;
-    gap: var(--gm-space-control-gap-tight);
+    gap: var(--gm-space-sm);
   }
 
-  .playground-toolbar {
-    align-items: stretch;
-    flex-direction: column;
-    gap: var(--gm-space-control-gap);
-  }
-
-  .playground-controls-toggle,
   .gm-view-selector {
     width: 100%;
   }
@@ -78,18 +79,18 @@
 
   .playground-controls-panel {
     position: absolute;
-    inset: 0 auto 0 0;
+    inset: 0 0 0 auto;
     z-index: 2;
     width: min(340px, 92vw);
     max-width: 92vw;
-    border-right: 1px solid var(--gm-border-strong);
-    box-shadow: 16px 0 36px #00000057;
+    border-left: 1px solid var(--gm-border-strong);
+    box-shadow: var(--gm-shadow);
     transform: translateX(0);
-    transition: transform 180ms ease;
+    transition: transform var(--gm-transition);
   }
 
   .playground-layout.controls-collapsed .playground-controls-panel {
-    transform: translateX(-100%);
+    transform: translateX(100%);
     pointer-events: none;
   }
 

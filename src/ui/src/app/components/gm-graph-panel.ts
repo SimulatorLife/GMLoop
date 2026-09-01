@@ -1,22 +1,42 @@
 import { html, svg } from "lit";
 
-import { EDGE_LINE_VISUAL_STYLES, NODE_VISUAL_STYLES } from "../../graph/graph-visualization-style-metadata.js";
-import type { GraphVisualizationEdgeType, GraphVisualizationNodeKind } from "../../graph/types.js";
-import { type GraphVisualizationUiModel, hasGraphEdges, hasLoadedGraphIndex } from "../contracts.js";
 import {
+    buildGraphEdgeBatches,
     createGraphLayout,
+    createGraphRenderBounds,
+    cullGraphLayoutToViewport,
+    EDGE_LINE_VISUAL_STYLES,
     filterGraphLayoutForDisplay,
+    getEdgeIntersection,
+    type GraphLayout,
     type GraphLayoutNode,
     type GraphLegendNodeKind,
     type GraphNodeKindLegendItem,
+    type GraphViewportBounds,
+    type GraphVisualizationEdgeType,
+    type GraphVisualizationGraphIndexBuildSummary,
+    type GraphVisualizationNodeKind,
+    isGraphViewportCovered,
     listGraphEdgeTypes,
     listGraphNodeKindLegendItems,
     listGraphNodeKinds,
-    resolveEffectiveGraphNodeKinds
-} from "../graph-layout.js";
+    NODE_VISUAL_STYLES,
+    projectGraphLayoutForSemanticZoom,
+    resolveEffectiveGraphNodeKinds,
+    resolveGraphSemanticZoomLevel,
+    shouldBatchGraphEdges,
+    shouldRenderGraphLabels
+} from "../../graph/index.js";
+import {
+    type GraphVisualizationUiModel,
+    hasLoadedGraphIndex,
+    readGraphVisualizationEdges,
+    readGraphVisualizationNodes
+} from "../contracts.js";
+import { GRAPH_UI_EVENT_CLEAR_PAGE_ERROR, GRAPH_UI_EVENT_RESET_DEFAULTS } from "../events/events.js";
 import type { GraphVisualizationUiState } from "../state/types.js";
 import { EventBusManager } from "./event-bus-mixin.js";
-import { GRAPH_UI_EVENT_CLEAR_PAGE_ERROR, GRAPH_UI_EVENT_RESET_DEFAULTS } from "./events.js";
+import { LifecycleParticipantsController } from "./lifecycle-participants-controller.js";
 import { LightDomLitElement } from "./light-dom-lit-element.js";
 
 const NODE_STYLE_BY_KIND = new Map(NODE_VISUAL_STYLES.map((style) => [style.kind, style]));
@@ -28,6 +48,8 @@ const DEFAULT_DISABLED_NODE_KINDS = new Set<GraphLegendNodeKind>([
     "note",
     "room_layer"
 ]);
+const FOCUSED_NODE_ZOOM_SCALE = 2.4;
+const FOCUS_CLEAR_ZOOM_SCALE = 0.55;
 
 function formatNodeKindLabel(kind: string): string {
     return kind
@@ -65,6 +87,11 @@ function readEdgeArrowMarkerId(type: GraphVisualizationEdgeType): string {
     return `arrow-${type}`;
 }
 
+function readGraphEdgeAggregateCount(edge: GraphLayout["edges"][number]): number {
+    const aggregateCount = Reflect.get(edge, "aggregateCount");
+    return typeof aggregateCount === "number" && aggregateCount > 0 ? aggregateCount : 1;
+}
+
 function readGraphNodePathLabel(node: GraphLayoutNode): string | null {
     if (node.filePath !== null && node.resourcePath !== null) {
         return `${node.filePath} (resource: ${node.resourcePath})`;
@@ -87,6 +114,9 @@ function readGraphNodeLocationLabel(node: GraphLayoutNode): string | null {
 
 /**
  * Graph surface with Lit-owned SVG rendering, filtering, search, JSON, and legend state.
+ *
+ * Connection-bound subscriptions are delegated to lifecycle collaborators so rendering
+ * remains the panel's only Lit lifecycle override.
  */
 export class GmGraphPanel extends LightDomLitElement {
     public static properties = {
@@ -98,11 +128,27 @@ export class GmGraphPanel extends LightDomLitElement {
 
     public accessor state: GraphVisualizationUiState | null = null;
 
+    public layoutCalculationCount = 0;
+
+    public filterCalculationCount = 0;
+
     #enabledNodeKinds = new Set<GraphLegendNodeKind>();
     #enabledEdgeTypes = new Set<GraphVisualizationEdgeType>();
     #selectedNodeId: string | null = null;
+    #focusedNodeId: string | null = null;
     #lastModelReference: GraphVisualizationUiModel | null = null;
     #initializedFiltersForModel = false;
+
+    #cachedModel: GraphVisualizationUiModel | null = null;
+    #cachedLayout: GraphLayout | null = null;
+    #cachedLayoutNodeById = new Map<string, GraphLayoutNode>();
+    #cachedNodeItems: ReadonlyArray<GraphNodeKindLegendItem> | null = null;
+    #cachedEdgeTypes: ReadonlyArray<GraphVisualizationEdgeType> | null = null;
+    #cachedVisibleLayout: GraphLayout | null = null;
+    #cachedRenderedLayout: GraphLayout | null = null;
+    #cachedRenderBounds: GraphViewportBounds | null = null;
+    #cachedJsonValue: string | null = null;
+    #lastSearchQuery = "";
 
     #panX = 0;
     #panY = 0;
@@ -117,10 +163,11 @@ export class GmGraphPanel extends LightDomLitElement {
         this.#panY = 0;
         this.#zoomScale = 1;
         this.#selectedNodeId = null;
+        this.#focusedNodeId = null;
+        this.#cachedVisibleLayout = null;
+        this.#invalidateRenderedViewport();
         this.requestUpdate();
     };
-
-    #eventBus = new EventBusManager(this, [{ event: GRAPH_UI_EVENT_RESET_DEFAULTS, handler: this.#onResetDefaults }]);
 
     #onDismissErrorBanner = (): void => {
         this.dispatchEvent(
@@ -132,16 +179,46 @@ export class GmGraphPanel extends LightDomLitElement {
         );
     };
 
-    public connectedCallback(): void {
-        super.connectedCallback();
-        this.#eventBus.connect();
-        this.addEventListener("gm-error-banner-dismiss", this.#onDismissErrorBanner);
+    public constructor() {
+        super();
+        new LifecycleParticipantsController(this, [
+            new EventBusManager(this, [
+                { event: GRAPH_UI_EVENT_RESET_DEFAULTS, handler: this.#onResetDefaults },
+                { event: "gm-error-banner-dismiss", handler: this.#onDismissErrorBanner }
+            ])
+        ]);
     }
 
-    public disconnectedCallback(): void {
-        this.removeEventListener("gm-error-banner-dismiss", this.#onDismissErrorBanner);
-        this.#eventBus.disconnect();
-        super.disconnectedCallback();
+    #getViewportTransform() {
+        return {
+            panX: this.#panX,
+            panY: this.#panY,
+            zoomScale: this.#zoomScale
+        };
+    }
+
+    #invalidateRenderedViewport(): void {
+        this.#cachedRenderedLayout = null;
+        this.#cachedRenderBounds = null;
+    }
+
+    #applyViewportTransform(): void {
+        const container = this.querySelector<SVGGElement>("g#container");
+        if (container) {
+            container.setAttribute(
+                "transform",
+                `translate(${String(this.#panX)},${String(this.#panY)}) scale(${String(this.#zoomScale)})`
+            );
+        }
+    }
+
+    #refreshViewportRenderIfNeeded(): void {
+        if (isGraphViewportCovered(this.#getViewportTransform(), this.#cachedRenderBounds)) {
+            return;
+        }
+
+        this.#invalidateRenderedViewport();
+        this.requestUpdate();
     }
 
     #syncFilterDefaults(force = false): void {
@@ -156,21 +233,26 @@ export class GmGraphPanel extends LightDomLitElement {
         }
 
         if (!this.#initializedFiltersForModel || force) {
-            if (hasLoadedGraphIndex(this.model) || force) {
+            const graphNodes = readGraphVisualizationNodes(this.model);
+            const graphEdges = readGraphVisualizationEdges(this.model);
+
+            if (graphNodes.length > 0 || force) {
                 this.#enabledNodeKinds.clear();
-                for (const kind of listGraphNodeKinds(this.model.data.nodes)) {
+                for (const kind of listGraphNodeKinds(graphNodes)) {
                     if (!DEFAULT_DISABLED_NODE_KINDS.has(kind)) {
                         this.#enabledNodeKinds.add(kind);
                     }
                 }
                 this.#initializedFiltersForModel = true;
             }
-            if (hasGraphEdges(this.model) || force) {
+            if (graphEdges.length > 0 || force) {
                 this.#enabledEdgeTypes.clear();
-                for (const type of listGraphEdgeTypes(this.model.data.edges)) {
+                for (const type of listGraphEdgeTypes(graphEdges)) {
                     this.#enabledEdgeTypes.add(type);
                 }
             }
+            this.#cachedVisibleLayout = null;
+            this.#invalidateRenderedViewport();
         }
     }
 
@@ -194,7 +276,8 @@ export class GmGraphPanel extends LightDomLitElement {
 
         this.#panX = event.clientX - this.#startX;
         this.#panY = event.clientY - this.#startY;
-        this.requestUpdate();
+        this.#applyViewportTransform();
+        this.#refreshViewportRenderIfNeeded();
     };
 
     #onPointerUp = (event: PointerEvent): void => {
@@ -211,13 +294,19 @@ export class GmGraphPanel extends LightDomLitElement {
         event.preventDefault();
 
         const svgElement = this.querySelector("svg#graph");
-        if (!svgElement) {
+        if (!svgElement || !this.state) {
             return;
         }
 
         const rect = svgElement.getBoundingClientRect();
         const mouseX = event.clientX - rect.left - rect.width / 2;
         const mouseY = event.clientY - rect.top - rect.height / 2;
+        const previousScale = this.#zoomScale;
+        const previousSemanticLevel = resolveGraphSemanticZoomLevel(previousScale);
+        const previousLabelsVisible = shouldRenderGraphLabels(this.state.labelMode, previousScale);
+        const renderedEdgeCount = this.#cachedRenderedLayout?.edges.length ?? 0;
+        const previousBatchMode = shouldBatchGraphEdges(previousScale, renderedEdgeCount);
+        const hadFocus = this.#focusedNodeId !== null;
 
         const zoomFactor = 1.1;
         const newScale = event.deltaY < 0 ? this.#zoomScale * zoomFactor : this.#zoomScale / zoomFactor;
@@ -226,29 +315,26 @@ export class GmGraphPanel extends LightDomLitElement {
         this.#panX = mouseX - (mouseX - this.#panX) * (finalScale / this.#zoomScale);
         this.#panY = mouseY - (mouseY - this.#panY) * (finalScale / this.#zoomScale);
         this.#zoomScale = finalScale;
+        if (finalScale <= FOCUS_CLEAR_ZOOM_SCALE) {
+            this.#focusedNodeId = null;
+        }
+        this.#applyViewportTransform();
 
-        this.requestUpdate();
-    };
-
-    #getEdgeIntersection(source: GraphLayoutNode, target: GraphLayoutNode) {
-        const dx = target.x - source.x;
-        const dy = target.y - source.y;
-        const dist = Math.hypot(dx, dy);
-
-        if (dist === 0) {
-            return { x1: source.x, y1: source.y, x2: target.x, y2: target.y };
+        const semanticLevelChanged = previousSemanticLevel !== resolveGraphSemanticZoomLevel(finalScale);
+        const focusChanged = hadFocus && this.#focusedNodeId === null;
+        if (semanticLevelChanged || focusChanged) {
+            this.#invalidateRenderedViewport();
+            this.requestUpdate();
+            return;
         }
 
-        const nx = dx / dist;
-        const ny = dy / dist;
-
-        return {
-            x1: source.x + nx * source.radius,
-            y1: source.y + ny * source.radius,
-            x2: target.x - nx * target.radius,
-            y2: target.y - ny * target.radius
-        };
-    }
+        const labelsVisible = shouldRenderGraphLabels(this.state.labelMode, finalScale);
+        const batchMode = shouldBatchGraphEdges(finalScale, renderedEdgeCount);
+        if (labelsVisible !== previousLabelsVisible || batchMode !== previousBatchMode) {
+            this.requestUpdate();
+        }
+        this.#refreshViewportRenderIfNeeded();
+    };
 
     protected toggleNodeKind(kind: GraphLegendNodeKind): void {
         if (this.#enabledNodeKinds.has(kind)) {
@@ -256,6 +342,8 @@ export class GmGraphPanel extends LightDomLitElement {
         } else {
             this.#enabledNodeKinds.add(kind);
         }
+        this.#cachedVisibleLayout = null;
+        this.#invalidateRenderedViewport();
         this.requestUpdate();
     }
 
@@ -265,6 +353,8 @@ export class GmGraphPanel extends LightDomLitElement {
         } else {
             this.#enabledEdgeTypes.add(type);
         }
+        this.#cachedVisibleLayout = null;
+        this.#invalidateRenderedViewport();
         this.requestUpdate();
     }
 
@@ -272,6 +362,28 @@ export class GmGraphPanel extends LightDomLitElement {
         this.#selectedNodeId = nodeId;
         this.requestUpdate();
     }
+
+    protected focusNode(nodeId: string): void {
+        const node = this.#cachedLayoutNodeById.get(nodeId);
+        if (!node) {
+            return;
+        }
+
+        const targetScale = Math.max(this.#zoomScale, FOCUSED_NODE_ZOOM_SCALE);
+        this.#selectedNodeId = nodeId;
+        this.#focusedNodeId = nodeId;
+        this.#panX = -node.x * targetScale;
+        this.#panY = -node.y * targetScale;
+        this.#zoomScale = targetScale;
+        this.#invalidateRenderedViewport();
+        this.requestUpdate();
+    }
+
+    #clearFocus = (): void => {
+        this.#focusedNodeId = null;
+        this.#invalidateRenderedViewport();
+        this.requestUpdate();
+    };
 
     #matchesSearch(node: GraphLayoutNode): boolean {
         const query = this.state?.searchQuery.trim().toLowerCase() ?? "";
@@ -291,28 +403,117 @@ export class GmGraphPanel extends LightDomLitElement {
         const isStartupError = startupState?.phase === "error";
         return html`
             <div id="graph-empty-state" class="graph-empty-state" role="status" aria-live="polite">
-                ${isStartupLoading
-                    ? html`<div id="graph-empty-state-indicator" class="graph-empty-state-indicator">
-                          <span class="loading-spinner graph-empty-state-spinner" aria-hidden="true"></span>
-                          <span>${startupState.message}</span>
-                      </div>`
-                    : null}
-                ${isStartupError
-                    ? html`<div class="graph-empty-state-error">
-                          <strong>${startupState.message}</strong>
-                          ${startupState.detail ? html`<p>${startupState.detail}</p>` : null}
-                      </div>`
-                    : null}
+                ${
+                    isStartupLoading
+                        ? html`<div id="graph-empty-state-indicator" class="graph-empty-state-indicator">
+                              <span class="loading-spinner graph-empty-state-spinner" aria-hidden="true"></span>
+                              <span>${startupState.message}</span>
+                          </div>`
+                        : null
+                }
+                ${
+                    isStartupError
+                        ? html`<div class="graph-empty-state-error">
+                              <strong>${startupState.message}</strong>
+                              ${startupState.detail ? html`<p>${startupState.detail}</p>` : null}
+                          </div>`
+                        : null
+                }
                 <strong
-                    >${this.model?.loadedTarget
-                        ? "No graph nodes are available for the current project."
-                        : "Open a GameMaker project to start exploring the graph."}</strong
+                    >${
+                        this.model?.loadedTarget
+                            ? "No graph nodes are available for the current project."
+                            : "Open a GameMaker project to start exploring the graph."
+                    }</strong
                 >
                 <p>
-                    ${this.model?.loadedTarget
-                        ? "Rebuild the graph data or open another project to keep exploring here."
-                        : "Use Open... to load a project, then return here for graph search, filters, and visualization controls."}
+                    ${
+                        this.model?.loadedTarget
+                            ? "Rebuild the graph data or open another project to keep exploring here."
+                            : "Use Open .yyp... to load a GameMaker project, then return here for graph search, filters, and visualization controls."
+                    }
                 </p>
+            </div>
+        `;
+    }
+
+    #renderSemanticIndexBuildSummary(summary: GraphVisualizationGraphIndexBuildSummary) {
+        const totalFiles = summary.cacheHitCount + summary.cacheMissCount;
+        const cacheDetail =
+            totalFiles > 0
+                ? `${String(summary.cacheHitCount)} of ${String(totalFiles)} files reused from cache, ${String(summary.cacheMissCount)} parsed fresh`
+                : null;
+        const slowestFiles = summary.slowestFiles.slice(0, 5);
+        return html`
+            <div class="graph-index-progress-summary">
+                <span
+                    >Indexed in
+                    ${Math.round(summary.totalDurationMs).toLocaleString()}ms${cacheDetail ? ` — ${cacheDetail}` : ""}</span
+                >
+                ${
+                    slowestFiles.length > 0
+                        ? html`
+                              <gm-collapsible
+                                  class="graph-index-progress-slowest-files"
+                                  .summary=${"Slowest files"}
+                                  .content=${html`
+                                      <ul>
+                                          ${slowestFiles.map(
+                                              (file) => html`
+                                                  <li>
+                                                      <span class="graph-index-progress-slowest-file-path"
+                                                          >${file.relativePath}</span
+                                                      >
+                                                      <span class="graph-index-progress-slowest-file-duration"
+                                                          >${Math.round(file.durationMs).toLocaleString()}ms</span
+                                                      >
+                                                  </li>
+                                              `
+                                          )}
+                                      </ul>
+                                  `}
+                              ></gm-collapsible>
+                          `
+                        : null
+                }
+            </div>
+        `;
+    }
+
+    #renderSemanticIndexProgress() {
+        const progress = this.state?.graphIndexProgress;
+        if (progress === null || progress === undefined || progress.status === "idle") {
+            return null;
+        }
+
+        const isRunning = progress.status === "running";
+        const title = isRunning
+            ? "Semantic analysis in progress"
+            : progress.status === "success"
+              ? "Semantic analysis complete"
+              : "Semantic analysis failed";
+        const detail =
+            progress.current !== null && progress.total !== null
+                ? `Parsing GML files: ${String(progress.current)} / ${String(progress.total)}`
+                : "Preparing the shared semantic index…";
+        const recentLogLines = progress.logLines.slice(-3);
+        return html`
+            <div
+                class="graph-index-progress"
+                role="status"
+                aria-live="polite"
+                aria-busy=${isRunning ? "true" : "false"}
+            >
+                <strong>${title}</strong>
+                <span>${detail}</span>
+                ${
+                    recentLogLines.length > 0
+                        ? html`<ul>
+                              ${recentLogLines.map((line) => html`<li>${line}</li>`)}
+                          </ul>`
+                        : null
+                }
+                ${progress.summary ? this.#renderSemanticIndexBuildSummary(progress.summary) : null}
             </div>
         `;
     }
@@ -333,9 +534,11 @@ export class GmGraphPanel extends LightDomLitElement {
                         .checked=${this.#enabledNodeKinds.has(item.kind)}
                         @change=${() => this.toggleNodeKind(item.kind)}
                     />
-                    ${item.kind === "resource"
-                        ? html`<span class="legend-swatch legend-swatch-group" aria-hidden="true"></span>`
-                        : html`<span class="legend-swatch" style=${`background:${getNodeColor(item.kind)}`}></span>`}
+                    ${
+                        item.kind === "resource"
+                            ? html`<span class="legend-swatch legend-swatch-group" aria-hidden="true"></span>`
+                            : html`<span class="legend-swatch" style=${`background:${getNodeColor(item.kind)}`}></span>`
+                    }
                     <span>${formatNodeKindLabel(item.kind)}</span>
                 </label>
                 ${childContent}
@@ -347,9 +550,8 @@ export class GmGraphPanel extends LightDomLitElement {
         nodeItems: ReadonlyArray<GraphNodeKindLegendItem>,
         edgeTypes: ReadonlyArray<GraphVisualizationEdgeType>
     ) {
-        const legendClassName = this.state?.activeGraphView === "visual" ? "" : "hidden";
         return html`
-            <aside id="legend" class=${legendClassName} aria-label="Graph filters">
+            <aside id="legend" aria-label="Graph filters">
                 <div class="filter-section">
                     <strong>Nodes</strong>
                     ${nodeItems.map((item) => this.#renderLegendNodeItem(item))}
@@ -381,6 +583,7 @@ export class GmGraphPanel extends LightDomLitElement {
 
         const pathLabel = readGraphNodePathLabel(node);
         const locationLabel = readGraphNodeLocationLabel(node);
+        const isFocused = this.#focusedNodeId === node.id;
         return html`
             <div id="tooltip" class="visible" role="dialog" aria-live="polite" data-selected-node-id=${node.id}>
                 <h3>${node.displayName}</h3>
@@ -391,6 +594,134 @@ export class GmGraphPanel extends LightDomLitElement {
                 ${locationLabel ? html`<div>${locationLabel}</div>` : null}
                 ${node.summary ? html`<p>${node.summary}</p>` : null}
                 ${node.snippet ? html`<pre>${node.snippet}</pre>` : null}
+                ${
+                    isFocused
+                        ? html`<button type="button" @click=${this.#clearFocus}>Exit focused view</button>`
+                        : html`<div>Double-click the node to zoom into its semantic hierarchy.</div>`
+                }
+            </div>
+        `;
+    }
+
+    #renderGraphEdges(layout: GraphLayout) {
+        if (shouldBatchGraphEdges(this.#zoomScale, layout.edges.length)) {
+            return buildGraphEdgeBatches(layout.edges).map(
+                (batch) => svg`
+                    <path
+                        class="link link-batch"
+                        d=${batch.pathData}
+                        fill="none"
+                        stroke=${getEdgeColor(batch.type)}
+                        stroke-dasharray=${getEdgeDashArray(batch.type)}
+                        data-edge-count=${String(batch.edgeCount)}
+                        data-edge-type=${batch.type}
+                    ></path>
+                `
+            );
+        }
+
+        return layout.edges.map((edge) => {
+            const geometry = getEdgeIntersection(edge);
+            const aggregateCount = readGraphEdgeAggregateCount(edge);
+            return svg`
+                <line
+                    class="link"
+                    data-aggregate-count=${String(aggregateCount)}
+                    x1=${String(geometry.x1)}
+                    y1=${String(geometry.y1)}
+                    x2=${String(geometry.x2)}
+                    y2=${String(geometry.y2)}
+                    stroke=${getEdgeColor(edge.type)}
+                    stroke-width=${String(Math.min(6, 1 + Math.log2(aggregateCount)))}
+                    stroke-dasharray=${getEdgeDashArray(edge.type)}
+                    marker-end=${`url(#${readEdgeArrowMarkerId(edge.type)})`}
+                ></line>
+            `;
+        });
+    }
+
+    #renderGraphSurface(layout: GraphLayout, isVisualView: boolean) {
+        if (!this.state) {
+            return html``;
+        }
+
+        const renderLabels = shouldRenderGraphLabels(this.state.labelMode, this.#zoomScale);
+        return html`
+            <svg
+                id="graph"
+                class=${isVisualView ? "" : "hidden"}
+                viewBox="-900 -700 1800 1400"
+                role="img"
+                aria-label="GameMaker project graph"
+                style="touch-action: none;"
+                @pointerdown=${this.#onPointerDown}
+                @pointermove=${this.#onPointerMove}
+                @pointerup=${this.#onPointerUp}
+                @pointercancel=${this.#onPointerUp}
+                @wheel=${this.#onWheel}
+            >
+                <defs>
+                    ${EDGE_LINE_VISUAL_STYLES.map(
+                        (edgeStyle) => svg`
+                            <marker
+                                id=${readEdgeArrowMarkerId(edgeStyle.type)}
+                                viewBox="0 -5 10 10"
+                                refX="10"
+                                refY="0"
+                                markerWidth="6"
+                                markerHeight="6"
+                                orient="auto"
+                            >
+                                <path d="M0,-5L10,0L0,5" fill=${edgeStyle.color}></path>
+                            </marker>
+                        `
+                    )}
+                </defs>
+                <g id="container" transform=${`translate(${this.#panX},${this.#panY}) scale(${this.#zoomScale})`}>
+                    ${this.#renderGraphEdges(layout)}
+                    ${layout.nodes.map(
+                        (node) => svg`
+                            <g class="node-group" transform=${`translate(${node.x},${node.y})`}>
+                                <circle
+                                    class=${`node node-${node.kind}${node.graphId === "toolset" ? " toolset" : ""}${this.#selectedNodeId === node.id ? " highlighted" : ""}`}
+                                    r=${String(node.radius)}
+                                    fill=${getNodeColor(node.kind)}
+                                    tabindex="0"
+                                    role="button"
+                                    aria-label=${node.displayName}
+                                    @pointerdown=${(event: PointerEvent) => {
+                                        event.stopPropagation();
+                                    }}
+                                    @click=${() => this.selectNode(node.id)}
+                                    @dblclick=${(event: MouseEvent) => {
+                                        event.stopPropagation();
+                                        this.focusNode(node.id);
+                                    }}
+                                    @keydown=${(event: KeyboardEvent) => {
+                                        if (event.key === "Enter" || event.key === " ") {
+                                            event.preventDefault();
+                                            this.selectNode(node.id);
+                                        }
+                                    }}
+                                ></circle>
+                                ${renderLabels ? svg`<text x=${String(node.radius + 5)} y="4">${node.displayName}</text>` : null}
+                            </g>
+                        `
+                    )}
+                </g>
+            </svg>
+        `;
+    }
+
+    #renderJsonView(jsonValue: string, isVisualView: boolean) {
+        return html`
+            <div id="json-view-shell" class=${isVisualView ? "" : "visible"}>
+                <gm-json-viewer
+                    id="json-view"
+                    .value=${jsonValue}
+                    copyAccessibleLabel="Copy graph JSON to clipboard"
+                    copyLabel="Copy JSON"
+                ></gm-json-viewer>
             </div>
         `;
     }
@@ -401,117 +732,105 @@ export class GmGraphPanel extends LightDomLitElement {
         }
 
         this.#syncFilterDefaults();
+
+        const graphNodes = readGraphVisualizationNodes(this.model);
+        const graphEdges = readGraphVisualizationEdges(this.model);
+        const modelChanged = this.#cachedModel !== this.model;
+        if (modelChanged) {
+            this.#cachedModel = this.model;
+            this.layoutCalculationCount++;
+            this.#cachedLayout = createGraphLayout(graphNodes, graphEdges);
+            this.#cachedLayoutNodeById = new Map(this.#cachedLayout.nodes.map((node) => [node.id, node]));
+            this.#cachedNodeItems = listGraphNodeKindLegendItems(graphNodes);
+            this.#cachedEdgeTypes = listGraphEdgeTypes(graphEdges);
+            this.#cachedVisibleLayout = null;
+            this.#cachedJsonValue = null;
+            this.#invalidateRenderedViewport();
+            if (this.#focusedNodeId && !this.#cachedLayoutNodeById.has(this.#focusedNodeId)) {
+                this.#focusedNodeId = null;
+            }
+        }
+
+        const query = this.state.searchQuery.trim().toLowerCase();
+        if (query !== this.#lastSearchQuery) {
+            this.#lastSearchQuery = query;
+            this.#cachedVisibleLayout = null;
+            this.#cachedJsonValue = null;
+            this.#invalidateRenderedViewport();
+        }
+
+        if (this.#cachedVisibleLayout === null) {
+            this.filterCalculationCount++;
+            this.#cachedVisibleLayout = filterGraphLayoutForDisplay({
+                enabledEdgeTypes: this.#enabledEdgeTypes,
+                enabledNodeKinds: resolveEffectiveGraphNodeKinds(graphNodes, this.#enabledNodeKinds),
+                layout: this.#cachedLayout,
+                matchesNode: (node) => this.#matchesSearch(node)
+            });
+            this.#cachedJsonValue = null;
+            this.#invalidateRenderedViewport();
+        }
+
         const graphPageClassName = this.state.activePage === "graph" ? "page content-page active" : "page content-page";
-        const layout = createGraphLayout(this.model.data.nodes, this.model.data.edges);
-        const nodeItems = listGraphNodeKindLegendItems(this.model.data.nodes);
-        const edgeTypes = listGraphEdgeTypes(this.model.data.edges);
-        const visibleLayout = filterGraphLayoutForDisplay({
-            enabledEdgeTypes: this.#enabledEdgeTypes,
-            enabledNodeKinds: resolveEffectiveGraphNodeKinds(this.model.data.nodes, this.#enabledNodeKinds),
-            layout,
-            matchesNode: (node) => this.#matchesSearch(node)
-        });
-        const { edges: visibleEdges, nodes: visibleNodes } = visibleLayout;
-        const selectedNode = layout.nodes.find((node) => node.id === this.#selectedNodeId) ?? null;
-        const jsonValue = JSON.stringify({ edges: visibleEdges, nodes: visibleNodes }, null, 2);
+        const layout = this.#cachedLayout;
+        const nodeItems = this.#cachedNodeItems;
+        const edgeTypes = this.#cachedEdgeTypes;
+        const selectedNode =
+            this.#selectedNodeId === null ? null : (this.#cachedLayoutNodeById.get(this.#selectedNodeId) ?? null);
+        const isVisualView = this.state.activeGraphView === "visual";
+
+        let renderedLayout = this.#cachedRenderedLayout;
+        if (
+            renderedLayout === null ||
+            !isGraphViewportCovered(this.#getViewportTransform(), this.#cachedRenderBounds)
+        ) {
+            const semanticLayout = projectGraphLayoutForSemanticZoom({
+                displayLayout: this.#cachedVisibleLayout,
+                focusNodeId: this.#focusedNodeId,
+                sourceLayout: layout,
+                zoomScale: this.#zoomScale
+            });
+            this.#cachedRenderBounds = createGraphRenderBounds(this.#getViewportTransform());
+            renderedLayout = cullGraphLayoutToViewport(semanticLayout, this.#cachedRenderBounds);
+            this.#cachedRenderedLayout = renderedLayout;
+        }
+
+        if (this.#cachedJsonValue === null) {
+            this.#cachedJsonValue = JSON.stringify(
+                { edges: this.#cachedVisibleLayout.edges, nodes: this.#cachedVisibleLayout.nodes },
+                null,
+                2
+            );
+        }
+        const jsonValue = this.#cachedJsonValue;
 
         return html`
             <section id="graph-page" class=${graphPageClassName}>
-                ${this.state.graphErrorMessage || this.state.errorMessage
-                    ? html`<gm-error-banner
-                          .message=${this.state.graphErrorMessage || this.state.errorMessage}
-                      ></gm-error-banner>`
-                    : null}
-                ${this.state.isRegeneratePending
-                    ? html`
-                          <div class="loading-overlay" role="status" aria-live="polite">
-                              <div class="loading-indicator">
-                                  <span class="loading-spinner" aria-hidden="true"></span>
-                                  <span class="loading-message">Regenerating graph index…</span>
+                ${
+                    this.state.graphErrorMessage || this.state.errorMessage
+                        ? html`<gm-error-banner
+                              .message=${this.state.graphErrorMessage || this.state.errorMessage}
+                          ></gm-error-banner>`
+                        : null
+                }
+                ${
+                    this.state.isRegeneratePending
+                        ? html`
+                              <div class="loading-overlay" role="status" aria-live="polite">
+                                  <div class="loading-indicator">
+                                      <span class="loading-spinner" aria-hidden="true"></span>
+                                      <span class="loading-message">Regenerating graph index…</span>
+                                  </div>
                               </div>
-                          </div>
-                      `
-                    : null}
+                          `
+                        : null
+                }
+                ${this.#renderSemanticIndexProgress()}
                 ${hasLoadedGraphIndex(this.model) ? null : this.#renderEmptyState()}
-                <svg
-                    id="graph"
-                    class=${this.state.activeGraphView === "visual" ? "" : "hidden"}
-                    viewBox="-900 -700 1800 1400"
-                    role="img"
-                    aria-label="GameMaker project graph"
-                    style="touch-action: none;"
-                    @pointerdown=${this.#onPointerDown}
-                    @pointermove=${this.#onPointerMove}
-                    @pointerup=${this.#onPointerUp}
-                    @pointercancel=${this.#onPointerUp}
-                    @wheel=${this.#onWheel}
-                >
-                    <defs>
-                        ${EDGE_LINE_VISUAL_STYLES.map(
-                            (edgeStyle) => svg`
-                                <marker
-                                    id=${readEdgeArrowMarkerId(edgeStyle.type)}
-                                    viewBox="0 -5 10 10"
-                                    refX="10"
-                                    refY="0"
-                                    markerWidth="6"
-                                    markerHeight="6"
-                                    orient="auto"
-                                >
-                                    <path d="M0,-5L10,0L0,5" fill=${edgeStyle.color}></path>
-                                </marker>
-                            `
-                        )}
-                    </defs>
-                    <g id="container" transform=${`translate(${this.#panX},${this.#panY}) scale(${this.#zoomScale})`}>
-                        ${visibleEdges.map((edge) => {
-                            const geom = this.#getEdgeIntersection(edge.sourceNode, edge.targetNode);
-                            return svg`
-                                <line
-                                    class="link"
-                                    x1=${String(geom.x1)}
-                                    y1=${String(geom.y1)}
-                                    x2=${String(geom.x2)}
-                                    y2=${String(geom.y2)}
-                                    stroke=${getEdgeColor(edge.type)}
-                                    stroke-dasharray=${getEdgeDashArray(edge.type)}
-                                    marker-end=${`url(#${readEdgeArrowMarkerId(edge.type)})`}
-                                ></line>
-                            `;
-                        })}
-                        ${visibleNodes.map(
-                            (node) => svg`
-                                <g class="node-group" transform=${`translate(${node.x},${node.y})`}>
-                                    <circle
-                                        class=${`node node-${node.kind}${node.graphId === "toolset" ? " toolset" : ""}${this.#selectedNodeId === node.id ? " highlighted" : ""}`}
-                                        r=${String(node.radius)}
-                                        fill=${getNodeColor(node.kind)}
-                                        tabindex="0"
-                                        role="button"
-                                        aria-label=${node.displayName}
-                                        @pointerdown=${(event: PointerEvent) => {
-                                            event.stopPropagation();
-                                        }}
-                                        @click=${() => this.selectNode(node.id)}
-                                        @keydown=${(event: KeyboardEvent) => {
-                                            if (event.key === "Enter" || event.key === " ") {
-                                                event.preventDefault();
-                                                this.selectNode(node.id);
-                                            }
-                                        }}
-                                    ></circle>
-                                    ${
-                                        this.state.labelMode === "hidden"
-                                            ? null
-                                            : svg`<text x=${String(node.radius + 5)} y="4">${node.displayName}</text>`
-                                    }
-                                </g>
-                            `
-                        )}
-                    </g>
-                </svg>
-                <pre id="json-view" class=${this.state.activeGraphView === "json" ? "visible" : ""}>${jsonValue}</pre>
-                ${this.#renderLegend(nodeItems, edgeTypes)} ${this.#renderSelectedNode(selectedNode)}
+                ${this.#renderGraphSurface(renderedLayout, isVisualView)}
+                ${this.#renderJsonView(jsonValue, isVisualView)}
+                ${isVisualView ? this.#renderLegend(nodeItems, edgeTypes) : null}
+                ${isVisualView ? this.#renderSelectedNode(selectedNode) : null}
             </section>
         `;
     }

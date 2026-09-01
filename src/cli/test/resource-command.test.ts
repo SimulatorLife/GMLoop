@@ -8,14 +8,7 @@ void describe("Resource command", () => {
         const command = createResourceCommand();
 
         assert.equal(command.name(), "resource");
-        assert.deepEqual(command.commands.map((entry) => entry.name()).sort(), [
-            "audit",
-            "dependents",
-            "deps",
-            "find",
-            "inspect",
-            "list"
-        ]);
+        assert.deepEqual(command.commands.map((entry) => entry.name()).sort(), ["create-image", "find", "list"]);
     });
 
     void it("documents gm-cli resourcetool as the mutation backend", () => {

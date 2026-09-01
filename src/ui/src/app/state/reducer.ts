@@ -1,4 +1,9 @@
-import type { GraphVisualizationUiAction, GraphVisualizationUiLabelMode, GraphVisualizationUiState } from "./types.js";
+import type {
+    GraphVisualizationUiAction,
+    GraphVisualizationUiLabelMode,
+    GraphVisualizationUiPage,
+    GraphVisualizationUiState
+} from "./types.js";
 
 /**
  * Build the default UI state for graph/docs/config views.
@@ -13,9 +18,13 @@ export function createInitialGraphVisualizationUiState(): GraphVisualizationUiSt
         fixErrorMessage: null,
         fixLogLines: [],
         fixStatus: "idle",
+        fixWorkflow: null,
+        autoGamePendingOperation: null,
         isConfigSavePending: false,
         isFixPending: false,
+        isFixCancelPending: false,
         isLiveReloadStartPending: false,
+        isLiveReloadStopPending: false,
         isOpenProjectPending: false,
         isRegeneratePending: false,
         labelMode: "auto",
@@ -24,10 +33,17 @@ export function createInitialGraphVisualizationUiState(): GraphVisualizationUiSt
         pendingActionCount: 0,
         searchQuery: "",
         graphErrorMessage: null,
+        graphIndexProgress: null,
         docsErrorMessage: null,
         configErrorMessage: null,
         playgroundErrorMessage: null,
-        mcpErrorMessage: null
+        playgroundControlsOpen:
+            typeof globalThis !== "undefined" &&
+            "matchMedia" in globalThis &&
+            globalThis.matchMedia("(max-width: 920px)").matches
+                ? false
+                : true,
+        autoGameErrorMessage: null
     };
 }
 
@@ -39,8 +55,10 @@ function computePendingActionCount(state: GraphVisualizationUiState): number {
     if (state.isFixPending) count++;
     if (state.isConfigSavePending) count++;
     if (state.isLiveReloadStartPending) count++;
+    if (state.isLiveReloadStopPending) count++;
     if (state.isOpenProjectPending) count++;
     if (state.isRegeneratePending) count++;
+    if (state.autoGamePendingOperation !== null) count++;
     return count;
 }
 
@@ -54,6 +72,39 @@ function getNextLabelMode(currentLabelMode: GraphVisualizationUiLabelMode): Grap
     }
 
     return "auto";
+}
+
+function setPageError(
+    state: GraphVisualizationUiState,
+    page: GraphVisualizationUiPage,
+    errorMessage: string | null
+): GraphVisualizationUiState {
+    switch (page) {
+        case "graph": {
+            return { ...state, graphErrorMessage: errorMessage };
+        }
+        case "docs": {
+            return { ...state, docsErrorMessage: errorMessage };
+        }
+        case "config": {
+            return { ...state, configErrorMessage: errorMessage };
+        }
+        case "playground": {
+            return { ...state, playgroundErrorMessage: errorMessage };
+        }
+        case "auto-game": {
+            return { ...state, autoGameErrorMessage: errorMessage };
+        }
+        case "fix": {
+            return { ...state, fixErrorMessage: errorMessage };
+        }
+        case "live-reload": {
+            return { ...state, liveReloadErrorMessage: errorMessage };
+        }
+        default: {
+            return state;
+        }
+    }
 }
 
 /**
@@ -94,10 +145,22 @@ export function reduceGraphVisualizationUiState(
                 searchQuery: action.searchQuery
             };
         }
+        case "set-graph-index-progress": {
+            return {
+                ...state,
+                graphIndexProgress: action.progress
+            };
+        }
         case "toggle-graph-view": {
             return {
                 ...state,
                 activeGraphView: state.activeGraphView === "visual" ? "json" : "visual"
+            };
+        }
+        case "toggle-playground-controls": {
+            return {
+                ...state,
+                playgroundControlsOpen: !state.playgroundControlsOpen
             };
         }
         case "cycle-label-mode": {
@@ -123,9 +186,17 @@ export function reduceGraphVisualizationUiState(
         case "set-fix-pending": {
             return {
                 ...state,
+                isFixCancelPending: action.pending ? state.isFixCancelPending : false,
                 isFixPending: action.pending,
                 fixStatus: action.pending ? "running" : state.fixStatus,
+                fixWorkflow: action.workflow,
                 pendingActionCount: computePendingActionCount({ ...state, isFixPending: action.pending })
+            };
+        }
+        case "set-fix-cancel-pending": {
+            return {
+                ...state,
+                isFixCancelPending: action.pending
             };
         }
         case "set-fix-error": {
@@ -160,6 +231,21 @@ export function reduceGraphVisualizationUiState(
                 pendingActionCount: computePendingActionCount({ ...state, isLiveReloadStartPending: action.pending })
             };
         }
+        case "set-live-reload-stop-pending": {
+            return {
+                ...state,
+                isLiveReloadStopPending: action.pending,
+                pendingActionCount: computePendingActionCount({ ...state, isLiveReloadStopPending: action.pending })
+            };
+        }
+        case "set-auto-game-operation-pending": {
+            const autoGamePendingOperation = action.pending ? action.operation : null;
+            return {
+                ...state,
+                autoGamePendingOperation,
+                pendingActionCount: computePendingActionCount({ ...state, autoGamePendingOperation })
+            };
+        }
         case "set-live-reload-error": {
             return {
                 ...state,
@@ -173,60 +259,11 @@ export function reduceGraphVisualizationUiState(
             };
         }
         case "set-page-error": {
-            switch (action.page) {
-                case "graph": {
-                    return { ...state, graphErrorMessage: action.errorMessage };
-                }
-                case "docs": {
-                    return { ...state, docsErrorMessage: action.errorMessage };
-                }
-                case "config": {
-                    return { ...state, configErrorMessage: action.errorMessage };
-                }
-                case "playground": {
-                    return { ...state, playgroundErrorMessage: action.errorMessage };
-                }
-                case "mcp": {
-                    return { ...state, mcpErrorMessage: action.errorMessage };
-                }
-                case "fix": {
-                    return { ...state, fixErrorMessage: action.errorMessage };
-                }
-                case "live-reload": {
-                    return { ...state, liveReloadErrorMessage: action.errorMessage };
-                }
-                default: {
-                    return state;
-                }
-            }
+            return setPageError(state, action.page, action.errorMessage);
         }
         case "clear-page-error": {
-            switch (action.page) {
-                case "graph": {
-                    return { ...state, errorMessage: null, graphErrorMessage: null };
-                }
-                case "docs": {
-                    return { ...state, docsErrorMessage: null };
-                }
-                case "config": {
-                    return { ...state, configErrorMessage: null };
-                }
-                case "playground": {
-                    return { ...state, playgroundErrorMessage: null };
-                }
-                case "mcp": {
-                    return { ...state, mcpErrorMessage: null };
-                }
-                case "fix": {
-                    return { ...state, fixErrorMessage: null };
-                }
-                case "live-reload": {
-                    return { ...state, liveReloadErrorMessage: null };
-                }
-                default: {
-                    return state;
-                }
-            }
+            const clearedState = setPageError(state, action.page, null);
+            return action.page === "graph" ? { ...clearedState, errorMessage: null } : clearedState;
         }
         case "clear-error": {
             return {
@@ -241,13 +278,16 @@ export function reduceGraphVisualizationUiState(
                 fixErrorMessage: null,
                 fixLogLines: [],
                 fixStatus: "idle",
+                fixWorkflow: null,
+                isFixCancelPending: false,
                 liveReloadErrorMessage: null,
                 searchQuery: "",
                 graphErrorMessage: null,
+                graphIndexProgress: null,
                 docsErrorMessage: null,
                 configErrorMessage: null,
                 playgroundErrorMessage: null,
-                mcpErrorMessage: null
+                autoGameErrorMessage: null
             };
         }
 

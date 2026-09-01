@@ -22,4 +22,4 @@ var sinDegrees = dsin(direction);
 var cosDegrees = dcos(direction);
 var tanDegrees = dtan(direction);
 var unchangedCall = update() * update();
-var commented = sqr(value);
+var commented = value /* keep */ * value;

@@ -2,96 +2,61 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { GmGraphPanel } from "../src/app/components/gm-graph-panel.js";
-import type { GraphVisualizationUiModel } from "../src/app/contracts.js";
-import type { GraphLegendNodeKind } from "../src/app/graph-layout.js";
-import { createInitialGraphVisualizationUiState } from "../src/app/state/reducer.js";
-import type { GraphVisualizationUiState } from "../src/app/state/types.js";
+import { GRAPH_UI_EVENT_CLEAR_PAGE_ERROR, GRAPH_UI_EVENT_RESET_DEFAULTS } from "../src/app/events/events.js";
+import { createGraphModel, createGraphState, TestableGmGraphPanel } from "./graph-panel-test-harness.js";
 import { renderTemplateValue } from "./render-template-helpers.js";
 
-class TestableGmGraphPanel extends GmGraphPanel {
-    public renderForTest(): unknown {
-        return this.render();
+void test("graph panel delegates connection lifecycle to composed collaborators", () => {
+    const prototype = GmGraphPanel.prototype as unknown as Record<string, unknown>;
+
+    assert.equal(Object.hasOwn(prototype, "connectedCallback"), false);
+    assert.equal(Object.hasOwn(prototype, "disconnectedCallback"), false);
+});
+
+void test("graph panel reconnects its managed event subscriptions", () => {
+    const panel = new GmGraphPanel();
+    let clearEventCount = 0;
+    panel.addEventListener(GRAPH_UI_EVENT_CLEAR_PAGE_ERROR, (event) => {
+        if ((event as CustomEvent<{ page: string }>).detail.page === "graph") {
+            clearEventCount += 1;
+        }
+    });
+
+    try {
+        panel.connectedCallback();
+        panel.dispatchEvent(new CustomEvent("gm-error-banner-dismiss"));
+        assert.equal(clearEventCount, 1);
+
+        panel.disconnectedCallback();
+        panel.dispatchEvent(new CustomEvent("gm-error-banner-dismiss"));
+        assert.equal(clearEventCount, 1);
+
+        panel.connectedCallback();
+        panel.dispatchEvent(new CustomEvent("gm-error-banner-dismiss"));
+        assert.equal(clearEventCount, 2);
+    } finally {
+        panel.disconnectedCallback();
     }
+});
 
-    public selectNodeForTest(nodeId: string): void {
-        this.selectNode(nodeId);
+void test("graph panel preserves reset behavior through its managed event subscriptions", () => {
+    const panel = new TestableGmGraphPanel();
+    panel.model = createGraphModel();
+    panel.state = createGraphState();
+    panel.renderForTest();
+    panel.selectNodeForTest("script-node");
+
+    assert.match(renderTemplateValue(panel.renderForTest()), /data-selected-node-id=script-node/u);
+
+    try {
+        panel.connectedCallback();
+        panel.dispatchEvent(new CustomEvent(GRAPH_UI_EVENT_RESET_DEFAULTS));
+
+        assert.doesNotMatch(renderTemplateValue(panel.renderForTest()), /data-selected-node-id=script-node/u);
+    } finally {
+        panel.disconnectedCallback();
     }
-
-    public toggleNodeKindForTest(kind: GraphLegendNodeKind): void {
-        this.toggleNodeKind(kind);
-    }
-}
-
-function createGraphModel(): GraphVisualizationUiModel {
-    return {
-        data: {
-            edges: [
-                {
-                    source: "script-node",
-                    target: "object-node",
-                    type: "references"
-                }
-            ],
-            generatedAt: "2026-01-01T00:00:00.000Z",
-            graphs: [],
-            nodes: [
-                {
-                    displayName: "configure_globals",
-                    filePath: "scripts/configure_globals/configure_globals.gml",
-                    graphId: "project",
-                    id: "script-node",
-                    kind: "script",
-                    lineEnd: 14,
-                    lineStart: 10,
-                    name: "configure_globals",
-                    resourcePath: "scripts/configure_globals/configure_globals.yy",
-                    scopeId: "project/scripts/configure_globals",
-                    scipSymbol: "gml/script/configure_globals",
-                    snippet: "global.score = 0;",
-                    summary: "Script that configures global values."
-                },
-                {
-                    displayName: "obj_player",
-                    filePath: null,
-                    graphId: "project",
-                    id: "object-node",
-                    kind: "object",
-                    lineEnd: null,
-                    lineStart: null,
-                    name: "obj_player",
-                    resourcePath: "objects/obj_player/obj_player.yy",
-                    scopeId: null,
-                    scipSymbol: null,
-                    snippet: "",
-                    summary: "Player object."
-                }
-            ],
-            projectRoot: "/tmp/project"
-        },
-        documentationCatalogs: null,
-        isServerMode: true,
-        lastFixRun: null,
-        loadedTarget: {
-            activePath: "/tmp/project/Game.yyp",
-            projectRoot: "/tmp/project",
-            selectedPaths: [],
-            source: "working-directory"
-        },
-        liveReload: null,
-        mcpServerStatus: "not-started",
-        projectConfigurationCatalog: null,
-        startupState: null,
-        title: "Test Graph"
-    };
-}
-
-function createGraphState(): GraphVisualizationUiState {
-    return {
-        ...createInitialGraphVisualizationUiState(),
-        activeGraphView: "visual",
-        activePage: "graph"
-    };
-}
+});
 
 void test("graph panel keeps selected node details visible until another node is selected", () => {
     const panel = new TestableGmGraphPanel();
@@ -119,6 +84,30 @@ void test("graph panel uses the shared light content page surface", () => {
     const rendered = renderTemplateValue(panel.renderForTest());
 
     assert.match(rendered, /id="graph-page"[\s\S]*class=page content-page active/u);
+});
+
+void test("graph panel renders shared semantic-index progress in the graph page body", () => {
+    const panel = new TestableGmGraphPanel();
+    panel.model = createGraphModel();
+    panel.state = {
+        ...createGraphState(),
+        graphIndexProgress: {
+            current: 4,
+            isRunning: true,
+            logLines: ["Parsing GML files... (4/9)"],
+            operationId: "op-1",
+            stage: "gml-parse",
+            status: "running",
+            summary: null,
+            total: 9
+        }
+    };
+
+    const rendered = renderTemplateValue(panel.renderForTest());
+
+    assert.match(rendered, /Semantic analysis in progress/u);
+    assert.match(rendered, /Parsing GML files: 4 \/ 9/u);
+    assert.match(rendered, /Parsing GML files\.\.\. \(4\/9\)/u);
 });
 
 void test("graph panel keeps clicked node details visible when filters hide the node", () => {
@@ -170,6 +159,41 @@ void test("graph panel legend preserves edge line style metadata for readability
     assert.match(rendered, /Calls/u);
     assert.match(rendered, /Contains/u);
     assert.match(rendered, /References/u);
+});
+
+void test("graph panel presents texture groups as a readable resource category", () => {
+    const panel = new TestableGmGraphPanel();
+    const model = createGraphModel();
+    panel.model = {
+        ...model,
+        data: {
+            ...model.data,
+            nodes: [
+                ...model.data.nodes,
+                {
+                    displayName: "Default",
+                    filePath: null,
+                    graphId: "project",
+                    id: "texture-group-node",
+                    kind: "texture_group",
+                    lineEnd: null,
+                    lineStart: null,
+                    name: "Default",
+                    resourcePath: "texturegroups/Default",
+                    scopeId: null,
+                    scipSymbol: null,
+                    snippet: "",
+                    summary: "Texture group 'Default'."
+                }
+            ]
+        }
+    };
+    panel.state = createGraphState();
+
+    const rendered = renderTemplateValue(panel.renderForTest());
+
+    assert.match(rendered, /Texture Group/u);
+    assert.match(rendered, /fill=#43aa8b/u);
 });
 
 void test("graph panel starts with noisy variable categories disabled for clearer default readability", () => {
@@ -310,6 +334,7 @@ void test("graph panel legend renders the full node-kind catalog even when kinds
         "Particle System",
         "Path",
         "Resource",
+        "Room Instance",
         "Room Layer",
         "Sequence",
         "Shader",
@@ -384,6 +409,23 @@ void test("graph panel resource filter overrides concrete resource node filters"
     const rendered = renderTemplateValue(panel.renderForTest());
     assert.doesNotMatch(rendered, /script-node/u);
     assert.doesNotMatch(rendered, /object-node/u);
+});
+
+void test("graph panel renders a collapsible JSON viewer with a copy button inside the JSON view shell", () => {
+    const panel = new TestableGmGraphPanel();
+    panel.model = createGraphModel();
+    panel.state = {
+        ...createGraphState(),
+        activeGraphView: "json"
+    };
+
+    const rendered = renderTemplateValue(panel.renderForTest());
+
+    assert.match(rendered, /id="json-view-shell"[\s\S]*class=visible>/u);
+    assert.match(rendered, /<gm-json-viewer[\s\S]*id="json-view"/u);
+    assert.match(rendered, /copyAccessibleLabel="Copy graph JSON to clipboard"/u);
+    assert.match(rendered, /copyLabel="Copy JSON"/u);
+    assert.doesNotMatch(rendered, /<pre id="json-view">/u);
 });
 
 void test("graph panel script filter does not override standalone function, global, or macro filters", () => {

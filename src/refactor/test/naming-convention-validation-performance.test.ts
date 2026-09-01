@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { performance } from "node:perf_hooks";
 import test from "node:test";
 
-import { planNamingConventionCodemod } from "../src/codemods/naming-convention/index.js";
+import { planNamingConventionCodemod } from "../src/codemods/naming-convention-codemod.js";
 import type {
     CodemodRenameOperations,
     CodemodSemanticProvider,
@@ -111,5 +111,65 @@ void test("namingConvention top-level validation uses bounded parallelism for la
     assert.ok(
         durationMs <= PARALLEL_VALIDATION_THRESHOLD_MS,
         `Expected ${RENAME_COUNT} delayed validations to finish under ${PARALLEL_VALIDATION_THRESHOLD_MS}ms, received ${durationMs.toFixed(2)}ms.`
+    );
+});
+
+void test("namingConvention top-level validation uses fast path and bypasses individual validation for large resource batches", async () => {
+    const count = 300;
+    const listTargets = async () =>
+        Array.from({ length: count }, (_, index) => {
+            const currentName = `demo_sprite_${index}`;
+            return {
+                category: "spriteResourceName" as const,
+                name: currentName,
+                path: `sprites/${currentName}/${currentName}.yy`,
+                scopeId: null,
+                symbolId: `gml/sprites/${currentName}`,
+                occurrences: [
+                    {
+                        path: `sprites/${currentName}/${currentName}.yy`,
+                        start: 9,
+                        end: 9 + currentName.length
+                    }
+                ]
+            };
+        });
+
+    const engine = new ValidationDelayEngine(listTargets);
+
+    const startTime = performance.now();
+    const plan = await planNamingConventionCodemod(engine, {
+        projectRoot: "/tmp/project",
+        config: {
+            codemods: {
+                namingConvention: {
+                    rules: {
+                        spriteResourceName: {
+                            caseStyle: "camel"
+                        }
+                    }
+                }
+            }
+        },
+        targetPaths: ["/tmp/project/sprites"],
+        gmlFilePaths: Array.from(
+            { length: count },
+            (_, index) => `sprites/demo_sprite_${index}/demo_sprite_${index}.yy`
+        ),
+        includeTopLevelPlan: false,
+        includeViolations: false
+    });
+    const durationMs = performance.now() - startTime;
+
+    assert.equal(plan.errors.length, 0);
+    assert.equal(plan.topLevelRenameRequests.length, count);
+    assert.equal(
+        engine.maxConcurrentValidations,
+        0,
+        `Expected naming-convention validation to use fast path and bypass validateRenameRequest; max concurrency was ${engine.maxConcurrentValidations}.`
+    );
+    assert.ok(
+        durationMs <= 100,
+        `Expected fast-path batch validation to finish under 100ms, received ${durationMs.toFixed(2)}ms.`
     );
 });

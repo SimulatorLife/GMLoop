@@ -64,4 +64,55 @@ void describe("collectResourceSidecarRenames single-file resources", () => {
             assert.deepEqual(renames, [{ oldPath: testCase.expectedOldPath, newPath: testCase.expectedNewPath }]);
         });
     }
+
+    void it("routes the GMNotes alias through the same named-extension flow as GMNote", () => {
+        // The dispatcher collapses `GMNote` and `GMNotes` onto the same
+        // `collectNamedExtensionSidecarRenames(parameters, ".txt")` path.
+        // Locking that behaviour here ensures the alias can never silently
+        // drift onto a separate implementation.
+        const existingFilePaths = new Set<string>(["notes/note_old/note_old.txt"]);
+
+        const renames = collectResourceSidecarRenames({
+            resourceType: "GMNotes",
+            metadataDocument: {},
+            currentResourcePath: "notes/note_old/note_old.yy",
+            oldName: "note_old",
+            newName: "note_new",
+            fileRenameDestinationDir: "notes/note_new",
+            primaryRenamedPaths: [],
+            doesWorkspaceFilePathExist: (candidatePath) => existingFilePaths.has(candidatePath),
+            doesWorkspaceDirectoryPathExist: () => false,
+            listWorkspaceDirectoryEntries: () => []
+        });
+
+        assert.deepEqual(renames, [{ oldPath: "notes/note_old/note_old.txt", newPath: "notes/note_new/note_new.txt" }]);
+    });
+});
+
+void describe("collectResourceSidecarRenames carryover exclusions", () => {
+    void it("excludes directory carryover entries case-insensitively", () => {
+        const renames = collectResourceSidecarRenames({
+            resourceType: "GMNote",
+            metadataDocument: {},
+            currentResourcePath: "notes/TODO/TODO.yy",
+            oldName: "TODO",
+            newName: "todo",
+            fileRenameDestinationDir: "notes/todo",
+            primaryRenamedPaths: ["notes/TODO/TODO.yy"],
+            doesWorkspaceFilePathExist: (candidatePath) => {
+                return candidatePath === "notes/TODO/TODO.txt" || candidatePath === "notes/TODO/todo.txt";
+            },
+            doesWorkspaceDirectoryPathExist: (candidatePath) => {
+                return candidatePath === "notes/TODO" || candidatePath === "notes/todo";
+            },
+            listWorkspaceDirectoryEntries: (candidatePath) => {
+                if (candidatePath === "notes/TODO" || candidatePath === "notes/todo") {
+                    return ["todo.txt", "TODO.yy"];
+                }
+                return [];
+            }
+        });
+
+        assert.deepEqual(renames, [{ oldPath: "notes/TODO/TODO.txt", newPath: "notes/todo/todo.txt" }]);
+    });
 });

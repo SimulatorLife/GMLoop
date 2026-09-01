@@ -46,11 +46,12 @@ function createFormatFixtureSuiteRegistration(): FixtureSuiteRegistration {
             const formatted = await runProfiledStage("format", async () =>
                 Format.format(inputText ?? "", formatOptions)
             );
+            const normalized = Format.normalizeFormattedOutput(formatted);
 
             return {
                 resultKind: "text" as const,
-                outputText: formatted,
-                changed: formatted !== (inputText ?? "")
+                outputText: normalized,
+                changed: normalized !== (inputText ?? "")
             };
         }
     });
@@ -74,11 +75,11 @@ function createLintRuleEntriesCacheKey(ruleEntries: LintRuleEntries): string {
     return JSON.stringify(serializedEntries);
 }
 
-function createSingleRuleFixtureConfig(config: Record<string, unknown>): LintRuleEntries {
+function createLintFixtureRuleConfig(config: Record<string, unknown>): LintRuleEntries {
     const ruleEntries = Lint.configs.createLintRuleEntriesFromProjectConfig(config);
     const enabledRuleIds = Object.keys(ruleEntries);
-    if (enabledRuleIds.length !== 1) {
-        throw new Error(`Lint fixture config must enable exactly one rule, received ${enabledRuleIds.length}.`);
+    if (enabledRuleIds.length === 0) {
+        throw new Error("Lint fixture config must enable at least one rule.");
     }
 
     return ruleEntries;
@@ -93,7 +94,7 @@ function createLintFixtureSuiteRegistration(): FixtureSuiteRegistration {
             return kind === "lint";
         },
         async run({ fixtureCase, config, inputText, runProfiledStage }) {
-            const ruleEntries = createSingleRuleFixtureConfig(config);
+            const ruleEntries = createLintFixtureRuleConfig(config);
             const cacheKey = createLintRuleEntriesCacheKey(ruleEntries);
             const cachedEslint = eslintByRuleConfigKey.get(cacheKey);
             const eslint =
@@ -126,7 +127,38 @@ function createLintFixtureSuiteRegistration(): FixtureSuiteRegistration {
                     filePath: `${fixtureCase.caseId}.gml`
                 })
             );
-            const lintedOutput = result.output ?? inputText ?? "";
+            let lintedOutput = result.output ?? inputText ?? "";
+
+            if (
+                ruleEntries["gml/require-argument-separators"] &&
+                ruleEntries["gml/require-argument-separators"] !== "off"
+            ) {
+                const repairResult =
+                    Refactor.RepairArgumentSeparators.applyRepairArgumentSeparatorsCodemod(lintedOutput);
+                if (repairResult.changed) {
+                    lintedOutput = repairResult.outputText;
+                }
+            }
+
+            if (
+                ruleEntries["gml/normalize-operator-aliases"] &&
+                ruleEntries["gml/normalize-operator-aliases"] !== "off"
+            ) {
+                const repairLogicalNotResult = await Refactor.RepairLogicalNot.applyRepairLogicalNotCodemod(
+                    lintedOutput,
+                    null
+                );
+                if (repairLogicalNotResult.changed) {
+                    lintedOutput = repairLogicalNotResult.outputText;
+                }
+            }
+
+            if (ruleEntries["gml/no-scientific-notation"] && ruleEntries["gml/no-scientific-notation"] !== "off") {
+                const repairScientificResult = Refactor.ScientificNotation.applyScientificNotationCodemod(lintedOutput);
+                if (repairScientificResult.changed) {
+                    lintedOutput = repairScientificResult.outputText;
+                }
+            }
 
             return {
                 resultKind: "text" as const,

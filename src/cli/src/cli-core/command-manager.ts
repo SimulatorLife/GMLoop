@@ -1,5 +1,10 @@
 import { Core } from "@gmloop/core";
 
+import {
+    type ProjectOperationKind,
+    resolveProjectOperationRoot,
+    runProjectOperation
+} from "../modules/runtime/project-operation-state.js";
 import { DEFAULT_HELP_AFTER_ERROR } from "./command-standard-options.js";
 import { resolveCommandUsage } from "./command-usage.js";
 import {
@@ -9,7 +14,13 @@ import {
     createCommanderProgramContract,
     isCommanderCommandLike
 } from "./commander-contract.js";
-import { isCommanderErrorLike } from "./commander-error-utils.js";
+import {
+    isCommanderErrorLike,
+    isCommanderExcessArgumentsError,
+    isCommanderHelpError,
+    isCommanderHelpLikeError,
+    parseCommanderExcessArgumentsMessage
+} from "./commander-error-utils.js";
 import type { CommanderCommandLike, CommanderExecutor } from "./commander-types.js";
 import { CliUsageError, handleCliError } from "./errors.js";
 
@@ -23,6 +34,7 @@ export interface CliCommandRegistrationOptions {
     command: CommanderCommandLike;
     run?: CliCommandRunHandler;
     onError?: CliCommandErrorHandler;
+    operationKind?: ProjectOperationKind;
 }
 
 export interface CliCommandRegistry {
@@ -38,6 +50,7 @@ interface CliCommandEntry {
     command: CommanderCommandLike;
     run: CliCommandRunHandler | null;
     handleError: CliCommandErrorHandler;
+    operationKind: ProjectOperationKind | null;
 }
 
 interface CliCommandManagerOptions {
@@ -73,6 +86,7 @@ class CliCommandManager {
     private readonly _commandEntryLookup: WeakMap<CommanderCommandLike, CliCommandEntry> = new WeakMap();
     private _defaultCommandEntry: CliCommandEntry | null = null;
     private _activeCommand: CommanderCommandLike | null = null;
+    private _lastHelpedCommand: CommanderCommandLike | null = null;
     private readonly _defaultErrorHandler: CliCommandErrorHandler;
 
     constructor({ program, onUnhandledError }: CliCommandManagerOptions) {
@@ -102,22 +116,26 @@ class CliCommandManager {
         this._programContract.hook("postAction", () => {
             this._activeCommand = null;
         });
+
+        this._captureLastHelpedCommand();
     }
 
-    registerDefaultCommand({ command, run, onError }: CliCommandRegistrationOptions): CliCommandEntry {
+    registerDefaultCommand({ command, run, onError, operationKind }: CliCommandRegistrationOptions): CliCommandEntry {
         const entry = this._registerEntry(command, {
             run,
             handleError: onError,
-            isDefault: true
+            isDefault: true,
+            operationKind
         });
         this._programContract.addCommand(entry.command, { isDefault: true });
         return entry;
     }
 
-    registerCommand({ command, run, onError }: CliCommandRegistrationOptions): CliCommandEntry {
+    registerCommand({ command, run, onError, operationKind }: CliCommandRegistrationOptions): CliCommandEntry {
         const entry = this._registerEntry(command, {
             run,
-            handleError: onError
+            handleError: onError,
+            operationKind
         });
         this._programContract.addCommand(entry.command);
         return entry;
@@ -140,11 +158,13 @@ class CliCommandManager {
         {
             run,
             handleError,
-            isDefault = false
+            isDefault = false,
+            operationKind = null
         }: {
             run?: CliCommandRunHandler;
             handleError?: CliCommandErrorHandler;
             isDefault?: boolean;
+            operationKind?: ProjectOperationKind | null;
         } = {}
     ): CliCommandEntry {
         const commandContract: CommanderCommandContract = createCommanderCommandContract(command, {
@@ -159,7 +179,8 @@ class CliCommandManager {
         const entry: CliCommandEntry = {
             command: normalizedCommand,
             run: run ?? null,
-            handleError: typeof handleError === "function" ? handleError : this._defaultErrorHandler
+            handleError: typeof handleError === "function" ? handleError : this._defaultErrorHandler,
+            operationKind
         };
 
         this._entries.add(entry);
@@ -185,7 +206,11 @@ class CliCommandManager {
             this._activeCommand = contextCommand;
 
             try {
-                const result = await entry.run?.({ command: contextCommand });
+                const execute = (): Promise<number | void> => Promise.resolve(entry.run?.({ command: contextCommand }));
+                const result =
+                    entry.operationKind === null
+                        ? await execute()
+                        : await this._runProjectOperation(entry.operationKind, contextCommand, execute);
                 this._applyCommandResult(result);
             } catch (error) {
                 this._handleCommandError(error, contextCommand);
@@ -193,6 +218,29 @@ class CliCommandManager {
                 this._activeCommand = previousActiveCommand ?? null;
             }
         };
+    }
+
+    private async _runProjectOperation(
+        operationKind: ProjectOperationKind,
+        command: CommanderCommandLike,
+        execute: () => Promise<number | void>
+    ): Promise<number | void> {
+        const projectRoot = await resolveProjectOperationRoot(command);
+        if (projectRoot === null) {
+            return execute();
+        }
+
+        return runProjectOperation(
+            {
+                command: operationKind,
+                kind: operationKind,
+                projectRoot
+            },
+            (operation) => {
+                operation.update("running", `${operationKind} is running.`);
+                return execute();
+            }
+        );
     }
 
     private _applyCommandResult(result: unknown): void {
@@ -206,15 +254,68 @@ class CliCommandManager {
             return false;
         }
 
-        if (error.code === "commander.helpDisplayed" || error.code === "commander.version") {
+        if (error.code === "commander.version") {
             return true;
         }
 
-        const commandFromError = error.command ?? this._activeCommand ?? this._program;
+        if (isCommanderHelpLikeError(error)) {
+            this._displayPendingHelpForMissingSubcommand(error);
+            this._lastHelpedCommand = null;
+            return true;
+        }
+
+        const commanderError = error;
+        const commandFromError = commanderError.command ?? this._activeCommand ?? this._program;
         const resolvedCommand = this._resolveCommandFromCommanderError(commandFromError);
-        const usageError = this._createUsageErrorFromCommanderError(error, resolvedCommand);
+        const usageError = isCommanderExcessArgumentsError(commanderError)
+            ? this._createExcessArgumentsUsageError(commanderError, resolvedCommand)
+            : this._createUsageErrorFromCommanderError(commanderError, resolvedCommand);
         this._handleCommandError(usageError, resolvedCommand ?? this._program);
         return true;
+    }
+
+    /**
+     * Commander fires `beforeAllHelp` on the program (and each ancestor) just
+     * before it renders help for any command. We capture the innermost
+     * command so we can recover it later when the parser surfaces a
+     * `commander.help` error after auto-rendering help to stderr.
+     */
+    private _captureLastHelpedCommand(): void {
+        const program = this._program;
+        if (!program || typeof program.on !== "function") {
+            return;
+        }
+
+        program.on("beforeAllHelp", (rawContext: unknown) => {
+            const context = rawContext as { command?: CommanderCommandLike } | null;
+            if (context && isCommanderCommandLike(context.command)) {
+                this._lastHelpedCommand = context.command;
+            }
+        });
+    }
+
+    /**
+     * When the parser auto-renders help because the user omitted a
+     * required subcommand (Commander writes the help to stderr, which our
+     * output shim silences), mirror the help to stdout so the user actually
+     * sees it. The capture happens via `beforeAllHelp` because the
+     * Commander error does not retain a command reference for this code.
+     */
+    private _displayPendingHelpForMissingSubcommand(error: { code: string }): void {
+        if (!isCommanderHelpError(error)) {
+            return;
+        }
+
+        const helpedCommand = this._lastHelpedCommand;
+        if (!helpedCommand) {
+            return;
+        }
+
+        if (typeof helpedCommand.outputHelp !== "function") {
+            return;
+        }
+
+        helpedCommand.outputHelp();
     }
 
     private _handleCommandError(error: unknown, command: CommanderCommandLike): void {
@@ -249,6 +350,105 @@ class CliCommandManager {
             usage: normalizedUsage
         });
     }
+
+    /**
+     * Build a friendlier `CliUsageError` when Commander rejects positional
+     * arguments for a command that declared none.
+     *
+     * Commander's default message ("too many arguments for 'X'. Expected 0
+     * arguments but got 1: /tmp.") is technically accurate but opaque: the
+     * most common cause is a user following `lint <path>` / `parse <path>`
+     * muscle memory for a sibling command (`format`, `fix`, `transpile`)
+     * that takes its target via `--path` instead. When the resolved command
+     * exposes a `--path` option, surface that distinction explicitly.
+     */
+    private _createExcessArgumentsUsageError(
+        error: Error & { message: string },
+        resolvedCommand: CommanderCommandLike | null
+    ): CliUsageError {
+        const { commandName, excessArguments } = parseCommanderExcessArgumentsMessage(error.message);
+        const fallbackName = this._resolveCommandName(resolvedCommand);
+        const displayName = commandName ?? fallbackName ?? "the requested command";
+        const usage = resolveCommandUsage(resolvedCommand, {
+            fallback: () => this._programContract.getUsage() ?? ""
+        });
+        const normalizedUsage = composeUsageHelpMessage({
+            defaultHelpText: DEFAULT_HELP_AFTER_ERROR,
+            usage
+        });
+
+        const acceptsPathOption = this._commandHasPathOption(resolvedCommand);
+        const message = buildExcessArgumentsMessage({
+            commandName: displayName,
+            excessArguments,
+            acceptsPathOption
+        });
+
+        return new CliUsageError(message, { usage: normalizedUsage });
+    }
+
+    private _resolveCommandName(command: CommanderCommandLike | null): string | null {
+        if (!command) {
+            return null;
+        }
+        if (typeof command.name === "function") {
+            const value = command.name();
+            return typeof value === "string" && value.length > 0 ? value : null;
+        }
+        return null;
+    }
+
+    private _commandHasPathOption(command: CommanderCommandLike | null): boolean {
+        if (!command || !Array.isArray(command.options)) {
+            return false;
+        }
+        return command.options.some((option) => option?.long === "--path");
+    }
+}
+
+function buildExcessArgumentsMessage({
+    commandName,
+    excessArguments,
+    acceptsPathOption
+}: {
+    commandName: string;
+    excessArguments: ReadonlyArray<string>;
+    acceptsPathOption: boolean;
+}): string {
+    const receivedLine = formatReceivedArgumentsLine(excessArguments);
+
+    if (acceptsPathOption && excessArguments.length === 1) {
+        const onlyArgument = excessArguments[0] ?? "";
+        return [
+            `The '${commandName}' command does not accept a positional path argument.`,
+            receivedLine,
+            `Pass the target via '--path' instead, for example: --path ${onlyArgument}`
+        ].join("\n");
+    }
+
+    if (acceptsPathOption) {
+        return [
+            `The '${commandName}' command does not accept positional arguments; pass a single '--path <target>' value instead.`,
+            receivedLine,
+            `Multiple positional arguments were received; '--path' takes a single target.`
+        ].join("\n");
+    }
+
+    return [
+        `The '${commandName}' command does not accept positional arguments.`,
+        receivedLine,
+        `Run with --help to see supported options.`
+    ].join("\n");
+}
+
+function formatReceivedArgumentsLine(excessArguments: ReadonlyArray<string>): string {
+    if (excessArguments.length === 0) {
+        return "No positional arguments were captured from the failed parse.";
+    }
+
+    const label = excessArguments.length === 1 ? "positional argument" : "positional arguments";
+    const formattedList = excessArguments.map((argument) => `'${argument}'`).join(", ");
+    return `Received ${excessArguments.length} unexpected ${label}: ${formattedList}.`;
 }
 
 export { CliCommandManager };

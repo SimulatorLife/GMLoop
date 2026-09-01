@@ -2,24 +2,21 @@
   "printWidth": 120,
   "allowInlineControlFlowBlocks": false,
   "lintRules": {
+    "gml/remove-doc-function-tags": "error",
     "gml/normalize-doc-comments": "error",
+    "gml/normalize-doc-param-separators": "error",
     "gml/prefer-hoistable-loop-accessors": "error",
-    "gml/optimize-logical-flow": "error",
+    "gml/prefer-direct-boolean-return": "error",
+    "gml/no-double-negation": "error",
+    "gml/prefer-de-morgan": "error",
+    "gml/no-redundant-logical-operands": "error",
+    "gml/prefer-conditional-assignment": "error",
     "gml/normalize-directives": "error",
     "gml/optimize-math-expressions": "error"
   },
   "refactor": {
     "codemods": {
-      "docCommentAlignment": {},
-      "loopLengthHoisting": {
-        "functionSuffixes": {
-          "array_length": "len",
-          "ds_list_size": "size",
-          "ds_map_size": "size",
-          "ds_grid_width": "width",
-          "ds_grid_height": "height"
-        }
-      }
+      "loopLengthHoisting": {}
     }
   },
   "fixture": {

@@ -129,6 +129,39 @@ void describe("GmlToJsEmitter.getDependencies()", () => {
         assert.ok(emitter.getDependencies().has("gml/script/scr_on_hit"));
     });
 
+    void it("collects script symbols inside function bodies without nested emit resets", () => {
+        const sem = makeScriptOracle(new Set(["scr_setup", "scr_after"]));
+        const ast = Parser.GMLParser.parse("function init() { scr_setup(); } scr_after();");
+        const emitter = new Transpiler.GmlToJsEmitter(sem);
+
+        emitter.emit(ast);
+
+        assert.deepEqual([...emitter.getDependencies()], ["gml/script/scr_setup", "gml/script/scr_after"]);
+    });
+
+    void it("collects script constructor dependencies without wrapping constructor output", () => {
+        const sem = Transpiler.createSemanticOracle({ scriptNames: new Set(["ScrProjectile"]) });
+        const ast = Parser.GMLParser.parse("var projectile = new ScrProjectile(x, y);");
+        const emitter = new Transpiler.GmlToJsEmitter(sem);
+
+        const js = emitter.emit(ast);
+
+        assert.match(js, /new ScrProjectile\(x, y\)/);
+        assert.ok(!js.includes("__call_script"), "Constructor output should remain lean and direct");
+        assert.deepEqual([...emitter.getDependencies()], ["gml/script/ScrProjectile"]);
+    });
+
+    void it("collects parent constructor dependencies from constructor declarations", () => {
+        const sem = Transpiler.createSemanticOracle({ scriptNames: new Set(["ParentThing"]) });
+        const ast = Parser.GMLParser.parse("function ChildThing() : ParentThing() constructor {}");
+        const emitter = new Transpiler.GmlToJsEmitter(sem);
+
+        const js = emitter.emit(ast);
+
+        assert.match(js, /ParentThing\.call\(this\)/);
+        assert.deepEqual([...emitter.getDependencies()], ["gml/script/ParentThing"]);
+    });
+
     void it("resets dependencies between top-level emit calls on a reused emitter", () => {
         const sem = makeScriptOracle(new Set(["scr_first", "scr_second"]));
         const emitter = new Transpiler.GmlToJsEmitter(sem);
@@ -205,6 +238,25 @@ void describe("GmlTranspiler.transpileScript — dependencies in metadata", () =
 
         const deps = patch.metadata?.dependencies ?? [];
         assert.equal(deps.length, 1, "Repeated calls to the same script should be deduplicated");
+    });
+
+    void it("preserves every script dependency while unwrapping multi-statement scripts", () => {
+        const oracle = Transpiler.createSemanticOracle({
+            scriptNames: new Set(["scr_default", "scr_first", "scr_second"])
+        });
+        const transpiler = new Transpiler.GmlTranspiler({ semantic: oracle });
+
+        const patch = transpiler.transpileScript({
+            sourceText:
+                "function update(value = scr_default()) { scr_first(); value = scr_second(value); return value; }",
+            symbolId: "gml/script/update"
+        });
+
+        assert.deepEqual(patch.metadata?.dependencies, [
+            "gml/script/scr_default",
+            "gml/script/scr_first",
+            "gml/script/scr_second"
+        ]);
     });
 });
 

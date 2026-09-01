@@ -76,7 +76,7 @@ void test("web live-reload start opens runtime tab only after startup returns a 
     });
 
     const startPromise = webTestExports.startLiveReloadFromServer(
-        async () => await startResponse,
+        async () => startResponse,
         (url, target) => {
             openedTabs.push({ target, url });
             return createTestRuntimeTab(() => {
@@ -111,6 +111,26 @@ void test("web live-reload start opens runtime tab only after startup returns a 
     assert.equal(focused, true);
 });
 
+void test("web live-reload start identifies an unreachable graph server", async () => {
+    await assert.rejects(
+        () =>
+            webTestExports.startLiveReloadFromServer(async () => {
+                throw new TypeError("Failed to fetch");
+            }),
+        /Unable to reach the GMLoop graph server \(POST \/api\/live-reload\/start\)\. Check that the server is running and try again\./u
+    );
+});
+
+void test("web live-reload start preserves server-side startup errors", async () => {
+    await assert.rejects(
+        () =>
+            webTestExports.startLiveReloadFromServer(async () =>
+                Response.json({ error: "live-reload worker failed", ok: false }, { status: 500 })
+            ),
+        /live-reload worker failed/u
+    );
+});
+
 void test("web live-reload start mirrors active session into bootstrap options for Vite UI HMR remounts", async () => {
     setBootstrapOptionsForTest({
         isServerMode: true,
@@ -140,7 +160,7 @@ void test("web live-reload start rejects missing runtime URLs without opening a 
 
     await assert.rejects(
         async () =>
-            await webTestExports.startLiveReloadFromServer(
+            webTestExports.startLiveReloadFromServer(
                 async () =>
                     Response.json(
                         {
@@ -178,7 +198,7 @@ void test("web live-reload stop clears bootstrap live-reload state only after ho
 
     await assert.rejects(
         async () =>
-            await webTestExports.stopLiveReloadFromServer(async () =>
+            webTestExports.stopLiveReloadFromServer(async () =>
                 Response.json({ error: "stop failed", ok: false }, { status: 500 })
             ),
         /stop failed/u

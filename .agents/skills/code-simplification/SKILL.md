@@ -7,9 +7,9 @@ description: Simplifies code for clarity while preserving behavior. Use when cod
 
 ## Overview
 
-Simplify implementations without changing behavior. In this repository, simplification should also reinforce architectural boundaries:
+Simplify implementations without changing behavior. In this repository, simplification should also reinforce architectural boundaries, including:
 
-- `@gml-modules/core`: AST model + structural/traversal helpers
+- `@gml-modules/core`: AST model + structural/traversal helpers, general cross-module helper utilities, and shared types/interfaces
 - `@gml-modules/parser`: GML -> AST only
 - `@gml-modules/plugin`: formatter-only AST transforms + printing + Prettier glue
 

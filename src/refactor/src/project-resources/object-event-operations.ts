@@ -1,10 +1,15 @@
-import { readdir, readFile, writeFile } from "node:fs/promises";
+import { readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { Core } from "@gmloop/core";
-import { Parser } from "@gmloop/parser";
 
-const OBJECT_RESOURCE_DIRECTORY = "objects";
+import { defaultGmlProgramParser } from "../parser-adapter.js";
+import {
+    getManifestResources,
+    readProjectMetadataDocument,
+    resolveProjectManifestFile
+} from "./project-resource-operations.js";
+import { locateObjectReference, type ResourceReference } from "./room-resource-helpers.js";
 
 const OBJECT_EVENT_TYPES = Object.freeze({
     cleanup: 2,
@@ -29,23 +34,19 @@ const OBJECT_EVENT_NUMBERS = Object.freeze({
     step: Object.freeze({ begin: 1, end: 2, normal: 0, step: 0 })
 });
 
-type ProjectManifestEntry = Readonly<{
-    id: Readonly<{
-        name: string;
-        path: string;
-    }>;
-}>;
-
-type ResourceReference = Readonly<{
-    name: string;
-    path: string;
-}>;
-
 type ObjectEventMutationContext = Readonly<{
     event: Record<string, unknown>;
+    eventIndex: number;
     eventFilePath: string;
     eventType: number;
     eventNumber: number;
+    objectAbsolutePath: string;
+    objectDocument: Record<string, unknown>;
+    objectReference: ResourceReference;
+    projectRoot: string;
+}>;
+
+type ObjectEventInspectionContext = Readonly<{
     objectAbsolutePath: string;
     objectDocument: Record<string, unknown>;
     objectReference: ResourceReference;
@@ -83,10 +84,21 @@ export interface UpdateObjectEventRequest {
 }
 
 /**
+ * Parameters for deleting an existing GameMaker object event and its GML source file.
+ */
+export interface DeleteObjectEventRequest {
+    descriptor: ObjectEventDescriptor;
+    dryRun?: boolean;
+    objectName: string;
+    projectRoot: string;
+}
+
+/**
  * Summary returned after an object event source mutation.
  */
 export interface ObjectEventMutationResult {
-    action: "add" | "update";
+    action: "add" | "update" | "delete";
+    deletedPaths: Array<string>;
     dryRun: boolean;
     eventFilePath: string;
     eventNumber: number;
@@ -97,85 +109,31 @@ export interface ObjectEventMutationResult {
     writtenPaths: Array<string>;
 }
 
-async function readProjectMetadataDocument(absolutePath: string): Promise<Record<string, unknown>> {
-    const rawContent = await readFile(absolutePath, "utf8");
-    return Core.parseProjectMetadataDocumentForMutation(rawContent, absolutePath).document;
+/**
+ * Read-only parse status for an object event handler source file.
+ */
+export interface ObjectEventParseSummary {
+    diagnostic: string | null;
+    ok: boolean;
 }
 
-async function resolveProjectManifestPath(projectRoot: string): Promise<string> {
-    const directoryEntries = await readdir(projectRoot, { withFileTypes: true });
-    const manifestFileNames = directoryEntries
-        .filter((entry) => entry.isFile() && entry.name.toLowerCase().endsWith(".yyp"))
-        .map((entry) => entry.name)
-        .toSorted((left, right) => left.localeCompare(right));
-
-    if (manifestFileNames.length === 0) {
-        throw new Error(`Could not locate a .yyp manifest inside '${projectRoot}'.`);
-    }
-    if (manifestFileNames.length > 1) {
-        throw new Error(
-            `Found multiple .yyp manifests in '${projectRoot}'. Object event operations require exactly one project manifest.`
-        );
-    }
-
-    return path.join(projectRoot, manifestFileNames[0]);
-}
-
-function getManifestResources(document: Record<string, unknown>): Array<ProjectManifestEntry> {
-    const resources: Array<ProjectManifestEntry> = [];
-    for (const resourceEntry of Core.asArray(document.resources)) {
-        if (!Core.isObjectLike(resourceEntry)) {
-            continue;
-        }
-
-        const identifier = (resourceEntry as { id?: unknown }).id;
-        if (!Core.isObjectLike(identifier)) {
-            continue;
-        }
-
-        const name = Core.getNonEmptyString((identifier as { name?: unknown }).name);
-        const resourcePath = Core.getNonEmptyString((identifier as { path?: unknown }).path);
-        if (!name || !resourcePath) {
-            continue;
-        }
-
-        resources.push(
-            Object.freeze({
-                id: Object.freeze({
-                    name,
-                    path: resourcePath
-                })
-            })
-        );
-    }
-    return resources;
-}
-
-function locateObjectReference(
-    manifestResources: ReadonlyArray<ProjectManifestEntry>,
-    objectName: string
-): ResourceReference {
-    const expectedPrefix = `${OBJECT_RESOURCE_DIRECTORY}/`;
-    let located: ResourceReference | null = null;
-
-    for (const manifestResource of manifestResources) {
-        if (manifestResource.id.name !== objectName || !manifestResource.id.path.startsWith(expectedPrefix)) {
-            continue;
-        }
-        if (located !== null) {
-            throw new Error(`Found multiple object resources named '${objectName}' in the project manifest.`);
-        }
-        located = Object.freeze({
-            name: manifestResource.id.name,
-            path: manifestResource.id.path
-        });
-    }
-
-    if (located === null) {
-        throw new Error(`Could not find object resource '${objectName}' in the project manifest.`);
-    }
-
-    return located;
+/**
+ * Summary of a GameMaker object event handler for graph-aware inspection.
+ */
+export interface ObjectEventInspectionResult {
+    descriptor: string;
+    eventFilePath: string;
+    eventNumber: number;
+    eventType: number;
+    objectName: string;
+    objectPath: string;
+    parse: ObjectEventParseSummary;
+    source: Readonly<{
+        byteLength: number;
+        lineCount: number;
+        present: boolean;
+        summary: string;
+    }>;
 }
 
 function normalizeDescriptorKey(value: string): string {
@@ -228,12 +186,9 @@ function readNumericEventField(event: Record<string, unknown>, fieldNames: Reado
     return null;
 }
 
-function findObjectEvent(
-    objectDocument: Record<string, unknown>,
-    eventType: number,
-    eventNumber: number
-): Record<string, unknown> | null {
-    for (const eventEntry of Core.asArray(objectDocument.eventList)) {
+function findObjectEventIndex(objectDocument: Record<string, unknown>, eventType: number, eventNumber: number): number {
+    const eventList = Core.asArray(objectDocument.eventList);
+    for (const [eventIndex, eventEntry] of eventList.entries()) {
         if (!Core.isObjectLike(eventEntry)) {
             continue;
         }
@@ -242,11 +197,25 @@ function findObjectEvent(
         const candidateEventType = readNumericEventField(event, ["eventType", "eventtype"]);
         const candidateEventNumber = readNumericEventField(event, ["eventNum", "enumb"]);
         if (candidateEventType === eventType && candidateEventNumber === eventNumber) {
-            return event;
+            return eventIndex;
         }
     }
 
-    return null;
+    return -1;
+}
+
+function findObjectEvent(
+    objectDocument: Record<string, unknown>,
+    eventType: number,
+    eventNumber: number
+): Record<string, unknown> | null {
+    const eventIndex = findObjectEventIndex(objectDocument, eventType, eventNumber);
+    if (eventIndex < 0) {
+        return null;
+    }
+
+    const event = Core.asArray(objectDocument.eventList)[eventIndex];
+    return Core.isObjectLike(event) ? (event as Record<string, unknown>) : null;
 }
 
 function locateObjectEvent(
@@ -281,6 +250,89 @@ function resolveEventFilePath(
     }
 
     return path.posix.join(path.posix.dirname(objectReference.path), `${eventType}_${eventNumber}.gml`);
+}
+
+function createObjectEventDescriptor(eventType: number, eventNumber: number): string {
+    for (const [category, categoryEventType] of Object.entries(OBJECT_EVENT_TYPES)) {
+        if (categoryEventType !== eventType) {
+            continue;
+        }
+
+        const eventNumbers = OBJECT_EVENT_NUMBERS[category as keyof typeof OBJECT_EVENT_NUMBERS];
+        if (eventNumbers !== undefined) {
+            for (const [descriptor, descriptorEventNumber] of Object.entries(eventNumbers)) {
+                if (descriptorEventNumber === eventNumber) {
+                    return `${category}:${descriptor}`;
+                }
+            }
+        }
+
+        return `${category}:${String(eventNumber)}`;
+    }
+
+    return `${String(eventType)}:${String(eventNumber)}`;
+}
+
+function createSourceSummary(sourceText: string): ObjectEventInspectionResult["source"] {
+    const firstNonEmptyLine = sourceText
+        .split(/\r?\n/u)
+        .map((line) => line.trim())
+        .find((line) => line.length > 0);
+    return Object.freeze({
+        byteLength: Buffer.byteLength(sourceText, "utf8"),
+        lineCount: sourceText.length === 0 ? 0 : sourceText.split(/\r?\n/u).length,
+        present: true,
+        summary: firstNonEmptyLine ?? ""
+    });
+}
+
+function createMissingSourceSummary(): ObjectEventInspectionResult["source"] {
+    return Object.freeze({
+        byteLength: 0,
+        lineCount: 0,
+        present: false,
+        summary: ""
+    });
+}
+
+async function readObjectEventSource(
+    projectRoot: string,
+    eventFilePath: string
+): Promise<Readonly<{ sourceText: string; source: ObjectEventInspectionResult["source"] }>> {
+    try {
+        const sourceText = await readFile(path.join(projectRoot, Core.fromPosixPath(eventFilePath)), "utf8");
+        return Object.freeze({
+            source: createSourceSummary(sourceText),
+            sourceText
+        });
+    } catch {
+        return Object.freeze({
+            source: createMissingSourceSummary(),
+            sourceText: ""
+        });
+    }
+}
+
+function parseObjectEventSource(sourceText: string, sourcePresent: boolean): ObjectEventParseSummary {
+    if (!sourcePresent) {
+        return Object.freeze({
+            diagnostic: "Object event source file is missing.",
+            ok: false
+        });
+    }
+
+    try {
+        defaultGmlProgramParser(sourceText);
+        return Object.freeze({
+            diagnostic: null,
+            ok: true
+        });
+    } catch (error) {
+        return Object.freeze({
+            diagnostic: Core.getErrorMessage(error),
+            ok: false
+        });
+    }
 }
 
 function normalizeHandlerSource(handlerSource: string): string {
@@ -339,18 +391,23 @@ async function resolveObjectEventMutationContext(
     objectName: string,
     descriptor: ObjectEventDescriptor
 ): Promise<ObjectEventMutationContext> {
-    const manifestPath = await resolveProjectManifestPath(projectRoot);
-    const manifestDocument = await readProjectMetadataDocument(manifestPath);
+    const manifest = await resolveProjectManifestFile(projectRoot);
+    const manifestDocument = await readProjectMetadataDocument(manifest.absolutePath);
     const objectReference = locateObjectReference(getManifestResources(manifestDocument), objectName);
     const objectAbsolutePath = path.join(projectRoot, Core.fromPosixPath(objectReference.path));
     const objectDocument = await readProjectMetadataDocument(objectAbsolutePath);
     const eventType = resolveObjectEventType(descriptor.category);
     const eventNumber = resolveObjectEventNumber(descriptor.category, descriptor.descriptor);
+    const eventIndex = findObjectEventIndex(objectDocument, eventType, eventNumber);
+    if (eventIndex < 0) {
+        throw new Error(`Could not find object event ${eventType}:${eventNumber} on object '${objectReference.name}'.`);
+    }
     const event = locateObjectEvent(objectDocument, objectReference.name, eventType, eventNumber);
     const eventFilePath = resolveEventFilePath(event, objectReference, eventType, eventNumber);
 
     return Object.freeze({
         event,
+        eventIndex,
         eventFilePath,
         eventNumber,
         eventType,
@@ -359,6 +416,99 @@ async function resolveObjectEventMutationContext(
         objectReference,
         projectRoot
     });
+}
+
+async function resolveObjectEventInspectionContext(
+    projectRootInput: string,
+    objectName: string
+): Promise<ObjectEventInspectionContext> {
+    const projectRoot = path.resolve(projectRootInput);
+    const manifest = await resolveProjectManifestFile(projectRoot);
+    const manifestDocument = await readProjectMetadataDocument(manifest.absolutePath);
+    const objectReference = locateObjectReference(getManifestResources(manifestDocument), objectName);
+    const objectAbsolutePath = path.join(projectRoot, Core.fromPosixPath(objectReference.path));
+    const objectDocument = await readProjectMetadataDocument(objectAbsolutePath);
+
+    return Object.freeze({
+        objectAbsolutePath,
+        objectDocument,
+        objectReference,
+        projectRoot
+    });
+}
+
+async function inspectObjectEventRecord(
+    context: ObjectEventInspectionContext,
+    event: Record<string, unknown>
+): Promise<ObjectEventInspectionResult | null> {
+    const eventType = readNumericEventField(event, ["eventType", "eventtype"]);
+    const eventNumber = readNumericEventField(event, ["eventNum", "enumb"]);
+    if (eventType === null || eventNumber === null) {
+        return null;
+    }
+
+    const eventFilePath = resolveEventFilePath(event, context.objectReference, eventType, eventNumber);
+    const sourceRead = await readObjectEventSource(context.projectRoot, eventFilePath);
+    return Object.freeze({
+        descriptor: createObjectEventDescriptor(eventType, eventNumber),
+        eventFilePath,
+        eventNumber,
+        eventType,
+        objectName: context.objectReference.name,
+        objectPath: context.objectReference.path,
+        parse: parseObjectEventSource(sourceRead.sourceText, sourceRead.source.present),
+        source: sourceRead.source
+    });
+}
+
+/**
+ * List event handlers declared by one GameMaker object.
+ *
+ * @param request - Project root and object name to inspect.
+ * @returns Deterministic event summaries sorted by event type and number.
+ */
+export async function listObjectEvents(request: {
+    objectName: string;
+    projectRoot: string;
+}): Promise<ReadonlyArray<ObjectEventInspectionResult>> {
+    const context = await resolveObjectEventInspectionContext(request.projectRoot, request.objectName);
+    const inspectedEvents = await Promise.all(
+        Core.asArray(context.objectDocument.eventList).map(async (eventEntry) => {
+            if (!Core.isObjectLike(eventEntry)) {
+                return null;
+            }
+            return await inspectObjectEventRecord(context, eventEntry as Record<string, unknown>);
+        })
+    );
+    return Object.freeze(
+        inspectedEvents
+            .filter((event): event is ObjectEventInspectionResult => event !== null)
+            .sort((left, right) => left.eventType - right.eventType || left.eventNumber - right.eventNumber)
+    );
+}
+
+/**
+ * Inspect one event handler declared by a GameMaker object.
+ *
+ * @param request - Project root, object name, and event descriptor to inspect.
+ * @returns The matching event summary.
+ */
+export async function inspectObjectEvent(request: {
+    descriptor: ObjectEventDescriptor;
+    objectName: string;
+    projectRoot: string;
+}): Promise<ObjectEventInspectionResult> {
+    const context = await resolveObjectEventInspectionContext(request.projectRoot, request.objectName);
+    const eventType = resolveObjectEventType(request.descriptor.category);
+    const eventNumber = resolveObjectEventNumber(request.descriptor.category, request.descriptor.descriptor);
+    const event = locateObjectEvent(context.objectDocument, context.objectReference.name, eventType, eventNumber);
+    const inspected = await inspectObjectEventRecord(context, event);
+    if (inspected === null) {
+        throw new Error(
+            `Could not inspect object event ${eventType}:${eventNumber} on '${context.objectReference.name}'.`
+        );
+    }
+    return inspected;
 }
 
 async function writeObjectEventSourceIfApplying(
@@ -382,10 +532,10 @@ async function writeObjectEventSourceIfApplying(
  */
 export async function addObjectEvent(request: AddObjectEventRequest): Promise<ObjectEventMutationResult> {
     const normalizedHandlerSource = normalizeHandlerSource(request.handlerSource);
-    Parser.GMLParser.parse(normalizedHandlerSource);
+    defaultGmlProgramParser(normalizedHandlerSource);
 
-    const manifestPath = await resolveProjectManifestPath(request.projectRoot);
-    const manifestDocument = await readProjectMetadataDocument(manifestPath);
+    const manifest = await resolveProjectManifestFile(request.projectRoot);
+    const manifestDocument = await readProjectMetadataDocument(manifest.absolutePath);
     const objectReference = locateObjectReference(getManifestResources(manifestDocument), request.objectName);
     const objectAbsolutePath = path.join(request.projectRoot, Core.fromPosixPath(objectReference.path));
     const objectDocument = await readProjectMetadataDocument(objectAbsolutePath);
@@ -406,6 +556,7 @@ export async function addObjectEvent(request: AddObjectEventRequest): Promise<Ob
 
     return {
         action: "add",
+        deletedPaths: [],
         dryRun,
         eventFilePath,
         eventNumber,
@@ -425,7 +576,7 @@ export async function addObjectEvent(request: AddObjectEventRequest): Promise<Ob
  */
 export async function updateObjectEvent(request: UpdateObjectEventRequest): Promise<ObjectEventMutationResult> {
     const normalizedHandlerSource = normalizeHandlerSource(request.handlerSource);
-    Parser.GMLParser.parse(normalizedHandlerSource);
+    defaultGmlProgramParser(normalizedHandlerSource);
 
     const context = await resolveObjectEventMutationContext(
         request.projectRoot,
@@ -437,6 +588,7 @@ export async function updateObjectEvent(request: UpdateObjectEventRequest): Prom
 
     return {
         action: "update",
+        deletedPaths: [],
         dryRun,
         eventFilePath: context.eventFilePath,
         eventNumber: context.eventNumber,
@@ -445,5 +597,40 @@ export async function updateObjectEvent(request: UpdateObjectEventRequest): Prom
         objectPath: context.objectReference.path,
         warnings: [],
         writtenPaths: [context.eventFilePath]
+    };
+}
+
+/**
+ * Delete an existing GameMaker object event and its associated GML source file.
+ *
+ * @param request - Object event deletion request.
+ * @returns Summary of the planned or applied object event metadata and source deletion.
+ */
+export async function deleteObjectEvent(request: DeleteObjectEventRequest): Promise<ObjectEventMutationResult> {
+    const context = await resolveObjectEventMutationContext(
+        request.projectRoot,
+        request.objectName,
+        request.descriptor
+    );
+    const eventList = getObjectEventListForMutation(context.objectDocument, context.objectReference.name);
+    eventList.splice(context.eventIndex, 1);
+
+    const dryRun = request.dryRun !== false;
+    await writeObjectMetadataIfApplying(dryRun, context.objectAbsolutePath, context.objectDocument);
+    if (!dryRun) {
+        await rm(path.join(context.projectRoot, Core.fromPosixPath(context.eventFilePath)), { force: true });
+    }
+
+    return {
+        action: "delete",
+        deletedPaths: [context.eventFilePath],
+        dryRun,
+        eventFilePath: context.eventFilePath,
+        eventNumber: context.eventNumber,
+        eventType: context.eventType,
+        objectName: context.objectReference.name,
+        objectPath: context.objectReference.path,
+        warnings: [],
+        writtenPaths: [context.objectReference.path]
     };
 }

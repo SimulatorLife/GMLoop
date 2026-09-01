@@ -1,6 +1,14 @@
-import * as Runtime from "../browser/runtime/index.js";
-import * as Timing from "../browser/timing/index.js";
-import * as Clients from "../browser/websocket/index.js";
+import * as Runtime from "./browser/runtime/index.js";
+import * as Timing from "./browser/timing.js";
+import * as Clients from "./browser/websocket/index.js";
+
+export {
+    coerceLiveReloadLogLevel,
+    isLiveReloadLogLevel,
+    LIVE_RELOAD_LOG_LEVEL_VALUES,
+    LIVE_RELOAD_LOG_LEVELS,
+    parseLiveReloadLogLevel
+} from "./browser/log-levels.js";
 
 // Export the RuntimeWrapper namespace as the primary public API
 export const RuntimeWrapper = Object.freeze({
@@ -9,11 +17,14 @@ export const RuntimeWrapper = Object.freeze({
     Timing
 });
 
+export type { LiveReloadLogLevel } from "./browser/log-levels.js";
 export type {
     ApplyPatchResult,
     BatchApplyResult,
+    ClosureCollection,
     ConsoleOutput,
     ErrorAnalytics,
+    EventCollection,
     GeneralLogger,
     Logger,
     LoggerConfiguration,
@@ -21,6 +32,7 @@ export type {
     LogLevel,
     Patch,
     PatchApplicator,
+    PatchDependencyRegistry,
     PatchDiagnostics,
     PatchErrorAnalytics,
     PatchErrorCategory,
@@ -41,6 +53,7 @@ export type {
     RegistryLifecycleLogger,
     RegistryMutator,
     RegistryReader,
+    ResourceCollection,
     RuntimeFunction,
     RuntimeMetrics,
     RuntimePatchError,
@@ -50,11 +63,13 @@ export type {
     RuntimeWrapperOptions,
     RuntimeWrapperState,
     RuntimeWrapper as RuntimeWrapperType,
+    ScriptCollection,
     TrySafeApplyResult,
+    VersionedRegistry,
     WebSocketLogger
-} from "../browser/runtime/index.js";
+} from "./browser/runtime/index.js";
 // Export sub-namespaces for internal use and testing
-export * as Runtime from "../browser/runtime/index.js";
+export * as Runtime from "./browser/runtime/index.js";
 export type {
     MessageEventLike,
     PatchQueueMetrics,
@@ -71,8 +86,9 @@ export type {
     WebSocketInstanceProvider,
     WebSocketMessageSender,
     WebSocketMetricsCollector,
-    WebSocketPatchQueueManager
-} from "../browser/websocket/index.js";
-export * as Clients from "../browser/websocket/index.js";
+    WebSocketPatchQueueFlusher,
+    WebSocketPatchQueueMetricsReader
+} from "./browser/websocket/index.js";
+export * as Clients from "./browser/websocket/index.js";
 // The Timing namespace is the canonical public surface for timing utilities.
-export * as Timing from "../browser/timing/index.js";
+export * as Timing from "./browser/timing.js";

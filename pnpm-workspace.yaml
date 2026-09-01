@@ -1,6 +1,8 @@
 packages:
+  - src/agent-pack
   - src/cli
   - src/lint
+  - src/lsp
   - src/format
   - src/parser
   - src/core
@@ -11,6 +13,8 @@ packages:
   - src/refactor
   - src/fixture-runner
   - src/mcp
+  - src/vscode
+  - src/syntax-highlight
 
 catalog:
   "@eslint/compat": "^2"
@@ -28,6 +32,8 @@ onlyBuiltDependencies:
   - unrs-resolver
 
 allowBuilds:
+  "@vscode/vsce-sign": true
   esbuild: true
   fast-folder-size: true
+  keytar: true
   unrs-resolver: true

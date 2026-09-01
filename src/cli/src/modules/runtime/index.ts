@@ -1,6 +1,31 @@
 export * from "./artifact-store.js";
-export { getRunnerController } from "./runner-controller.js";
-export { getRunnerStateStore, type RunnerLogEntry, type RunnerLogKind, type RunnerSnapshot } from "./runner-state.js";
+export * from "./compare-targets.js";
+export * from "./lifecycle.js";
+export * from "./project-operation-state.js";
+export {
+    getRunnerController,
+    type RunnerProcessLauncher,
+    type RunnerProcessStatusReader,
+    type RunnerProcessStopper
+} from "./runner-controller.js";
+export {
+    getRunnerStateStore,
+    type RunnerLifecycleStateController,
+    type RunnerLogClearer,
+    type RunnerLogEntry,
+    type RunnerLogKind,
+    type RunnerLogReader,
+    type RunnerLogReadOptions,
+    type RunnerLogWriter,
+    type RunnerProjectBinder,
+    type RunnerRoomController,
+    type RunnerSnapshot,
+    type RunnerSnapshotReader,
+    type RunnerStateStore
+} from "./runner-state.js";
+export * from "./scope.js";
+export * from "./semantic-index-operation.js";
+export * from "./semantic-index-progress.js";
 export {
     type RuntimeServerProperties,
     type RuntimeStaticServerHandle,

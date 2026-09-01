@@ -1,9 +1,45 @@
 import { Core } from "@gmloop/core";
 
-import { DEFAULT_PRINT_WIDTH, INLINEABLE_SINGLE_STATEMENT_TYPES, NUMBER_TYPE, STRING_TYPE } from "./constants.js";
+import {
+    DEFAULT_PRINT_WIDTH,
+    INLINE_BLOCK_TOTAL_OVERHEAD,
+    INLINEABLE_SINGLE_STATEMENT_TYPES,
+    NUMBER_TYPE,
+    STRING_TYPE
+} from "./constants.js";
 import { isLogicalComparisonClause } from "./logical-expression-predicates.js";
 import { concat, group, ifBreak, indent, line } from "./prettier-doc-builders.js";
 import { optionalSemicolon } from "./semicolons.js";
+
+/**
+ * Default margin (in characters) added to the inline-length estimate before it
+ * is compared to `printWidth`. A value of `0` reproduces the legacy behavior
+ * exactly: the inline form is kept whenever its estimated length fits within
+ * `printWidth`. Adjusting this value is the only knob that controls how
+ * aggressively the formatter chooses the inline form.
+ */
+const INLINE_BLOCK_MARGIN_FALLBACK = 0;
+
+/**
+ * Resolve the user-provided `inlineControlFlowBlockMargin` option to a safe,
+ * finite number. Missing, non-numeric, or non-finite values fall back to
+ * {@link INLINE_BLOCK_MARGIN_FALLBACK} so the print-width check is never
+ * bypassed.
+ *
+ * The resolved margin is added to the inline-length estimate before it is
+ * compared to `printWidth`:
+ *  - A positive margin makes the formatter more conservative, requiring
+ *    additional headroom before a block is kept inline.
+ *  - A negative margin makes the formatter more aggressive, allowing the
+ *    inline form to exceed `printWidth` by the configured amount.
+ */
+function resolveInlineControlFlowBlockMargin(options) {
+    const rawMargin = options?.inlineControlFlowBlockMargin;
+    if (typeof rawMargin !== NUMBER_TYPE || !Number.isFinite(rawMargin)) {
+        return INLINE_BLOCK_MARGIN_FALLBACK;
+    }
+    return rawMargin;
+}
 
 /**
  * Builds a grouped clause document used by loop and control-flow headers.
@@ -75,8 +111,11 @@ function shouldInlineClauseByPrintWidth(keyword, clauseNode, bodyNode, options, 
             ? options.printWidth
             : DEFAULT_PRINT_WIDTH;
 
-    const estimatedInlineLength = keyword.length + 2 + clauseSource.trim().length + 4 + inlineBodySource.length + 2;
-    return estimatedInlineLength <= configuredPrintWidth;
+    const inlineMargin = resolveInlineControlFlowBlockMargin(options);
+
+    const estimatedInlineLength =
+        keyword.length + INLINE_BLOCK_TOTAL_OVERHEAD + clauseSource.trim().length + inlineBodySource.length;
+    return estimatedInlineLength + inlineMargin <= configuredPrintWidth;
 }
 
 function shouldPreserveClauseBlockAdjacency(clauseNode, bodyNode) {
@@ -100,6 +139,49 @@ function shouldPreserveClauseBlockAdjacency(clauseNode, bodyNode) {
     }
 
     return isLogicalComparisonClause(clauseNode);
+}
+
+function getBoundaryIndex(boundary): number | null {
+    if (typeof boundary === NUMBER_TYPE) {
+        return boundary;
+    }
+
+    if (boundary && typeof boundary.index === NUMBER_TYPE) {
+        return boundary.index;
+    }
+
+    return null;
+}
+
+function isTrailingCommentAfterNode(comment, node): boolean {
+    if (!Core.isLineComment(comment)) {
+        return false;
+    }
+
+    if (comment.trailing !== true && comment.placement !== "endOfLine") {
+        return false;
+    }
+
+    const commentStartIndex = getBoundaryIndex(comment.start);
+    const nodeEndIndex = Core.getNodeEndIndex(node);
+
+    return commentStartIndex !== null && typeof nodeEndIndex === NUMBER_TYPE && commentStartIndex >= nodeEndIndex;
+}
+
+function hasOnlyTrailingSuffixComments(node): boolean {
+    const comments = Core.getCommentArray(node);
+
+    for (const comment of comments) {
+        if (!isTrailingCommentAfterNode(comment, node)) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+function canInlineSingleStatementBlock(bodyNode, onlyStatement): boolean {
+    return !Core.hasComment(onlyStatement) && (!Core.hasComment(bodyNode) || hasOnlyTrailingSuffixComments(bodyNode));
 }
 
 /**
@@ -130,17 +212,12 @@ export function printSingleClauseStatement(path, options, print, keyword, clause
         if (INLINEABLE_SINGLE_STATEMENT_TYPES.has(bodyNode.type) && !Core.hasComment(bodyNode)) {
             inlineReturnDoc = print(bodyKey);
             inlineStatementType = bodyNode.type;
-        } else if (
-            bodyNode.type === "BlockStatement" &&
-            !Core.hasComment(bodyNode) &&
-            Array.isArray(bodyNode.body) &&
-            bodyNode.body.length === 1
-        ) {
+        } else if (bodyNode.type === "BlockStatement" && Array.isArray(bodyNode.body) && bodyNode.body.length === 1) {
             const [onlyStatement] = bodyNode.body;
             if (
                 onlyStatement &&
                 INLINEABLE_SINGLE_STATEMENT_TYPES.has(onlyStatement.type) &&
-                !Core.hasComment(onlyStatement)
+                canInlineSingleStatementBlock(bodyNode, onlyStatement)
             ) {
                 const startLine = bodyNode.start?.line;
                 const endLine = bodyNode.end?.line;

@@ -49,11 +49,6 @@ const expectedRules = Object.freeze([
         ]
     },
     {
-        shortName: "prefer-repeat-loops",
-        messageId: "preferRepeatLoops",
-        schema: [{ type: "object", additionalProperties: false, properties: {} }]
-    },
-    {
         shortName: "prefer-struct-literal-assignments",
         messageId: "preferStructLiteralAssignments",
         schema: [
@@ -85,29 +80,43 @@ const expectedRules = Object.freeze([
         schema: [{ type: "object", additionalProperties: false, properties: {} }]
     },
     {
-        shortName: "optimize-logical-flow",
-        messageId: "optimizeLogicalFlow",
-        schema: [
-            {
-                type: "object",
-                additionalProperties: false,
-                properties: { maxBooleanVariables: { type: "integer", minimum: 1, maximum: 10, default: 10 } }
-            }
-        ]
+        shortName: "prefer-direct-boolean-return",
+        messageId: "preferDirectBooleanReturn",
+        schema: [{ type: "object", additionalProperties: false, properties: {} }]
     },
+    {
+        shortName: "no-boolean-literal-comparisons",
+        messageId: "noBooleanLiteralComparisons",
+        schema: [{ type: "object", additionalProperties: false, properties: {} }]
+    },
+    ...[
+        ["no-double-negation", "noDoubleNegation"],
+        ["prefer-de-morgan", "preferDeMorgan"],
+        ["no-redundant-negation-parentheses", "noRedundantNegationParentheses"],
+        ["no-redundant-logical-operands", "noRedundantLogicalOperands"],
+        ["no-logical-absorption", "noLogicalAbsorption"],
+        ["prefer-logical-factorization", "preferLogicalFactorization"],
+        ["no-logical-complements", "noLogicalComplements"],
+        ["prefer-logical-xor", "preferLogicalXor"],
+        ["prefer-conditional-assignment", "preferConditionalAssignment"]
+    ].map(([shortName, messageId]) => ({
+        shortName,
+        messageId,
+        schema: [{ type: "object", additionalProperties: false, properties: {} }]
+    })),
     {
         shortName: "no-globalvar",
         messageId: "noGlobalvar",
         schema: []
     },
     {
-        shortName: "no-empty-regions",
-        messageId: "noEmptyRegions",
+        shortName: "no-multi-var-declarations",
+        messageId: "noMultiVarDeclarations",
         schema: [{ type: "object", additionalProperties: false, properties: {} }]
     },
     {
-        shortName: "no-legacy-api",
-        messageId: "noLegacyApi",
+        shortName: "no-empty-regions",
+        messageId: "noEmptyRegions",
         schema: [{ type: "object", additionalProperties: false, properties: {} }]
     },
     {
@@ -126,8 +135,38 @@ const expectedRules = Object.freeze([
         schema: [{ type: "object", additionalProperties: false, properties: {} }]
     },
     {
+        shortName: "remove-doc-function-tags",
+        messageId: "removeDocFunctionTags",
+        schema: [{ type: "object", additionalProperties: false, properties: {} }]
+    },
+    {
+        shortName: "normalize-doc-comment-tags",
+        messageId: "normalizeDocCommentTags",
+        schema: [{ type: "object", additionalProperties: false, properties: {} }]
+    },
+    {
         shortName: "normalize-doc-comments",
         messageId: "normalizeDocComments",
+        schema: [{ type: "object", additionalProperties: false, properties: {} }]
+    },
+    {
+        shortName: "normalize-doc-returns",
+        messageId: "normalizeDocReturns",
+        schema: [{ type: "object", additionalProperties: false, properties: {} }]
+    },
+    {
+        shortName: "normalize-doc-param-defaults",
+        messageId: "normalizeDocParamDefaults",
+        schema: [{ type: "object", additionalProperties: false, properties: {} }]
+    },
+    {
+        shortName: "normalize-doc-param-separators",
+        messageId: "normalizeDocParamSeparators",
+        schema: [{ type: "object", additionalProperties: false, properties: {} }]
+    },
+    {
+        shortName: "normalize-doc-param-undefined-defaults",
+        messageId: "normalizeDocParamUndefinedDefaults",
         schema: [{ type: "object", additionalProperties: false, properties: {} }]
     },
     {
@@ -138,6 +177,11 @@ const expectedRules = Object.freeze([
     {
         shortName: "normalize-directives",
         messageId: "normalizeDirectives",
+        schema: [{ type: "object", additionalProperties: false, properties: {} }]
+    },
+    {
+        shortName: "normalize-block-keyword-aliases",
+        messageId: "normalizeBlockKeywordAliases",
         schema: [{ type: "object", additionalProperties: false, properties: {} }]
     },
     {
@@ -194,16 +238,6 @@ const expectedRules = Object.freeze([
         ]
     },
     {
-        shortName: "normalize-data-structure-accessors",
-        messageId: "normalizeDataStructureAccessors",
-        schema: [{ type: "object", additionalProperties: false, properties: {} }]
-    },
-    {
-        shortName: "require-trailing-optional-defaults",
-        messageId: "requireTrailingOptionalDefaults",
-        schema: [{ type: "object", additionalProperties: false, properties: {} }]
-    },
-    {
         shortName: "simplify-real-calls",
         messageId: "simplifyRealCalls",
         schema: [{ type: "object", additionalProperties: false, properties: {} }]
@@ -247,17 +281,12 @@ void test("recommended baseline rules expose stable messageIds and exact schemas
     }
 });
 
-void test("feather rules declare fixable metadata for autofix reports", () => {
-    const allRuleIds = Object.values(ruleIds as Record<string, string>);
-    for (const ruleId of allRuleIds) {
-        if (!ruleId.startsWith("feather/")) {
-            continue;
-        }
-
-        const shortName = ruleId.replace("feather/", "");
-        assert.match(shortName, /^gm\d{4}$/u, `Unexpected feather rule id: ${ruleId}`);
+void test("feather rule fixable metadata matches the manifest", () => {
+    for (const entry of LintWorkspace.Lint.services.featherManifest.entries) {
+        const shortName = entry.ruleId.replace("feather/", "");
         const rule = LintWorkspace.Lint.featherPlugin.rules[shortName] as { meta?: { fixable?: string } };
-        assertEquals(rule.meta?.fixable, "code", `${ruleId} must set meta.fixable to 'code'`);
+        const expectedFixability = entry.fixability === "none" ? undefined : "code";
+        assertEquals(rule.meta?.fixable, expectedFixability, `${entry.ruleId} fixability must match its manifest`);
     }
 });
 

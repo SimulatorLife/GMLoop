@@ -80,7 +80,6 @@ void describe("Hot reload incremental transpilation", () => {
 
         // Start the watch command
         const watchPromise = runWatchCommand(testDir, {
-            extensions: [".gml"],
             verbose: false,
             quiet: true,
             websocketPort,
@@ -207,7 +206,6 @@ void describe("Hot reload targeted dependent retranspilation on definition chang
         const statusUrl = `http://127.0.0.1:${statusPort}`;
 
         const watchPromise = runWatchCommand(testDir, {
-            extensions: [".gml"],
             verbose: false,
             quiet: true,
             websocketPort,
@@ -223,14 +221,11 @@ void describe("Hot reload targeted dependent retranspilation on definition chang
         try {
             // Wait for the initial scan to finish – both files are transpiled at this point.
             await waitForScanComplete(statusUrl, 10_000, 50);
-            await waitForStatus(statusUrl, (status) => (status.patchCount ?? 0) >= 2, 10_000, 50);
-
             const initialStatus = await fetchStatusPayload(statusUrl);
-            // The initial scan transpiles all GML files in the directory.
+            // The initial scan builds dependency metadata without emitting runtime patches.
             const initialPatchCount = initialStatus.patchCount ?? 0;
 
-            // Sanity: both base_defs and consumer_defs should have been transpiled.
-            assert.ok(initialPatchCount >= 2, `Initial scan should transpile both files (got ${initialPatchCount})`);
+            assert.strictEqual(initialPatchCount, 0, "Initial metadata scan should not emit runtime patches");
 
             // Rewrite the base file with an additional exported symbol that the
             // consumer file does not reference.
@@ -301,7 +296,6 @@ shared_symbol = function () {
         const statusUrl = `http://127.0.0.1:${statusPort}`;
 
         const watchPromise = runWatchCommand(duplicateSymbolsDir, {
-            extensions: [".gml"],
             verbose: false,
             quiet: true,
             websocketPort,
@@ -316,11 +310,9 @@ shared_symbol = function () {
 
         try {
             await waitForScanComplete(statusUrl, 10_000, 50);
-            await waitForStatus(statusUrl, (status) => (status.patchCount ?? 0) >= 2, 10_000, 50);
-
             const initialStatus = await fetchStatusPayload(statusUrl);
             const initialPatchCount = initialStatus.patchCount ?? 0;
-            assert.ok(initialPatchCount >= 2, `Initial scan should transpile both files (got ${initialPatchCount})`);
+            assert.strictEqual(initialPatchCount, 0, "Initial metadata scan should not emit runtime patches");
 
             await writeFile(
                 defsFile,
@@ -384,7 +376,6 @@ shared_symbol = function () {
         const statusUrl = `http://127.0.0.1:${statusPort}`;
 
         const watchPromise = runWatchCommand(missingReferenceDir, {
-            extensions: [".gml"],
             verbose: false,
             quiet: true,
             websocketPort,
@@ -400,11 +391,9 @@ shared_symbol = function () {
 
         try {
             await waitForScanComplete(statusUrl, 10_000, 50);
-            await waitForStatus(statusUrl, (status) => (status.patchCount ?? 0) >= 2, 10_000, 50);
-
             const initialStatus = await fetchStatusPayload(statusUrl);
             const initialPatchCount = initialStatus.patchCount ?? 0;
-            assert.ok(initialPatchCount >= 2, `Initial scan should transpile both files (got ${initialPatchCount})`);
+            assert.strictEqual(initialPatchCount, 0, "Initial metadata scan should not emit runtime patches");
 
             await writeFile(
                 defsFile,

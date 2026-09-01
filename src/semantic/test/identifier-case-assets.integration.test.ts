@@ -13,8 +13,9 @@ import { createAssetCollisionProject, createAssetRenameProject } from "./identif
 import { getFormat } from "./identifier-case-test-helpers.js";
 import { createTempProjectWorkspace } from "./test-project-helpers.js";
 
-async function createAssetReservedProject() {
+async function createAssetReservedProject(assetName = "MoveContactSolid") {
     const { projectRoot, writeProjectFile } = await createTempProjectWorkspace("gml-asset-reserved-");
+    const assetDirectoryName = assetName.toLowerCase();
 
     await writeProjectFile(
         "MyGame.yyp",
@@ -25,8 +26,8 @@ async function createAssetReservedProject() {
                 resources: [
                     {
                         id: {
-                            name: "MoveContactSolid",
-                            path: "scripts/move_contact/MoveContactSolid.yy"
+                            name: assetName,
+                            path: `scripts/${assetDirectoryName}/${assetName}.yy`
                         }
                     }
                 ]
@@ -37,20 +38,20 @@ async function createAssetReservedProject() {
     );
 
     await writeProjectFile(
-        "scripts/move_contact/MoveContactSolid.yy",
+        `scripts/${assetDirectoryName}/${assetName}.yy`,
         `${JSON.stringify(
             {
                 resourceType: "GMScript",
-                name: "MoveContactSolid",
-                resourcePath: "scripts/move_contact/MoveContactSolid.yy"
+                name: assetName,
+                resourcePath: `scripts/${assetDirectoryName}/${assetName}.yy`
             },
             null,
             4
         )}\n`
     );
 
-    const source = "function MoveContactSolid() {\n    return 3;\n}\n";
-    const scriptPath = await writeProjectFile("scripts/move_contact/MoveContactSolid.gml", source);
+    const source = `function ${assetName}() {\n    return 3;\n}\n`;
+    const scriptPath = await writeProjectFile(`scripts/${assetDirectoryName}/${assetName}.gml`, source);
 
     const projectIndex = await buildProjectIndex(projectRoot);
 
@@ -161,7 +162,7 @@ void describe("asset rename conflict detection", () => {
         }
     });
 
-    void it("detects reserved-word conflicts before renaming assets", async () => {
+    void it("detects reserved identifier conflicts before renaming assets", async () => {
         const { projectRoot, projectIndex, scriptPath } = await createAssetReservedProject();
 
         try {
@@ -185,7 +186,7 @@ void describe("asset rename conflict detection", () => {
             );
             assert.ok(
                 conflicts.some((conflict) => conflict.message.includes("conflicts with reserved identifier")),
-                "Expected reserved-word guidance"
+                "Expected reserved identifier guidance"
             );
             assert.ok(
                 conflicts.some((conflict) =>
@@ -208,6 +209,41 @@ void describe("asset rename conflict detection", () => {
                 options.__identifierCaseAssetRenameResult,
                 undefined,
                 "Expected rename executor not to run on reserved conflict"
+            );
+        } finally {
+            await fs.rm(projectRoot, { recursive: true, force: true });
+        }
+    });
+
+    void it("detects ordinary binding reserved conflicts before asset renames", async () => {
+        const { projectRoot, projectIndex, scriptPath } = await createAssetReservedProject("Self");
+
+        try {
+            const options: any = {
+                filepath: scriptPath,
+                gmlIdentifierCase: "off",
+                gmlIdentifierCaseAssets: "snake-lower",
+                gmlIdentifierCaseAcknowledgeAssetRenames: true,
+                __identifierCaseProjectIndex: projectIndex,
+                __identifierCaseDryRun: false,
+                diagnostics: []
+            };
+
+            await prepareIdentifierCasePlan(options);
+
+            const conflicts = options.__identifierCaseConflicts ?? [];
+            assert.ok(conflicts.length > 0, "Expected reserved conflict to be reported");
+            assert.ok(
+                conflicts.some(
+                    (conflict) =>
+                        conflict.code === "reserved" && conflict.message.includes("reserved identifier 'self'")
+                ),
+                "Expected self to be rejected through ordinary-binding reservation"
+            );
+            assert.notStrictEqual(
+                options.__identifierCaseAssetRenamesApplied,
+                true,
+                "Reserved conflicts should abort asset renames"
             );
         } finally {
             await fs.rm(projectRoot, { recursive: true, force: true });

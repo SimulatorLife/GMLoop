@@ -15,6 +15,7 @@ void test("createGmlRule resolves every configured GML rule definition", () => {
 
 void test("createGmlRule throws for unknown shortName values", () => {
     const unknownDefinition = Object.freeze({
+        description: "Unknown rule used by the test.",
         mapKey: "GmlUnknownRule",
         shortName: "unknown-rule",
         fullId: "gml/unknown-rule",

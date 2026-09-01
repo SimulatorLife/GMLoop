@@ -5,11 +5,14 @@ import {
     type GraphVisualizationUiModel,
     hasGraphEdges,
     hasLoadedGraphIndex,
-    hasLoadedGraphProject
+    hasLoadedGraphProject,
+    readGraphVisualizationEdges,
+    readGraphVisualizationNodes
 } from "../src/app/contracts.js";
 
 function createUiModel(): GraphVisualizationUiModel {
     return {
+        autoGamePipeline: null,
         data: {
             edges: [],
             generatedAt: "2026-01-01T00:00:00.000Z",
@@ -28,6 +31,40 @@ function createUiModel(): GraphVisualizationUiModel {
         title: "Test GMLoop"
     };
 }
+
+void test("readGraphVisualizationNodes returns the model graph nodes", () => {
+    const model: GraphVisualizationUiModel = {
+        ...createUiModel(),
+        data: {
+            edges: [],
+            generatedAt: "2026-01-01T00:00:00.000Z",
+            graphs: [],
+            nodes: [
+                {
+                    displayName: "Player",
+                    filePath: "/tmp/test/objects/obj_player/obj_player.gml",
+                    graphId: "project",
+                    id: "node-1",
+                    kind: "object",
+                    lineEnd: null,
+                    lineStart: null,
+                    name: "obj_player",
+                    resourcePath: "objects/obj_player",
+                    scopeId: null,
+                    scipSymbol: null,
+                    snippet: "",
+                    summary: ""
+                }
+            ],
+            projectRoot: "/tmp/test"
+        }
+    };
+
+    assert.deepEqual(
+        readGraphVisualizationNodes(model).map((node) => node.id),
+        ["node-1"]
+    );
+});
 
 void test("hasLoadedGraphIndex returns false when the model has no graph nodes", () => {
     const model = createUiModel();
@@ -64,6 +101,30 @@ void test("hasLoadedGraphIndex returns true when the model includes graph nodes"
     };
 
     assert.equal(hasLoadedGraphIndex(model), true);
+});
+
+void test("readGraphVisualizationEdges returns the model graph edges", () => {
+    const model: GraphVisualizationUiModel = {
+        ...createUiModel(),
+        data: {
+            edges: [
+                {
+                    source: "node-1",
+                    target: "node-2",
+                    type: "calls"
+                }
+            ],
+            generatedAt: "2026-01-01T00:00:00.000Z",
+            graphs: [],
+            nodes: [],
+            projectRoot: "/tmp/test"
+        }
+    };
+
+    assert.deepEqual(
+        readGraphVisualizationEdges(model).map((edge) => `${edge.source}:${edge.target}:${edge.type}`),
+        ["node-1:node-2:calls"]
+    );
 });
 
 void test("hasGraphEdges returns false when the model has no graph edges", () => {
@@ -142,4 +203,23 @@ void test("hasLoadedGraphProject returns true when a target is loaded", () => {
     };
 
     assert.equal(hasLoadedGraphProject(model), true);
+});
+
+void test("hasLoadedGraphProject returns false while the selected target is still loading", () => {
+    const model: GraphVisualizationUiModel = {
+        ...createUiModel(),
+        loadedTarget: {
+            activePath: "/tmp/test/project.yyp",
+            projectRoot: "/tmp/test",
+            selectedPaths: [],
+            source: "working-directory"
+        },
+        startupState: {
+            detail: null,
+            message: "Loading project data…",
+            phase: "loading"
+        }
+    };
+
+    assert.equal(hasLoadedGraphProject(model), false);
 });

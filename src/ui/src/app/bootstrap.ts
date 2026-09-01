@@ -1,4 +1,4 @@
-import type { GraphVisualizationData, GraphVisualizationRenderOptions } from "../graph/types.js";
+import type { GraphVisualizationData, GraphVisualizationRenderOptions } from "../graph/index.js";
 import {
     createGraphVisualizationUiModel,
     createNoopGraphVisualizationUiCallbacks,
@@ -15,8 +15,11 @@ export type GraphVisualizationAppBootstrapDependencies = Readonly<{
         onCreateConfig?: GraphVisualizationUiCallbacks["onCreateConfig"];
         onSaveConfig?: GraphVisualizationUiCallbacks["onSaveConfig"];
         onRunFix?: GraphVisualizationUiCallbacks["onRunFix"];
+        onCancelFix?: GraphVisualizationUiCallbacks["onCancelFix"];
         onStartLiveReload?: GraphVisualizationUiCallbacks["onStartLiveReload"];
         onStopLiveReload?: GraphVisualizationUiCallbacks["onStopLiveReload"];
+        onInitializeAutoGameAgentPack?: GraphVisualizationUiCallbacks["onInitializeAutoGameAgentPack"];
+        onSetAutoGameSkillEnabled?: GraphVisualizationUiCallbacks["onSetAutoGameSkillEnabled"];
     }>;
     data: GraphVisualizationData;
     options: GraphVisualizationRenderOptions;
@@ -36,8 +39,13 @@ export function bootstrapGraphVisualizationLitApp(dependencies: GraphVisualizati
         onCreateConfig: dependencies.callbacks?.onCreateConfig ?? defaultCallbacks.onCreateConfig,
         onSaveConfig: dependencies.callbacks?.onSaveConfig ?? defaultCallbacks.onSaveConfig,
         onRunFix: dependencies.callbacks?.onRunFix ?? defaultCallbacks.onRunFix,
+        onCancelFix: dependencies.callbacks?.onCancelFix ?? defaultCallbacks.onCancelFix,
         onStartLiveReload: dependencies.callbacks?.onStartLiveReload ?? defaultCallbacks.onStartLiveReload,
-        onStopLiveReload: dependencies.callbacks?.onStopLiveReload ?? defaultCallbacks.onStopLiveReload
+        onStopLiveReload: dependencies.callbacks?.onStopLiveReload ?? defaultCallbacks.onStopLiveReload,
+        onInitializeAutoGameAgentPack:
+            dependencies.callbacks?.onInitializeAutoGameAgentPack ?? defaultCallbacks.onInitializeAutoGameAgentPack,
+        onSetAutoGameSkillEnabled:
+            dependencies.callbacks?.onSetAutoGameSkillEnabled ?? defaultCallbacks.onSetAutoGameSkillEnabled
     };
 
     Reflect.set(appElement, "model", model);

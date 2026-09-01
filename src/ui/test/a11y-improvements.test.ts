@@ -4,11 +4,9 @@ import test from "node:test";
 import { GmAppHeader } from "../src/app/components/gm-app-header.js";
 import { GmAppShell } from "../src/app/components/gm-app-shell.js";
 import { GmDocsPanel } from "../src/app/components/gm-docs-panel.js";
-import { GmGraphToolbar } from "../src/app/components/gm-graph-toolbar.js";
-import type { GraphVisualizationUiModel } from "../src/app/contracts.js";
-import { createInitialGraphVisualizationUiState } from "../src/app/state/reducer.js";
 import type { GraphVisualizationUiState } from "../src/app/state/types.js";
 import { renderTemplateValue } from "./render-template-helpers.js";
+import { createMockGraphVisualizationUiModel, createMockGraphVisualizationUiState } from "./ui-model-state-fixtures.js";
 
 class TestableGmAppShell extends GmAppShell {
     public renderForTest(): unknown {
@@ -23,12 +21,6 @@ class TestableGmAppHeader extends GmAppHeader {
 }
 
 class TestableGmDocsPanel extends GmDocsPanel {
-    public renderForTest(): unknown {
-        return this.render();
-    }
-}
-
-class TestableGmGraphToolbar extends GmGraphToolbar {
     public renderForTest(): unknown {
         return this.render();
     }
@@ -61,21 +53,8 @@ function renderShellSkipLinkForPage(page: GraphVisualizationUiState["activePage"
     }
 }
 
-function createMockModel(): GraphVisualizationUiModel {
-    return {
-        data: {
-            edges: [],
-            generatedAt: "2026-01-01T00:00:00.000Z",
-            graphs: [],
-            nodes: [],
-            projectRoot: "/tmp/test"
-        },
-        documentationCatalogs: null,
-        isServerMode: false,
-        lastFixRun: null,
-        loadedTarget: null,
-        liveReload: null,
-        mcpServerStatus: "not-started",
+function createMockModel() {
+    return createMockGraphVisualizationUiModel({
         projectConfigurationCatalog: {
             format: { entries: [] },
             gameMakerCli: {
@@ -105,20 +84,12 @@ function createMockModel(): GraphVisualizationUiModel {
             lint: { rules: [], rulesets: [], ruleset: null },
             refactor: { codemods: [] }
         },
-        startupState: null,
         title: "Test"
-    };
+    });
 }
 
-function createMockState(): GraphVisualizationUiState {
-    return {
-        ...createInitialGraphVisualizationUiState(),
-        activeDocsView: "cli",
-        activeGraphView: "visual",
-        activePage: "docs",
-        activeConfigView: "rendered",
-        labelMode: "auto"
-    };
+function createMockState() {
+    return createMockGraphVisualizationUiState({ activePage: "docs" });
 }
 
 void test("GmAppShell targets graph content in skip-link by default", () => {
@@ -144,16 +115,18 @@ void test("GmAppShell error banner has role=alert and tabindex=-1 for keyboard f
     assert.equal(shell.model !== null, true);
 });
 
-void test("GmGraphToolbar renders Docs subview tabs with shared view selector semantics", () => {
-    const toolbar = new TestableGmGraphToolbar();
-    toolbar.model = createMockModel();
-    toolbar.state = createMockState();
+void test("GmDocsPanel delegates subview tablist rendering to the page toolbar", () => {
+    const panel = new TestableGmDocsPanel();
+    panel.model = createMockModel();
+    panel.state = createMockState();
 
-    const rendered = renderTemplateValue(toolbar.renderForTest());
+    const rendered = renderTemplateValue(panel.renderForTest());
 
-    assert.match(rendered, /<div class="gm-view-selector" role="group" aria-label="Documentation view selector">/u);
-    assert.match(rendered, /id="docs-view-cli"[\s\S]*class=gm-btn--chip active/u);
-    assert.match(rendered, /id="docs-view-mcp"[\s\S]*class=gm-btn--chip/u);
+    assert.doesNotMatch(rendered, /<div class="docs-nav" role="tablist" aria-label="Documentation view selector">/u);
+    assert.doesNotMatch(rendered, /id=docs-view-cli[\s\S]*class=docs-nav-button/u);
+    assert.doesNotMatch(rendered, /id=docs-view-mcp[\s\S]*class=docs-nav-button/u);
+    assert.match(rendered, /id="cli-page"[\s\S]*role="tabpanel"[\s\S]*aria-labelledby="docs-view-cli"/u);
+    assert.match(rendered, /id="docs-mcp-page"[\s\S]*role="tabpanel"[\s\S]*aria-labelledby="docs-view-mcp"/u);
 });
 
 void test("GmDocsPanel uses a dedicated id for MCP docs subview to avoid id collisions", () => {
@@ -164,7 +137,7 @@ void test("GmDocsPanel uses a dedicated id for MCP docs subview to avoid id coll
     const rendered = renderTemplateValue(panel.renderForTest());
 
     assert.equal(Array.from(rendered.matchAll(/id="docs-mcp-page"/gu)).length, 1);
-    assert.equal(Array.from(rendered.matchAll(/id="mcp-page"/gu)).length, 0);
+    assert.equal(Array.from(rendered.matchAll(/id="auto-game-page"/gu)).length, 0);
 });
 
 void test("GmAppHeader exposes aria-current for the active top-level page only", () => {

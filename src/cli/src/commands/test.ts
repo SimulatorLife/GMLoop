@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { mkdir, readdir } from "node:fs/promises";
+import { mkdir } from "node:fs/promises";
 import path from "node:path";
 
 import { Core } from "@gmloop/core";
@@ -7,7 +7,13 @@ import { Command } from "commander";
 
 import { applyStandardCommandOptions } from "../cli-core/command-standard-options.js";
 import { createPathOption, createWriteOption } from "../cli-core/shared-command-options.js";
-import { readArtifactJson, resolveArtifactDirectory, writeArtifactJson } from "../modules/runtime/index.js";
+import {
+    readArtifactJson,
+    readValidatedArtifactJson,
+    resolveArtifactDirectory,
+    writeArtifactJson
+} from "../modules/runtime/index.js";
+import { isRecord } from "../shared/error-guards.js";
 import { discoverProjectRoot } from "../workflow/project-root.js";
 
 type TestOptions = Readonly<{
@@ -45,11 +51,72 @@ type TestCaseManifestEntry = Readonly<{
     target: string;
 }>;
 
-function printTestPayload(payload: unknown, asJson: boolean): void {
-    if (asJson) {
-        console.log(JSON.stringify(payload, null, 2));
-        return;
+const TEST_CASE_MANIFEST_VERSION = "1" as const;
+const EMPTY_TEST_CASE_MANIFEST: TestCaseManifest = Object.freeze({
+    cases: Object.freeze([]) as ReadonlyArray<TestCaseManifestEntry>,
+    version: TEST_CASE_MANIFEST_VERSION
+});
+
+/**
+ * Type guard that confirms a parsed JSON value matches the
+ * {@link TestCaseManifestEntry} contract.
+ *
+ * The guard rejects every shape that {@link sortTestCaseEntries} cannot
+ * safely consume (non-string `target`/`name`, missing keys, `null` or array
+ * entries) so the downstream sorter never observes a value that would throw
+ * on `String.prototype.localeCompare`. The `expected` field is validated
+ * loosely: it is allowed to be absent and, when present, must be a
+ * non-blank string.
+ */
+function isValidTestCaseManifestEntry(value: unknown): value is TestCaseManifestEntry {
+    if (!isRecord(value)) {
+        return false;
     }
+
+    if (!Core.isNonEmptyString(value.target)) {
+        return false;
+    }
+
+    if (!Core.isNonEmptyString(value.name)) {
+        return false;
+    }
+
+    if (value.expected !== undefined && typeof value.expected !== "string") {
+        return false;
+    }
+
+    return true;
+}
+
+/**
+ * Type guard for the full {@link TestCaseManifest} shape.
+ *
+ * The guard is intentionally stricter than the legacy `Array.isArray` check:
+ * it requires the top-level value to be a plain object, the schema version
+ * to equal `"1"` (so a future, incompatible manifest is not silently accepted
+ * under the current contract), and every entry to satisfy
+ * {@link isValidTestCaseManifestEntry}. Failures bubble up to
+ * {@link readTestCaseManifest} as `null` and the call site falls back to an
+ * empty manifest, preventing tampered or truncated files from crashing the
+ * CLI when a user later runs `test case create` or `test case update`.
+ */
+function isValidTestCaseManifest(value: unknown): value is TestCaseManifest {
+    if (!isRecord(value)) {
+        return false;
+    }
+
+    if (value.version !== TEST_CASE_MANIFEST_VERSION) {
+        return false;
+    }
+
+    if (!Array.isArray(value.cases)) {
+        return false;
+    }
+
+    return value.cases.every(isValidTestCaseManifestEntry);
+}
+
+function printTestPayload(payload: unknown): void {
     console.log(JSON.stringify(payload, null, 2));
 }
 
@@ -77,34 +144,17 @@ async function findTestFiles(projectRoot: string, pattern: string | undefined): 
     return filteredResults.sort((left, right) => left.localeCompare(right));
 }
 
+const TEST_FILE_EXCLUDED_DIRECTORY_NAMES = new Set(Core.DEFAULT_PROJECT_EXCLUDES.directoryNames);
+
 async function collectTestFilePaths(directory: string): Promise<Array<string>> {
-    const entries = await Core.safeReaddirDirent({ readDir: readdir }, directory);
-    const nestedPaths = await Promise.all(
-        entries.map(async (entry) => {
-            if (
-                entry.name === "node_modules" ||
-                entry.name === ".git" ||
-                entry.name === "dist" ||
-                entry.name === ".gmloop"
-            ) {
-                return [] as Array<string>;
-            }
-
-            const resolved = path.join(directory, entry.name);
-            if (entry.isDirectory()) {
-                return await collectTestFilePaths(resolved);
-            }
-
-            if (!entry.isFile()) {
-                return [] as Array<string>;
-            }
-
-            const lowered = entry.name.toLowerCase();
-            const isTestFile = lowered.endsWith(".test.ts") || lowered.endsWith(".test.js");
-            return isTestFile ? [resolved] : [];
-        })
-    );
-    return nestedPaths.flat();
+    const relativeFilePaths = await Core.listRelativeFilePathsRecursively(directory, {
+        shouldEnterDirectory: ({ entryName }) => !TEST_FILE_EXCLUDED_DIRECTORY_NAMES.has(entryName),
+        includeFile: ({ entryName }) => {
+            const lowered = entryName.toLowerCase();
+            return lowered.endsWith(".test.ts") || lowered.endsWith(".test.js");
+        }
+    });
+    return relativeFilePaths.map((relativeFilePath) => path.join(directory, relativeFilePath));
 }
 
 function parseNodeTestSummary(output: string): { failed: number; passed: number; skipped: number } {
@@ -149,9 +199,11 @@ function createTestCaseManifest(entries: ReadonlyArray<TestCaseManifestEntry>): 
 
 async function readTestCaseManifest(projectRoot: string): Promise<TestCaseManifest> {
     const manifestPath = getTestCaseManifestPath(projectRoot);
-    const manifest = await readArtifactJson<TestCaseManifest>(manifestPath);
-    if (!manifest || !Array.isArray(manifest.cases)) {
-        return createTestCaseManifest([]);
+    const manifest = await readValidatedArtifactJson<TestCaseManifest>(manifestPath, {
+        validate: isValidTestCaseManifest
+    });
+    if (manifest === null) {
+        return EMPTY_TEST_CASE_MANIFEST;
     }
     return createTestCaseManifest(manifest.cases);
 }
@@ -164,13 +216,167 @@ async function writeTestCaseManifest(projectRoot: string, manifest: TestCaseMani
     return manifestPath;
 }
 
+/**
+ * Canonicalize a test case entry from raw CLI arguments.
+ *
+ * The manifest contract allows the `expected` field to be absent when the
+ * caller has no expectation to record, but the CLI surfaces the flag as
+ * `string | undefined`. This helper collapses both shapes (and trims a
+ * non-empty value) into the single immutable entry shape consumed by
+ * {@link upsertTestCaseEntry} and the persisted manifest.
+ *
+ * @param parameters - The raw CLI arguments for the entry.
+ * @param parameters.target - Stable target function/script identifier.
+ * @param parameters.name - Stable test case name within the target.
+ * @param parameters.expected - Optional, free-form expected behaviour summary.
+ * @returns A frozen {@link TestCaseManifestEntry} that omits `expected` when
+ *   the supplied value is absent or whitespace-only.
+ */
+function normalizeTestCaseEntry(parameters: {
+    target: string;
+    name: string;
+    expected: string | undefined;
+}): TestCaseManifestEntry {
+    const { target, name, expected } = parameters;
+    if (typeof expected === "string" && expected.trim().length > 0) {
+        return Object.freeze({ expected: expected.trim(), name, target });
+    }
+    return Object.freeze({ name, target });
+}
+
+/**
+ * Locate the index of a manifest entry by its `(target, name)` pair.
+ *
+ * Centralizing the composite-key lookup keeps the orchestrating command
+ * handlers free of inline `Array.prototype.findIndex` calls and prevents the
+ * two callers from drifting on the equality semantics.
+ *
+ * @param manifest - The manifest to search.
+ * @param target - Target identifier to match.
+ * @param name - Case name to match.
+ * @returns The zero-based index of the matching entry, or `-1` when no entry
+ *   matches.
+ */
+function findTestCaseEntryIndex(manifest: TestCaseManifest, target: string, name: string): number {
+    return manifest.cases.findIndex((entry) => entry.target === target && entry.name === name);
+}
+
+/**
+ * Structural equality check for {@link TestCaseManifestEntry} values.
+ *
+ * Entries are flat objects of primitive values, so a JSON round-trip
+ * comparison provides a deterministic, allocation-light equality check. The
+ * comparison is sensitive to property insertion order, which is acceptable
+ * because {@link normalizeTestCaseEntry} emits fields in a single canonical
+ * order (`{ expected, name, target }` or `{ name, target }`). Exposing this
+ * helper lets the command handlers treat the change-detection step as a
+ * single delegation rather than re-encoding the serialization logic inline.
+ *
+ * @param left - First entry to compare.
+ * @param right - Second entry to compare.
+ * @returns `true` when both entries serialize to identical JSON; otherwise
+ *   `false`.
+ */
+function areTestCaseEntriesStructurallyEqual(left: TestCaseManifestEntry, right: TestCaseManifestEntry): boolean {
+    return JSON.stringify(left) === JSON.stringify(right);
+}
+
+/**
+ * Result of upserting an entry into a {@link TestCaseManifest}.
+ */
+type TestCaseUpsertResult = Readonly<{
+    manifest: TestCaseManifest;
+    entry: TestCaseManifestEntry;
+    changed: boolean;
+}>;
+
+/**
+ * Insert or replace an entry in a manifest, preserving sort order.
+ *
+ * The helper performs the array bookkeeping the command handlers used to do
+ * inline (`findIndex` to detect existence, a `splice`-style spread to mutate
+ * the entries array, and a structural equality check for change detection).
+ * Callers receive an immutable {@link TestCaseManifest} plus the entry that
+ * was ultimately stored, so the orchestrators can focus on payload assembly
+ * and write semantics rather than on primitive array manipulation.
+ *
+ * @param parameters - The manifest to update and the entry to upsert.
+ * @param parameters.manifest - The current manifest, treated as immutable.
+ * @param parameters.entry - The entry to insert or replace.
+ * @returns The resulting manifest, the stored entry, and whether the entry
+ *   was newly added (`true`) or replaced an existing entry whose shape
+ *   changed (`true`) versus left an existing identical entry untouched
+ *   (`false`).
+ */
+function upsertTestCaseEntry(parameters: {
+    manifest: TestCaseManifest;
+    entry: TestCaseManifestEntry;
+}): TestCaseUpsertResult {
+    const { manifest, entry } = parameters;
+    const existingIndex = findTestCaseEntryIndex(manifest, entry.target, entry.name);
+
+    if (existingIndex === -1) {
+        return {
+            changed: true,
+            entry,
+            manifest: createTestCaseManifest([...manifest.cases, entry])
+        };
+    }
+
+    const existing = manifest.cases[existingIndex];
+    if (existing !== undefined && areTestCaseEntriesStructurallyEqual(existing, entry)) {
+        return { changed: false, entry: existing, manifest };
+    }
+
+    const nextCases = [...manifest.cases];
+    nextCases[existingIndex] = entry;
+    return {
+        changed: true,
+        entry,
+        manifest: createTestCaseManifest(nextCases)
+    };
+}
+
+/**
+ * Result of removing an entry from a {@link TestCaseManifest}.
+ *
+ * The `manifest` field is only present when an entry was actually removed;
+ * a `found: false` result carries no manifest because no reconstruction
+ * happened. The two arms are intentionally distinct so TypeScript narrows
+ * the return value to a meaningful shape once the caller has handled the
+ * "not found" branch.
+ */
+type TestCaseRemovalResult = Readonly<{ found: false }> | Readonly<{ found: true; manifest: TestCaseManifest }>;
+
+/**
+ * Remove the entry identified by target and name from a manifest.
+ *
+ * The helper owns the index lookup, array filtering, and manifest
+ * reconstruction so command handlers can delegate collection bookkeeping as
+ * one domain operation.
+ *
+ * @param manifest - The current manifest, treated as immutable.
+ * @param target - Target identifier of the entry to remove.
+ * @param name - Case name of the entry to remove.
+ * @returns The removal outcome; the resulting manifest is only present when
+ *   `found` is `true`.
+ */
+function removeTestCaseEntry(manifest: TestCaseManifest, target: string, name: string): TestCaseRemovalResult {
+    const existingIndex = findTestCaseEntryIndex(manifest, target, name);
+    if (existingIndex === -1) {
+        return { found: false };
+    }
+
+    return {
+        found: true,
+        manifest: createTestCaseManifest(manifest.cases.filter((_entry, index) => index !== existingIndex))
+    };
+}
+
 async function runTestListAction(options: TestOptions): Promise<void> {
     const projectRoot = await resolveTestProjectRoot(options);
     const files = await findTestFiles(projectRoot, options.pattern);
-    printTestPayload(
-        { command: "test list", payload: { count: files.length, files, ok: true, projectRoot } },
-        options.json === true
-    );
+    printTestPayload({ command: "test list", payload: { count: files.length, files, ok: true, projectRoot } });
 }
 
 async function runTestRunAction(options: TestOptions): Promise<void> {
@@ -190,14 +396,11 @@ async function runTestRunAction(options: TestOptions): Promise<void> {
             stdout: ""
         };
         const outputPath = await persistTestResults(projectRoot, emptyPayload);
-        printTestPayload(
-            { command: "test run", payload: { ok: true, outputPath, projectRoot, run: emptyPayload } },
-            options.json === true
-        );
+        printTestPayload({ command: "test run", payload: { ok: true, outputPath, projectRoot, run: emptyPayload } });
         return;
     }
 
-    const subprocessArguments = ["--test", ...files];
+    const subprocessArguments = ["--disable-warning=ExperimentalWarning", "--test", ...files];
     const startedAt = new Date().toISOString();
     const result = spawnSync(process.execPath, subprocessArguments, {
         cwd: projectRoot,
@@ -224,18 +427,15 @@ async function runTestRunAction(options: TestOptions): Promise<void> {
 
     const outputPath = await persistTestResults(projectRoot, runPayload);
 
-    printTestPayload(
-        {
-            command: "test run",
-            payload: {
-                ok: runPayload.exitCode === 0,
-                outputPath,
-                projectRoot,
-                run: runPayload
-            }
-        },
-        options.json === true
-    );
+    printTestPayload({
+        command: "test run",
+        payload: {
+            ok: runPayload.exitCode === 0,
+            outputPath,
+            projectRoot,
+            run: runPayload
+        }
+    });
 }
 
 async function runTestResultsAction(options: TestOptions): Promise<void> {
@@ -243,16 +443,10 @@ async function runTestResultsAction(options: TestOptions): Promise<void> {
     const outputPath = path.join(resolveArtifactDirectory(projectRoot, "test"), "latest.json");
     const payload = await readArtifactJson<PersistedTestRun>(outputPath);
     if (!payload) {
-        printTestPayload(
-            { command: "test results", payload: { ok: false, reason: "results_not_found" } },
-            options.json === true
-        );
+        printTestPayload({ command: "test results", payload: { ok: false, reason: "results_not_found" } });
         return;
     }
-    printTestPayload(
-        { command: "test results", payload: { ok: true, outputPath, projectRoot, run: payload } },
-        options.json === true
-    );
+    printTestPayload({ command: "test results", payload: { ok: true, outputPath, projectRoot, run: payload } });
 }
 
 async function runTestCaseCreateAction(
@@ -263,30 +457,71 @@ async function runTestCaseCreateAction(
 ): Promise<void> {
     const projectRoot = await resolveTestProjectRoot(options);
     const manifest = await readTestCaseManifest(projectRoot);
-    const existingIndex = manifest.cases.findIndex((entry) => entry.target === target && entry.name === name);
-    const normalizedEntry: TestCaseManifestEntry =
-        typeof expected === "string" && expected.trim().length > 0
-            ? { expected: expected.trim(), name, target }
-            : { name, target };
-    const changed = existingIndex === -1;
-    const nextCases = changed ? [...manifest.cases, normalizedEntry] : [...manifest.cases];
-    const nextManifest = createTestCaseManifest(nextCases);
+    const entry = normalizeTestCaseEntry({ expected, name, target });
+    const { changed, manifest: nextManifest } = upsertTestCaseEntry({ entry, manifest });
+    const writeMode = options.write === true;
+    const manifestPath = writeMode ? await writeTestCaseManifest(projectRoot, nextManifest) : null;
 
-    const manifestPath = options.write === true ? await writeTestCaseManifest(projectRoot, nextManifest) : null;
-    printTestPayload(
-        {
-            command: "test case create",
+    printTestPayload({
+        command: "test case create",
+        payload: {
+            case: entry,
+            changed,
+            manifestPath,
+            mode: writeMode ? "apply" : "dry-run",
+            ok: true,
+            projectRoot
+        }
+    });
+}
+
+async function runTestCaseListAction(options: TestOptions, target: string | undefined): Promise<void> {
+    const projectRoot = await resolveTestProjectRoot(options);
+    const manifest = await readTestCaseManifest(projectRoot);
+    const cases = target === undefined ? manifest.cases : manifest.cases.filter((entry) => entry.target === target);
+
+    printTestPayload({
+        command: "test case list",
+        payload: {
+            cases,
+            count: cases.length,
+            ok: true,
+            projectRoot
+        }
+    });
+}
+
+async function runTestCaseDeleteAction(options: TestCaseMutationOptions, target: string, name: string): Promise<void> {
+    const projectRoot = await resolveTestProjectRoot(options);
+    const manifest = await readTestCaseManifest(projectRoot);
+    const writeMode = options.write === true;
+    const removal = removeTestCaseEntry(manifest, target, name);
+
+    if (!removal.found) {
+        printTestPayload({
+            command: "test case delete",
             payload: {
-                case: normalizedEntry,
-                changed,
-                manifestPath,
-                mode: options.write === true ? "apply" : "dry-run",
-                ok: true,
-                projectRoot
+                case: { name, target },
+                mode: writeMode ? "apply" : "dry-run",
+                ok: false,
+                reason: "test_case_not_found"
             }
-        },
-        options.json === true
-    );
+        });
+        return;
+    }
+
+    const manifestPath = writeMode ? await writeTestCaseManifest(projectRoot, removal.manifest) : null;
+
+    printTestPayload({
+        command: "test case delete",
+        payload: {
+            case: { name, target },
+            manifestPath,
+            mode: writeMode ? "apply" : "dry-run",
+            ok: true,
+            projectRoot
+        }
+    });
 }
 
 async function runTestCaseUpdateAction(
@@ -297,48 +532,36 @@ async function runTestCaseUpdateAction(
 ): Promise<void> {
     const projectRoot = await resolveTestProjectRoot(options);
     const manifest = await readTestCaseManifest(projectRoot);
-    const existingIndex = manifest.cases.findIndex((entry) => entry.target === target && entry.name === name);
-    if (existingIndex === -1) {
-        printTestPayload(
-            {
-                command: "test case update",
-                payload: {
-                    case: { name, target },
-                    mode: options.write === true ? "apply" : "dry-run",
-                    ok: false,
-                    reason: "test_case_not_found"
-                }
-            },
-            options.json === true
-        );
+    const writeMode = options.write === true;
+
+    if (findTestCaseEntryIndex(manifest, target, name) === -1) {
+        printTestPayload({
+            command: "test case update",
+            payload: {
+                case: { name, target },
+                mode: writeMode ? "apply" : "dry-run",
+                ok: false,
+                reason: "test_case_not_found"
+            }
+        });
         return;
     }
 
-    const existing = manifest.cases[existingIndex];
-    const nextEntry: TestCaseManifestEntry =
-        typeof expected === "string" && expected.trim().length > 0
-            ? { expected: expected.trim(), name, target }
-            : { name, target };
-    const changed = JSON.stringify(existing) !== JSON.stringify(nextEntry);
-    const nextCases = [...manifest.cases];
-    nextCases[existingIndex] = nextEntry;
-    const nextManifest = createTestCaseManifest(nextCases);
-    const manifestPath =
-        options.write === true && changed ? await writeTestCaseManifest(projectRoot, nextManifest) : null;
-    printTestPayload(
-        {
-            command: "test case update",
-            payload: {
-                case: nextEntry,
-                changed,
-                manifestPath,
-                mode: options.write === true ? "apply" : "dry-run",
-                ok: true,
-                projectRoot
-            }
-        },
-        options.json === true
-    );
+    const entry = normalizeTestCaseEntry({ expected, name, target });
+    const { changed, manifest: nextManifest } = upsertTestCaseEntry({ entry, manifest });
+    const manifestPath = writeMode && changed ? await writeTestCaseManifest(projectRoot, nextManifest) : null;
+
+    printTestPayload({
+        command: "test case update",
+        payload: {
+            case: entry,
+            changed,
+            manifestPath,
+            mode: writeMode ? "apply" : "dry-run",
+            ok: true,
+            projectRoot
+        }
+    });
 }
 
 export function createTestCommand(): Command {
@@ -370,6 +593,15 @@ export function createTestCommand(): Command {
     });
 
     const testCase = applyStandardCommandOptions(new Command("case")).description("Manage test cases.");
+    const testCaseList = addTestSharedOptions(
+        applyStandardCommandOptions(new Command("list"))
+            .description("List test cases.")
+            .option("--target <value>", "Only include cases for this target function/script identifier.")
+    );
+    testCaseList.action(async function testCaseListAction() {
+        const options = this.opts<TestOptions & Readonly<{ target?: string }>>();
+        await runTestCaseListAction(options, options.target);
+    });
     const testCaseCreate = addTestSharedOptions(
         applyStandardCommandOptions(new Command("create"))
             .description("Create a test case.")
@@ -394,8 +626,21 @@ export function createTestCommand(): Command {
         const options = this.opts<TestCaseMutationOptions>();
         await runTestCaseUpdateAction(options, target, name, options.expected);
     });
+    const testCaseDelete = addTestSharedOptions(
+        applyStandardCommandOptions(new Command("delete"))
+            .description("Delete a test case.")
+            .argument("<target>", "Target function/script identifier under test.")
+            .argument("<name>", "Stable test case name.")
+            .addOption(createWriteOption())
+    );
+    testCaseDelete.action(async function testCaseDeleteAction(target: string, name: string) {
+        const options = this.opts<TestCaseMutationOptions>();
+        await runTestCaseDeleteAction(options, target, name);
+    });
+    testCase.addCommand(testCaseList);
     testCase.addCommand(testCaseCreate);
     testCase.addCommand(testCaseUpdate);
+    testCase.addCommand(testCaseDelete);
 
     command.addCommand(run);
     command.addCommand(list);
@@ -403,3 +648,18 @@ export function createTestCommand(): Command {
     command.addCommand(testCase);
     return command;
 }
+
+/**
+ * Test-only entry point exposing the manifest validators so unit tests can
+ * exercise the schema guard directly. Kept under a frozen `__private__` bag
+ * to mirror the convention used elsewhere in the CLI (e.g. `runtime.ts`) and
+ * discourage accidental consumption by runtime callers.
+ */
+export const __testCommandTestHelpers__ = Object.freeze({
+    areTestCaseEntriesStructurallyEqual,
+    findTestCaseEntryIndex,
+    isValidTestCaseManifest,
+    isValidTestCaseManifestEntry,
+    normalizeTestCaseEntry,
+    upsertTestCaseEntry
+});

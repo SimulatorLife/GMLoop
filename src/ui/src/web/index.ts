@@ -1,5 +1,6 @@
 import { bootstrapGraphVisualizationLitApp } from "../app/bootstrap.js";
 import type { GraphVisualizationFixRunOptions } from "../app/contracts.js";
+import { getUiNetworkErrorMessage } from "../app/error-message.js";
 import {
     LIVE_RELOAD_RUNTIME_TAB_TARGET,
     type LiveReloadRuntimeTab,
@@ -10,8 +11,9 @@ import { resetProjectScopedGraphVisualizationUiStateInCurrentUrl } from "../app/
 import type {
     GraphVisualizationData,
     GraphVisualizationLiveReloadModel,
+    GraphVisualizationProjectWorkflow,
     GraphVisualizationRenderOptions
-} from "../graph/types.js";
+} from "../graph/index.js";
 import { registerGraphVisualizationCustomElements } from "./register-components.js";
 
 type FixApiResponse = Readonly<{
@@ -24,6 +26,8 @@ type FixProgressApiResponse = Readonly<{
     isRunning?: boolean;
     logLines?: ReadonlyArray<string>;
     ok?: boolean;
+    status?: string;
+    workflow?: GraphVisualizationProjectWorkflow;
 }>;
 
 type MutationApiResponse = Readonly<{
@@ -31,6 +35,12 @@ type MutationApiResponse = Readonly<{
     error?: string;
     ok?: boolean;
     projectChanged?: boolean;
+}>;
+
+type CancelFixApiResponse = Readonly<{
+    cancelled?: boolean;
+    error?: string;
+    ok?: boolean;
 }>;
 
 type LiveReloadStartApiResponse = Readonly<{
@@ -61,6 +71,10 @@ function reloadWhenChanged(result: MutationApiResponse): void {
     if (result.changed === true) {
         globalThis.location.reload();
     }
+}
+
+function createProjectWorkflowRequestBody(workflow: GraphVisualizationProjectWorkflow): string {
+    return JSON.stringify({ workflow });
 }
 
 function synchronizeLiveReloadBootstrapState(liveReload: GraphVisualizationLiveReloadModel | null): void {
@@ -156,11 +170,24 @@ async function startLiveReloadFromServer(
         ? globalThis.open.bind(globalThis)
         : null
 ): Promise<GraphVisualizationLiveReloadModel> {
-    const response = await fetchLiveReload("/api/live-reload/start", {
-        body: LIVE_RELOAD_START_REQUEST_BODY,
-        headers: { "Content-Type": "application/json" },
-        method: "POST"
-    });
+    let response: Response;
+    try {
+        response = await fetchLiveReload("/api/live-reload/start", {
+            body: LIVE_RELOAD_START_REQUEST_BODY,
+            headers: { "Content-Type": "application/json" },
+            method: "POST"
+        });
+    } catch (error) {
+        throw new Error(
+            getUiNetworkErrorMessage(
+                error,
+                "the GMLoop graph server (POST /api/live-reload/start)",
+                "Live reload startup failed."
+            ),
+            { cause: error }
+        );
+    }
+
     const result = await readJsonResponse<LiveReloadStartApiResponse>(response);
     if (!response.ok || result.ok !== true) {
         throw new Error(result.error ?? "Live reload startup failed.");
@@ -273,7 +300,7 @@ export function mountGraphVisualizationWebApp(rootElement: HTMLElement): void {
                 }
                 reloadWhenChanged(result);
             },
-            onRunFix: async (options?: GraphVisualizationFixRunOptions) => {
+            onRunFix: async (options: GraphVisualizationFixRunOptions) => {
                 const pollFixProgress = async (): Promise<void> => {
                     const progressResponse = await fetch("/api/fix/progress", {
                         cache: "no-store",
@@ -283,7 +310,7 @@ export function mountGraphVisualizationWebApp(rootElement: HTMLElement): void {
                         return;
                     }
                     const progressResult = await readJsonResponse<FixProgressApiResponse>(progressResponse);
-                    if (progressResult.ok !== true || !options?.onProgress) {
+                    if (progressResult.ok !== true) {
                         return;
                     }
                     options.onProgress({ logLines: progressResult.logLines ?? [] });
@@ -294,7 +321,11 @@ export function mountGraphVisualizationWebApp(rootElement: HTMLElement): void {
                 }, 1000);
 
                 try {
-                    const response = await fetch("/api/fix", { method: "POST" });
+                    const response = await fetch("/api/fix", {
+                        body: createProjectWorkflowRequestBody(options.workflow),
+                        headers: { "Content-Type": "application/json" },
+                        method: "POST"
+                    });
                     const result = await readJsonResponse<FixApiResponse>(response);
                     if (!response.ok || result.ok !== true) {
                         throw new Error(result.error ?? "Fix workflow failed.");
@@ -309,8 +340,39 @@ export function mountGraphVisualizationWebApp(rootElement: HTMLElement): void {
                     await pollFixProgress();
                 }
             },
+            onCancelFix: async () => {
+                const response = await fetch("/api/fix/cancel", { method: "POST" });
+                const result = await readJsonResponse<CancelFixApiResponse>(response);
+                if (!response.ok || result.ok !== true) {
+                    throw new Error(result.error ?? "Fix workflow cancellation failed.");
+                }
+            },
             onStartLiveReload: () => startLiveReloadFromServer(),
-            onStopLiveReload: () => stopLiveReloadFromServer()
+            onStopLiveReload: () => stopLiveReloadFromServer(),
+            onInitializeAutoGameAgentPack: async ({ agentTargets, includeGitIgnore, includeVSCode }) => {
+                const response = await fetch("/api/auto-game/agent-pack/init", {
+                    body: JSON.stringify({ agentTargets, includeGitIgnore, includeVSCode }),
+                    headers: { "Content-Type": "application/json" },
+                    method: "POST"
+                });
+                const result = await readJsonResponse<MutationApiResponse>(response);
+                if (!response.ok || result.ok !== true) {
+                    throw new Error(result.error ?? "Auto-Game agent-pack initialization failed.");
+                }
+                reloadWhenChanged(result);
+            },
+            onSetAutoGameSkillEnabled: async (name, enabled) => {
+                const response = await fetch("/api/auto-game/skills/toggle", {
+                    body: JSON.stringify({ enabled, name }),
+                    headers: { "Content-Type": "application/json" },
+                    method: "POST"
+                });
+                const result = await readJsonResponse<MutationApiResponse>(response);
+                if (!response.ok || result.ok !== true) {
+                    throw new Error(result.error ?? "Auto-Game skill update failed.");
+                }
+                reloadWhenChanged(result);
+            }
         },
         data: payload.data,
         options: payload.options,
@@ -322,6 +384,7 @@ export const __test__ = Object.freeze({
     LIVE_RELOAD_RUNTIME_URL_MISSING_ERROR,
     LIVE_RELOAD_RUNTIME_TAB_TARGET,
     LIVE_RELOAD_START_REQUEST_BODY,
+    createProjectWorkflowRequestBody,
     openLiveReloadRuntimeTab,
     startLiveReloadFromServer,
     stopLiveReloadFromServer,

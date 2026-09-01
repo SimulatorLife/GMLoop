@@ -41,3 +41,19 @@ export const DEFAULT_TRANSIENT_EMPTY_FILE_READ_RETRY_COUNT = 4;
  * Delay (milliseconds) between transient empty-file read attempts.
  */
 export const DEFAULT_TRANSIENT_EMPTY_FILE_READ_RETRY_DELAY_MS = 25;
+
+/**
+ * Watch mode intentionally tracks only GameMaker source files and room metadata.
+ *
+ * `.gml` drives transpilation/hot reload, while `.yy` room metadata keeps room
+ * macro hydration current. This is an internal command default rather than a
+ * user-facing extension knob; GameMaker does not support arbitrary source
+ * suffixes, and accepting them would create misleading watch behavior.
+ */
+export const WATCHED_GAME_MAKER_EXTENSIONS = [".gml", ".yy"] as const;
+
+/** File extension for GameMaker Language sources consumed by watch mode. */
+export const WATCHED_GML_EXTENSION = ".gml";
+
+/** File extension for GameMaker resource metadata consumed by watch mode. */
+export const WATCHED_YY_EXTENSION = ".yy";

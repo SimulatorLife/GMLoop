@@ -42,6 +42,8 @@ void test("parse --help output documents command examples and shared options", a
     assert.match(stdout, /--write/);
     assert.match(stdout, /--list/);
     assert.match(stdout, /--verbose/);
+    assert.match(stdout, /sibling \*\.ast\.json/);
+    assert.match(stdout, /Progress is streamed to stderr/);
 });
 
 void test("parse --list prints command settings and exits without parsing", async () => {
@@ -70,7 +72,7 @@ void test("parse prints a single-file AST to stdout in dry-run mode", async () =
         });
 
         assert.equal(result.exitCode, 0);
-        assert.equal(result.stderr, "");
+        assert.match(result.stderr, /\[parse\] Parsing GML files\.\.\. \(1 processed\)/);
         const parsedOutput = JSON.parse(result.stdout) as { type?: string; body?: Array<{ type?: string }> };
         assert.equal(parsedOutput.type, "Program");
         assert.equal(Array.isArray(parsedOutput.body), true);
@@ -91,7 +93,7 @@ void test("parse prints directory AST payloads to stdout in dry-run mode", async
         });
 
         assert.equal(result.exitCode, 0);
-        assert.equal(result.stderr, "");
+        assert.match(result.stderr, /\[parse\] Parsing GML files\.\.\. \(1 processed\)/);
         const parsedOutput = JSON.parse(result.stdout) as {
             files?: Array<{ path?: string; ast?: { type?: string } }>;
         };
@@ -119,7 +121,7 @@ void test("parse --write writes AST JSON artifacts for directory targets", async
         });
 
         assert.equal(result.exitCode, 0);
-        assert.equal(result.stderr, "");
+        assert.match(result.stderr, /\[parse\] Parsing GML files\.\.\. \(1 processed\)/);
         assert.match(result.stdout, /Wrote first\.gml\.ast\.json/);
         assert.match(result.stdout, /Wrote nested\/second\.gml\.ast\.json/);
         assert.match(result.stdout, /Parsed and wrote 2 AST JSON files\./);
@@ -147,7 +149,50 @@ void test("parse accepts a .yyp target path and parses project .gml files", asyn
         });
 
         assert.equal(result.exitCode, 0);
-        assert.equal(result.stderr, "");
+        assert.match(result.stderr, /\[parse\] Parsing GML files\.\.\. \(1 processed\)/);
         await access(path.join(temporaryDirectory, "scripts", "demo", "demo.gml.ast.json"));
+    });
+});
+
+void test("parse reports actionable guidance when the target path does not exist", async () => {
+    await withTemporaryDirectory(async (temporaryDirectory) => {
+        const missingPath = path.join(temporaryDirectory, "missing.gml");
+
+        const result = await runCliTestCommand({
+            argv: ["parse", "--path", missingPath]
+        });
+
+        assert.notEqual(result.exitCode, 0);
+        assert.match(result.stderr, /Unable to access .*missing\.gml/);
+        assert.match(result.stderr, /Verify the path exists relative to the current working directory/);
+        assert.match(result.stderr, /Run "pnpm run cli -- --help"/);
+    });
+});
+
+void test("parse skips project-wide excluded directories when scanning a tree", async () => {
+    await withTemporaryDirectory(async (temporaryDirectory) => {
+        await writeFile(path.join(temporaryDirectory, "script.gml"), "var root = 1;\n", "utf8");
+        await mkdir(path.join(temporaryDirectory, "node_modules", "vendor"), { recursive: true });
+        await writeFile(
+            path.join(temporaryDirectory, "node_modules", "vendor", "vendor.gml"),
+            "var vendored = 1;\n",
+            "utf8"
+        );
+        await mkdir(path.join(temporaryDirectory, ".git", "hooks"), { recursive: true });
+        await writeFile(path.join(temporaryDirectory, ".git", "hooks", "git-hook.gml"), "var hook = 1;\n", "utf8");
+        await mkdir(path.join(temporaryDirectory, "scripts"));
+        await writeFile(path.join(temporaryDirectory, "scripts", "real.gml"), "var real = 1;\n", "utf8");
+
+        const writeResult = await runCliTestCommand({
+            argv: ["parse", "--path", ".", "--write"],
+            cwd: temporaryDirectory
+        });
+
+        assert.equal(writeResult.exitCode, 0);
+        assert.match(writeResult.stdout, /Wrote script\.gml\.ast\.json/);
+        assert.match(writeResult.stdout, /Wrote scripts[\\/]real\.gml\.ast\.json/);
+        assert.match(writeResult.stdout, /Parsed and wrote 2 AST JSON files\./);
+        await assert.rejects(access(path.join(temporaryDirectory, "node_modules", "vendor", "vendor.gml.ast.json")));
+        await assert.rejects(access(path.join(temporaryDirectory, ".git", "hooks", "git-hook.gml.ast.json")));
     });
 });

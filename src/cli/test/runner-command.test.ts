@@ -8,11 +8,7 @@ void test("runner command catalog includes lifecycle, logs, and room leaves", as
     const { getCliCommandCatalog } = await import("../src/cli.js");
     const catalog = getCliCommandCatalog();
     const leaves = new Set(catalog.map((entry) => entry.displayName));
-    assert.ok(leaves.has("runner start"));
-    assert.ok(leaves.has("runner stop"));
-    assert.ok(leaves.has("runner restart"));
-    assert.ok(leaves.has("runner pause"));
-    assert.ok(leaves.has("runner resume"));
+    assert.ok(leaves.has("runner lifecycle"));
     assert.ok(leaves.has("runner status"));
     assert.ok(leaves.has("runner logs"));
     assert.ok(leaves.has("runner clear-logs"));
@@ -34,7 +30,7 @@ void test("runner logs exposes expected filtering options", async () => {
 void test("runner start fails when no command source is configured", async () => {
     await withTempProject("runner-no-command", async (projectRoot) => {
         const start = await runCliTestCommand({
-            argv: ["runner", "start", "--project", projectRoot, "--json"],
+            argv: ["runner", "lifecycle", "start", "--project", projectRoot, "--json"],
             env: {
                 ...process.env,
                 GMLOOP_RUNNER_COMMAND: undefined,
@@ -50,7 +46,7 @@ void test("runner start fails when no command source is configured", async () =>
 void test("runner start/stop uses explicit runtime command backend", async () => {
     await withTempProject("runner-start-stop", async (projectRoot) => {
         const start = await runCliTestCommand({
-            argv: ["runner", "start", "--project", projectRoot, "--json"],
+            argv: ["runner", "lifecycle", "start", "--project", projectRoot, "--json"],
             env: {
                 ...process.env,
                 GMLOOP_RUNNER_COMMAND: "node",
@@ -72,7 +68,7 @@ void test("runner start/stop uses explicit runtime command backend", async () =>
         assert.equal(statusPayload.payload.state, "running");
 
         const stop = await runCliTestCommand({
-            argv: ["runner", "stop", "--project", projectRoot, "--json"]
+            argv: ["runner", "lifecycle", "stop", "--project", projectRoot, "--json"]
         });
         assert.equal(stop.exitCode, 0);
         const stopPayload = JSON.parse(stop.stdout) as { command: string; payload: { stopped: boolean } };
@@ -119,7 +115,7 @@ void test("runner logs and clear-logs return structured payloads", async () => {
 void test("runner pause/resume and room set/current update persisted runner state", async () => {
     await withTempProject("runner-room", async (projectRoot) => {
         const pause = await runCliTestCommand({
-            argv: ["runner", "pause", "--project", projectRoot, "--json"]
+            argv: ["runner", "lifecycle", "pause", "--project", projectRoot, "--json"]
         });
         assert.equal(pause.exitCode, 0);
 
@@ -140,7 +136,7 @@ void test("runner pause/resume and room set/current update persisted runner stat
         assert.equal(roomCurrentPayload.payload.room, "rm_debug");
 
         const resume = await runCliTestCommand({
-            argv: ["runner", "resume", "--project", projectRoot, "--json"]
+            argv: ["runner", "lifecycle", "resume", "--project", projectRoot, "--json"]
         });
         assert.equal(resume.exitCode, 0);
 

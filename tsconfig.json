@@ -8,11 +8,14 @@
     { "path": "./src/semantic" },
     { "path": "./src/transpiler" },
     { "path": "./src/lint" },
+    { "path": "./src/lsp" },
     { "path": "./src/format" },
     { "path": "./src/cli" },
     { "path": "./src/runtime-wrapper" },
     { "path": "./src/refactor" },
     { "path": "./src/mcp" },
+    { "path": "./src/vscode" },
+    { "path": "./src/syntax-highlight" },
     { "path": "./test" }
   ]
 }

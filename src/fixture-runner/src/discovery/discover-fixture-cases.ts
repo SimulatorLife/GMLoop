@@ -37,7 +37,7 @@ function deriveDefaultAssertion(config: FixtureProjectConfig, fileNames: Readonl
         return PROJECT_TREE_ASSERTION;
     }
 
-    if (fileNames.has(EXPECTED_FILE_NAME)) {
+    if (fileNames.has(EXPECTED_FILE_NAME) || config.fixture.expectedTextFile !== undefined) {
         return "transform";
     }
 
@@ -85,23 +85,37 @@ function validateFixtureEntries(
 }
 
 function validateTextFixtureCaseLayout(
+    config: FixtureProjectConfig,
     assertion: FixtureAssertion,
     fileNames: ReadonlySet<string>,
     directoryNames: ReadonlySet<string>
 ): Array<string> {
     const allowedFiles = new Set([GMLOOP_CONFIG_FILE_NAME, INPUT_FILE_NAME]);
     const additionalErrors: Array<string> = [];
+    const expectedTextFile = config.fixture.expectedTextFile;
 
     if (assertion === "transform" || assertion === "parse-error") {
         allowedFiles.add(EXPECTED_FILE_NAME);
     }
 
-    if (assertion === "transform" && !fileNames.has(EXPECTED_FILE_NAME)) {
+    if (expectedTextFile !== undefined) {
+        allowedFiles.add(expectedTextFile);
+    }
+
+    if (assertion === "transform" && !fileNames.has(EXPECTED_FILE_NAME) && expectedTextFile === undefined) {
         additionalErrors.push(`missing ${EXPECTED_FILE_NAME}`);
     }
 
     if (assertion === "idempotent" && fileNames.has(EXPECTED_FILE_NAME)) {
         additionalErrors.push(`${EXPECTED_FILE_NAME} is not allowed for ${assertion} fixtures`);
+    }
+
+    if (assertion !== "transform" && expectedTextFile !== undefined) {
+        additionalErrors.push(`expectedTextFile is only allowed for transform fixtures`);
+    }
+
+    if (expectedTextFile !== undefined && !fileNames.has(expectedTextFile)) {
+        additionalErrors.push(`missing ${expectedTextFile}`);
     }
 
     if (assertion === "project-tree") {
@@ -137,6 +151,7 @@ function isSupportedFixtureKind(kind: string): kind is FixtureCase["kind"] {
 }
 
 function collectFixtureCaseValidationErrors(
+    config: FixtureProjectConfig,
     kind: FixtureProjectConfig["fixture"]["kind"],
     assertion: FixtureAssertion,
     fileNames: ReadonlySet<string>,
@@ -161,10 +176,27 @@ function collectFixtureCaseValidationErrors(
         });
     }
 
-    return validateTextFixtureCaseLayout(assertion, fileNames, directoryNames);
+    return validateTextFixtureCaseLayout(config, assertion, fileNames, directoryNames);
+}
+
+function deriveTextFixtureExpectedFilePath(
+    config: FixtureProjectConfig,
+    fixturePath: string,
+    fileNames: ReadonlySet<string>
+): string | null {
+    if (config.fixture.expectedTextFile) {
+        return path.join(fixturePath, config.fixture.expectedTextFile);
+    }
+
+    if (fileNames.has(EXPECTED_FILE_NAME)) {
+        return path.join(fixturePath, EXPECTED_FILE_NAME);
+    }
+
+    return null;
 }
 
 function deriveFixtureCasePaths(
+    config: FixtureProjectConfig,
     fixturePath: string,
     kind: FixtureCase["kind"],
     fileNames: ReadonlySet<string>
@@ -189,7 +221,7 @@ function deriveFixtureCasePaths(
 
     return {
         inputFilePath: path.join(fixturePath, INPUT_FILE_NAME),
-        expectedFilePath: fileNames.has(EXPECTED_FILE_NAME) ? path.join(fixturePath, EXPECTED_FILE_NAME) : null,
+        expectedFilePath: deriveTextFixtureExpectedFilePath(config, fixturePath, fileNames),
         projectDirectoryPath: null,
         expectedDirectoryPath: null
     };
@@ -204,6 +236,7 @@ async function createFixtureCase(rootPath: string, fixturePath: string): Promise
     const assertion = deriveDefaultAssertion(config, fileNames);
     const comparison = deriveDefaultComparison(config);
     const validationErrors = collectFixtureCaseValidationErrors(
+        config,
         config.fixture.kind,
         assertion,
         fileNames,
@@ -214,7 +247,7 @@ async function createFixtureCase(rootPath: string, fixturePath: string): Promise
         throw new Error(`${normalizeCaseId(rootPath, fixturePath)}: ${validationErrors.join(", ")}`);
     }
 
-    const casePaths = deriveFixtureCasePaths(fixturePath, config.fixture.kind, fileNames);
+    const casePaths = deriveFixtureCasePaths(config, fixturePath, config.fixture.kind, fileNames);
 
     return Object.freeze({
         caseId: normalizeCaseId(rootPath, fixturePath),

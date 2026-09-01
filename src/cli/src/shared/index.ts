@@ -5,7 +5,15 @@ export * from "./ensure-dir.js";
 export * from "./error-guards.js";
 export { writeFileArtifact, writeJsonArtifact } from "./fs-artifacts.js";
 export * from "./package-resolution.js";
+export { pathExists, pathExistsSync } from "./path-exists.js";
 export * from "./repo-root.js";
-export * as Timing from "./timing/index.js";
-export * from "./timing/index.js";
+export {
+    createThrottledCounterLogger,
+    type ThrottledCounterLogger,
+    type ThrottledCounterLoggerClock,
+    type ThrottledCounterLoggerOptions,
+    type ThrottledCounterLoggerSink
+} from "./throttled-counter-logger.js";
+export * as Timing from "./timing/verbose-timing.js";
+export * from "./timing/verbose-timing.js";
 export * from "./workspace-paths.js";

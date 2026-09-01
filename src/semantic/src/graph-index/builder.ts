@@ -4,9 +4,26 @@ import path from "node:path";
 import { performance } from "node:perf_hooks";
 
 import { Core } from "@gmloop/core";
+import { Parser } from "@gmloop/parser";
 
-import { isProjectManifestPath } from "../project-index/constants.js";
-import { buildProjectIndex } from "../project-index/index.js";
+import type { ProjectIndexBuildOptions } from "../project-index/build-options.js";
+import { isProjectManifestPath, PROJECT_INDEX_SLL_PREDICTION_MAX_SOURCE_LENGTH } from "../project-index/constants.js";
+import type { ProjectIndexCoordinatorInstance } from "../project-index/coordinator.js";
+import {
+    buildProjectIndex,
+    buildSemanticFileManifest,
+    createProjectIndexCoordinator,
+    openSemanticIndexStore,
+    publishSemanticTwoTierSnapshot,
+    reconcileSemanticManifests,
+    type SemanticIndexLifecycle,
+    type SemanticIndexPublisher,
+    type SemanticIndexStateReader
+} from "../project-index/index.js";
+import type { MetricsSnapshot } from "../project-index/metrics.js";
+import type { SemanticFileManifest, SemanticFileManifestCacheStats } from "../project-index/semantic-manifest.js";
+import { createSemanticSnapshotFromProjectIndex } from "../project-index/semantic-snapshot-codec.js";
+import { getGmlSymbolKindForIdentifierCollection } from "../symbols/taxonomy.js";
 import { resolveGraphIndexConfig } from "./config.js";
 import {
     GRAPH_INDEX_SCHEMA_VERSION,
@@ -16,16 +33,19 @@ import {
 } from "./database.js";
 import {
     cosineSimilarity,
-    createGraphEmbeddingProvider,
     deserializeEmbeddingVector,
     ensureGraphEmbeddingModelAssets,
+    LocalTokenHashEmbeddingProvider,
     serializeEmbeddingVector
 } from "./embeddings.js";
 import {
     getGraphDatabaseRuntimeInfo,
     type GraphDatabase,
     inspectGraphDatabaseIntegrity,
-    optimizeGraphDatabase
+    isSqliteMissingTableError,
+    optimizeGraphDatabase,
+    readGraphDatabaseBloatPercent,
+    vacuumGraphDatabase
 } from "./sqlite-adapter.js";
 import {
     createGraphAliases,
@@ -44,6 +64,7 @@ import type {
     GraphEmbeddingsConfig,
     GraphIndexBuildOptions,
     GraphIndexBuildResult,
+    GraphIndexBuildSummary,
     GraphIndexHandle,
     GraphIndexScope,
     GraphNeighborRecord,
@@ -107,9 +128,26 @@ type ProjectIndexSnapshot = {
         }
     >;
     scopes?: Record<string, ProjectIndexScopeRecord>;
+    metrics?: MetricsSnapshot;
 };
 
+type ProjectIndexBuildSnapshot = Readonly<{
+    manifest: SemanticFileManifest;
+    manifestCacheStats: SemanticFileManifestCacheStats;
+    projectIndex: ProjectIndexSnapshot | null;
+    /**
+     * Whether `projectIndex` was parsed/analyzed in this call, as opposed to a
+     * stored projection reused as-is. A reused projection is the same object
+     * that was persisted the last time it *was* freshly built, so it still
+     * carries that earlier build's own `.metrics` (including its
+     * `gmlFileTimings`) — reading those back on a later, unrelated reuse would
+     * misreport stale work as having just happened.
+     */
+    wasFreshlyBuilt: boolean;
+}>;
+
 type ProjectionContext = {
+    callableNodesByFilePath: Map<string, Array<GraphNodeRecord>>;
     edgeRecords: Array<GraphEdgeRecord>;
     fileRecords: Array<{
         contentHash: string;
@@ -118,12 +156,15 @@ type ProjectionContext = {
         relativePath: string;
     }>;
     graphId: GraphIndexScope;
+    nodeById: Map<string, GraphNodeRecord>;
     nodeIdsByName: Map<string, Set<string>>;
     nodeIdsByScipSymbol: Map<string, string>;
     nodeIdsByScopeId: Map<string, string>;
+    projectNodeId: string | null;
     nodeRecords: Array<GraphNodeRecord>;
     projectIndex: ProjectIndexSnapshot;
     resourcePathByGmlFile: Map<string, string>;
+    scriptNodeIdByResourcePath: Map<string, string>;
     rootPath: string;
 };
 
@@ -148,6 +189,7 @@ const GRAPH_RESOURCE_NODE_KINDS = new Set<GraphNodeKind>([
     "data_file",
     "extension",
     "font",
+    "folder",
     "note",
     "object",
     "particle_system",
@@ -192,7 +234,17 @@ function readFirstDeclaration(entry: ProjectIndexIdentifierEntry): Record<string
     return declarations.length > 0 && Core.isObjectLike(declarations[0]) ? declarations[0] : null;
 }
 
-function resolveScipSymbol(kind: GraphNodeKind, name: string, entry: ProjectIndexIdentifierEntry): string {
+/**
+ * Build the SCIP-shaped symbol key for a single identifier entry.
+ *
+ * Returns `null` for resource-style node kinds (objects, rooms, sounds,
+ * texture groups, etc.) because they are addressed by their resource
+ * path rather than a SCIP symbol. The return type is therefore
+ * `string | null` so callers cannot mistake a missing symbol for an
+ * empty string and so the absence cannot flow into string-typed
+ * consumers (such as `createGraphNodeId`) as `undefined`.
+ */
+function resolveScipSymbol(kind: GraphNodeKind, name: string, entry: ProjectIndexIdentifierEntry): string | null {
     const identifierId = getString(entry.identifierId);
     if (identifierId?.startsWith("gml/")) {
         return identifierId;
@@ -226,6 +278,9 @@ function resolveScipSymbol(kind: GraphNodeKind, name: string, entry: ProjectInde
         case "struct": {
             return `gml/struct/${identifierId ?? entry.key ?? entry.scopeId ?? name}`;
         }
+        case "script": {
+            return `gml/script/${name}`;
+        }
         case "file": {
             return `gml/file/${entry.filePath ?? entry.key ?? name}`;
         }
@@ -233,6 +288,7 @@ function resolveScipSymbol(kind: GraphNodeKind, name: string, entry: ProjectInde
         case "data_file":
         case "extension":
         case "font":
+        case "folder":
         case "note":
         case "object":
         case "object_event":
@@ -241,13 +297,20 @@ function resolveScipSymbol(kind: GraphNodeKind, name: string, entry: ProjectInde
         case "project":
         case "room":
         case "room_layer":
-        case "script":
+        case "room_instance":
         case "sequence":
         case "shader":
         case "sound":
         case "sprite":
+        case "texture_group":
         case "tileset":
-        case "timeline":
+        case "timeline": {
+            return null;
+        }
+        default: {
+            const _exhaustive: never = kind;
+            return _exhaustive;
+        }
     }
 }
 
@@ -276,8 +339,8 @@ function lookupUniqueNodeByNameAndKind(context: ProjectionContext, name: string,
     }
 
     const matchingNodes = [...candidateIds]
-        .map((nodeId) => context.nodeRecords.find((node) => node.id === nodeId && node.kind === kind))
-        .filter((node): node is GraphNodeRecord => node !== undefined);
+        .map((nodeId) => context.nodeById.get(nodeId))
+        .filter((node): node is GraphNodeRecord => node?.kind === kind);
 
     if (matchingNodes.length === 1) {
         return matchingNodes[0].id;
@@ -312,9 +375,7 @@ function hasNodeNameAndKind(context: ProjectionContext, name: string, kind: Grap
         return false;
     }
 
-    return [...candidateIds].some((nodeId) =>
-        context.nodeRecords.some((node) => node.id === nodeId && node.kind === kind)
-    );
+    return [...candidateIds].some((nodeId) => context.nodeById.get(nodeId)?.kind === kind);
 }
 
 function hasFunctionOrScriptNodeByName(context: ProjectionContext, name: string): boolean {
@@ -330,26 +391,25 @@ function findEnclosingCallableNodeId(
         return null;
     }
 
-    const candidates = context.nodeRecords.filter(
-        (node) =>
-            node.filePath === filePath &&
-            (node.kind === "function" || node.kind === "script" || node.kind === "struct") &&
-            node.lineStart !== null &&
-            node.lineEnd !== null &&
-            locationLine >= node.lineStart &&
-            locationLine <= node.lineEnd
-    );
-    if (candidates.length === 0) {
-        return null;
+    const candidates = context.callableNodesByFilePath.get(filePath) ?? [];
+    let bestCandidate: GraphNodeRecord | null = null;
+    let bestSpan = Number.POSITIVE_INFINITY;
+    for (const node of candidates) {
+        if (
+            node.lineStart === null ||
+            node.lineEnd === null ||
+            locationLine < node.lineStart ||
+            locationLine > node.lineEnd
+        ) {
+            continue;
+        }
+        const span = node.lineEnd - node.lineStart;
+        if (span < bestSpan) {
+            bestCandidate = node;
+            bestSpan = span;
+        }
     }
-
-    candidates.sort((left, right) => {
-        const leftSpan = (left.lineEnd ?? left.lineStart ?? 0) - (left.lineStart ?? 0);
-        const rightSpan = (right.lineEnd ?? right.lineStart ?? 0) - (right.lineStart ?? 0);
-        return leftSpan - rightSpan;
-    });
-
-    return candidates[0]?.id ?? null;
+    return bestCandidate?.id ?? null;
 }
 
 function findFunctionNodeByNameInFile(
@@ -361,8 +421,8 @@ function findFunctionNodeByNameInFile(
         return null;
     }
 
-    const matches = context.nodeRecords.filter(
-        (node) => node.kind === "function" && node.filePath === filePath && node.name === functionName
+    const matches = (context.callableNodesByFilePath.get(filePath) ?? []).filter(
+        (node) => node.kind === "function" && node.name === functionName
     );
     return matches.length === 1 ? (matches[0]?.id ?? null) : null;
 }
@@ -394,7 +454,7 @@ function resolveScopedFileOwnerNodeId(
     if (scopeId) {
         const scopedNodeId = context.nodeIdsByScopeId.get(scopeId);
         if (scopedNodeId) {
-            const scopedNode = context.nodeRecords.find((node) => node.id === scopedNodeId) ?? null;
+            const scopedNode = context.nodeById.get(scopedNodeId) ?? null;
             if (scopedNode?.kind === "script" && locationLine === null) {
                 const primaryFunctionNodeId = findPrimaryFunctionNodeForFile(context, filePath, scopedNode.name);
                 if (primaryFunctionNodeId) {
@@ -425,10 +485,7 @@ function resolveCallerNodeId(
         const callerScriptNode =
             callerResourcePath === null
                 ? null
-                : (context.nodeRecords.find(
-                      (node) =>
-                          node.kind === "script" && node.resourcePath === callerResourcePath && node.scipSymbol !== null
-                  ) ?? null);
+                : (context.nodeById.get(context.scriptNodeIdByResourcePath.get(callerResourcePath) ?? "") ?? null);
         const primaryFunctionNodeId = findPrimaryFunctionNodeForFile(
             context,
             callerFilePath,
@@ -482,8 +539,21 @@ function resolveCallTargetNodeId(
 }
 
 function registerNodeIndexes(context: ProjectionContext, node: GraphNodeRecord): void {
+    context.nodeById.set(node.id, node);
     addNameIndexEntry(context, node.name, node.id);
     addNameIndexEntry(context, node.displayName, node.id);
+
+    if (node.filePath && (node.kind === "function" || node.kind === "script" || node.kind === "struct")) {
+        Core.getOrCreateMapEntry(context.callableNodesByFilePath, node.filePath, () => []).push(node);
+    }
+
+    if (node.kind === "project") {
+        context.projectNodeId = node.id;
+    }
+
+    if (node.kind === "script" && node.resourcePath && node.scipSymbol) {
+        context.scriptNodeIdByResourcePath.set(node.resourcePath, node.id);
+    }
 
     if (node.scipSymbol) {
         context.nodeIdsByScipSymbol.set(node.scipSymbol, node.id);
@@ -543,19 +613,42 @@ function resolveEnumOwnerNodeId(context: ProjectionContext, entry: ProjectIndexI
     return enumName ? lookupUniqueNodeByNameAndKind(context, enumName, "enum") : null;
 }
 
-function resolveStructOwnerNodeId(context: ProjectionContext, entry: ProjectIndexIdentifierEntry): string | null {
+function findNearestPrecedingStructNodeId(
+    context: ProjectionContext,
+    filePath: string | null,
+    declarationLine: number | null
+): string | null {
+    if (!filePath || declarationLine === null) {
+        return null;
+    }
+
+    const candidates = context.callableNodesByFilePath.get(filePath) ?? [];
+    let nearestCandidate: GraphNodeRecord | null = null;
+    for (const node of candidates) {
+        if (node.kind !== "struct" || node.lineStart === null || node.lineStart > declarationLine) {
+            continue;
+        }
+        if (nearestCandidate === null || node.lineStart > (nearestCandidate.lineStart ?? 0)) {
+            nearestCandidate = node;
+        }
+    }
+    return nearestCandidate?.id ?? null;
+}
+
+function resolveStructOwnerNodeId(
+    context: ProjectionContext,
+    entry: ProjectIndexIdentifierEntry,
+    declaration: Record<string, unknown> | null
+): string | null {
     const scopeId = getString(entry.scopeId);
-    if (!scopeId) {
-        return null;
+    const ownerNodeId = scopeId ? (context.nodeIdsByScopeId.get(scopeId) ?? null) : null;
+    const ownerNode = ownerNodeId ? (context.nodeById.get(ownerNodeId) ?? null) : null;
+    if (ownerNode?.kind === "struct") {
+        return ownerNode.id;
     }
 
-    const ownerNodeId = context.nodeIdsByScopeId.get(scopeId) ?? null;
-    if (!ownerNodeId) {
-        return null;
-    }
-
-    const ownerNode = context.nodeRecords.find((node) => node.id === ownerNodeId) ?? null;
-    return ownerNode?.kind === "struct" ? ownerNode.id : null;
+    const filePath = getString(declaration?.filePath) ?? getString(entry.filePath);
+    return findNearestPrecedingStructNodeId(context, filePath, readLocationLine(asRecord(declaration?.start)));
 }
 
 function projectStructVariableOwnershipEdge(
@@ -563,7 +656,7 @@ function projectStructVariableOwnershipEdge(
     node: GraphNodeRecord,
     entry: ProjectIndexIdentifierEntry
 ): void {
-    const structNodeId = resolveStructOwnerNodeId(context, entry);
+    const structNodeId = resolveStructOwnerNodeId(context, entry, readFirstDeclaration(entry));
     if (structNodeId && structNodeId !== node.id) {
         context.edgeRecords.push({
             fromId: structNodeId,
@@ -579,50 +672,71 @@ function resolveFileSemanticOwnerNodeId(context: ProjectionContext, filePath: st
         return null;
     }
 
-    const scriptNode = context.nodeRecords.find(
-        (node) => node.kind === "script" && node.resourcePath === resourcePath && node.scipSymbol !== null
+    return (
+        context.scriptNodeIdByResourcePath.get(resourcePath) ??
+        createGraphNodeId(context.graphId, "resource", resourcePath)
     );
-    return scriptNode?.id ?? createGraphNodeId(context.graphId, "resource", resourcePath);
 }
 
 function resolveProjectRootNodeId(context: ProjectionContext): string | null {
-    return context.nodeRecords.find((node) => node.kind === "project")?.id ?? null;
+    return context.projectNodeId;
 }
 
 function normalizeIdentifierCollectionKind(collectionName: string): GraphNodeKind | null {
-    switch (collectionName) {
-        case "scripts": {
+    switch (getGmlSymbolKindForIdentifierCollection(collectionName)) {
+        case "script": {
             return "script";
         }
-        case "functions": {
+        case "function":
+        case "constructorStaticMember": {
             return "function";
         }
-        case "structs": {
+        case "struct": {
             return "struct";
         }
-        case "macros": {
+        case "macro": {
             return "macro";
         }
-        case "enums": {
+        case "enum": {
             return "enum";
         }
-        case "enumMembers": {
+        case "enumMember": {
             return "enum_member";
         }
-        case "globalVariables": {
+        case "globalVariable": {
             return "global_variable";
         }
-        case "instanceVariables": {
+        case "instanceVariable": {
             return "instance_variable";
         }
-        case "localVariables": {
+        case "localVariable": {
             return "local_variable";
         }
-        case "structVariables": {
+        case "parameter": {
+            return "local_variable";
+        }
+        case "structVariable": {
             return "struct_variable";
         }
+        // The remaining `GmlSemanticSymbolKind` variants (`object`,
+        // `resource`, `room`, `variable`, `constant`, `callable`,
+        // `member`, `unresolved`) are not produced by
+        // `getGmlSymbolKindForIdentifierCollection` for the identifier
+        // collections this helper resolves, but listing them explicitly
+        // keeps the switch exhaustive so future variants surface as a
+        // compile-time review item rather than silently falling through.
+        case "object":
+        case "resource":
+        case "room":
+        case "variable":
+        case "constant":
+        case "callable":
+        case "member":
+        case "unresolved": {
+            return null;
+        }
         default: {
-            return "script";
+            return null;
         }
     }
 }
@@ -637,6 +751,9 @@ function normalizeResourceKind(resourceType: string | null): GraphNodeKind | nul
         }
         case "GMFont": {
             return "font";
+        }
+        case "GMFolder": {
+            return "folder";
         }
         case "GMIncludedFile": {
             return "data_file";
@@ -665,6 +782,9 @@ function normalizeResourceKind(resourceType: string | null): GraphNodeKind | nul
         case "GMRBackgroundLayer": {
             return "room_layer";
         }
+        case "GMRInstance": {
+            return "room_instance";
+        }
         case "GMScript": {
             return "script";
         }
@@ -682,6 +802,9 @@ function normalizeResourceKind(resourceType: string | null): GraphNodeKind | nul
         }
         case "GMTileSet": {
             return "tileset";
+        }
+        case "GMTextureGroup": {
+            return "texture_group";
         }
         case "GMTimeline": {
             return "timeline";
@@ -871,7 +994,7 @@ function mergeScriptIdentifierIntoResourceNode(parameters: {
         return false;
     }
 
-    context.nodeRecords[resourceNodeIndex] = createNodeRecord({
+    const updatedResourceNode = createNodeRecord({
         displayName: existingResourceNode.displayName,
         filePath: filePath ?? existingResourceNode.filePath,
         graphId: existingResourceNode.graphId,
@@ -886,6 +1009,15 @@ function mergeScriptIdentifierIntoResourceNode(parameters: {
         snippet: snippet.length > 0 ? snippet : existingResourceNode.snippet,
         summary
     });
+    context.nodeRecords[resourceNodeIndex] = updatedResourceNode;
+    context.nodeById.set(resourceNodeId, updatedResourceNode);
+    if (updatedResourceNode.filePath) {
+        const callableNodes = context.callableNodesByFilePath.get(updatedResourceNode.filePath);
+        const callableNodeIndex = callableNodes?.findIndex((node) => node.id === resourceNodeId) ?? -1;
+        if (callableNodes && callableNodeIndex >= 0) {
+            callableNodes[callableNodeIndex] = updatedResourceNode;
+        }
+    }
 
     addNameIndexEntry(context, displayName, resourceNodeId);
     context.nodeIdsByScipSymbol.set(scipSymbol, resourceNodeId);
@@ -969,6 +1101,53 @@ function createObjectEventDisplayName(scopeRecord: ProjectIndexScopeRecord): str
     return getString(scopeRecord.name);
 }
 
+function shouldProjectObjectEventFileNode(scopeRecord: ProjectIndexScopeRecord, firstFilePath: string | null): boolean {
+    if (!firstFilePath) {
+        return false;
+    }
+
+    const eventRecord = asRecord(scopeRecord.event);
+    const eventName = getString(eventRecord.name);
+    if (!eventName) {
+        return false;
+    }
+
+    return path.posix.basename(firstFilePath, path.posix.extname(firstFilePath)) === eventName;
+}
+
+function projectObjectEventFileNode(context: ProjectionContext, resourcePath: string, firstFilePath: string): void {
+    const fileName = path.posix.basename(firstFilePath);
+    const fileNodeId = createGraphNodeId(context.graphId, "file", firstFilePath);
+    const existingFileNode = context.nodeRecords.some((node) => node.id === fileNodeId);
+    if (existingFileNode) {
+        return;
+    }
+
+    const node = createNodeRecord({
+        displayName: firstFilePath,
+        filePath: firstFilePath,
+        graphId: context.graphId,
+        id: fileNodeId,
+        kind: "file",
+        name: fileName,
+        resourcePath,
+        summary: createGraphNodeSummary({
+            filePath: firstFilePath,
+            kind: "file",
+            name: fileName,
+            resourcePath
+        })
+    });
+
+    context.nodeRecords.push(node);
+    registerNodeIndexes(context, node);
+    context.edgeRecords.push({
+        fromId: createGraphNodeId(context.graphId, "resource", resourcePath),
+        toId: node.id,
+        type: "contains"
+    });
+}
+
 function createObjectEventName(scopeRecord: ProjectIndexScopeRecord, firstFilePath: string | null): string | null {
     const name = getString(scopeRecord.name);
     if (name) {
@@ -1033,6 +1212,10 @@ function projectObjectEventScopes(context: ProjectionContext): void {
             toId: node.id,
             type: "contains"
         });
+
+        if (shouldProjectObjectEventFileNode(scopeRecord, firstFilePath)) {
+            projectObjectEventFileNode(context, resourcePath, firstFilePath);
+        }
     }
 }
 
@@ -1087,7 +1270,64 @@ function projectRoomLayerScopes(context: ProjectionContext): void {
                 toId: node.id,
                 type: "contains"
             });
+
+            projectRoomInstanceNodes(context, {
+                layer,
+                layerNodeId: node.id,
+                layerName,
+                resourcePath
+            });
         }
+    }
+}
+
+function projectRoomInstanceNodes(
+    context: ProjectionContext,
+    parameters: Readonly<{
+        layer: Record<string, unknown>;
+        layerName: string;
+        layerNodeId: string;
+        resourcePath: string;
+    }>
+): void {
+    const instances = Core.toArray(parameters.layer.instances);
+    for (const [instanceIndex, rawInstance] of instances.entries()) {
+        const instance = asRecord(rawInstance);
+        const instanceName = getString(instance.name);
+        if (!instanceName || getString(instance.resourceType) !== "GMRInstance") {
+            continue;
+        }
+
+        const scopeId = createRoomInstanceScopeId(
+            parameters.resourcePath,
+            parameters.layerName,
+            instanceIndex,
+            instanceName
+        );
+        const node = createNodeRecord({
+            displayName: `${instanceName} (${parameters.layerName})`,
+            filePath: null,
+            graphId: context.graphId,
+            id: createGraphNodeId(context.graphId, "scope", scopeId),
+            kind: "room_instance",
+            name: instanceName,
+            resourcePath: parameters.resourcePath,
+            scopeId,
+            summary: createGraphNodeSummary({
+                filePath: null,
+                kind: "room_instance",
+                name: instanceName,
+                resourcePath: parameters.resourcePath
+            })
+        });
+
+        context.nodeRecords.push(node);
+        registerNodeIndexes(context, node);
+        context.edgeRecords.push({
+            fromId: parameters.layerNodeId,
+            toId: node.id,
+            type: "contains"
+        });
     }
 }
 
@@ -1098,6 +1338,15 @@ function isGraphRoomLayerResourceType(resourceType: string | null): resourceType
 function createRoomLayerDisplayName(layerName: string, layerResourceType: string): string {
     const layerTypeLabel = layerResourceType.replace(/^GMR/u, "").replace(/Layer$/u, " Layer");
     return `${layerName} (${layerTypeLabel})`;
+}
+
+function createRoomInstanceScopeId(
+    roomResourcePath: string,
+    layerName: string,
+    instanceIndex: number,
+    instanceName: string
+): string {
+    return `scope:room-instance:${roomResourcePath}:${layerName}:${instanceIndex}:${instanceName}`;
 }
 
 function projectFileRecords(context: ProjectionContext): void {
@@ -1130,6 +1379,14 @@ function projectIdentifierCollections(context: ProjectionContext): void {
                 getString((Array.isArray(entry.references) ? entry.references[0] : null)?.filePath);
             const resourcePath = getString(entry.resourcePath) ?? resolveResourcePathForFile(context, filePath);
             const scipSymbol = resolveScipSymbol(kind, name, entry);
+            if (!scipSymbol) {
+                // Resource-style identifiers (texture groups, sprites, ...)
+                // do not have a SCIP symbol; they are addressed by their
+                // resource path. Skip node creation rather than feeding
+                // `null` into `createGraphNodeId` and synthesizing a
+                // placeholder id such as `project::symbol::null`.
+                continue;
+            }
             const sourceText = readSourceText(context.rootPath, filePath);
             const displayName = getString(entry.displayName) ?? name;
             const scopeId = getString(entry.scopeId) ?? getString(entry.id);
@@ -1345,7 +1602,59 @@ function resolveAssetReferenceSourceNodeId(
     }
 
     const roomLayerNodeId = resolveRoomLayerNodeIdFromAssetReference(context, reference, fromResourcePath);
+    const roomInstanceNodeId = resolveRoomInstanceNodeIdFromAssetReference(context, reference, fromResourcePath);
+    if (roomInstanceNodeId) {
+        return roomInstanceNodeId;
+    }
+
     return roomLayerNodeId ?? createGraphNodeId(context.graphId, "resource", fromResourcePath);
+}
+
+function resolveRoomInstanceNodeIdFromAssetReference(
+    context: ProjectionContext,
+    reference: Record<string, unknown>,
+    roomResourcePath: string
+): string | null {
+    const propertyPath = getString(reference.propertyPath);
+    if (!propertyPath) {
+        return null;
+    }
+
+    const instanceMatch = /^layers\.(\d+)\.instances\.(\d+)\./u.exec(propertyPath);
+    const layerIndex = Number(instanceMatch?.[1]);
+    const instanceIndex = Number(instanceMatch?.[2]);
+    if (!Number.isInteger(layerIndex) || layerIndex < 0 || !Number.isInteger(instanceIndex) || instanceIndex < 0) {
+        return null;
+    }
+
+    const roomRecord = asRecord(asRecord(context.projectIndex.resources)[roomResourcePath]);
+    const layers = roomRecord.layers;
+    if (!Array.isArray(layers) || layerIndex >= layers.length) {
+        return null;
+    }
+
+    const layerRecord = asRecord(layers[layerIndex]);
+    const layerName = getString(layerRecord.name);
+    if (!layerName || getString(layerRecord.resourceType) !== "GMRInstanceLayer") {
+        return null;
+    }
+
+    const instances = Core.toArray(layerRecord.instances);
+    if (instanceIndex >= instances.length) {
+        return null;
+    }
+
+    const instanceRecord = asRecord(instances[instanceIndex]);
+    const instanceName = getString(instanceRecord.name);
+    if (!instanceName || getString(instanceRecord.resourceType) !== "GMRInstance") {
+        return null;
+    }
+
+    return createGraphNodeId(
+        context.graphId,
+        "scope",
+        createRoomInstanceScopeId(roomResourcePath, layerName, instanceIndex, instanceName)
+    );
 }
 
 function resolveRoomLayerNodeIdFromAssetReference(
@@ -1466,7 +1775,7 @@ function persistProjection(
     embeddingsConfig: GraphEmbeddingsConfig,
     buildDurationMs: number
 ): void {
-    const embeddingProvider = embeddingsConfig.enabled ? createGraphEmbeddingProvider(embeddingsConfig) : null;
+    const embeddingProvider = embeddingsConfig.enabled ? new LocalTokenHashEmbeddingProvider(embeddingsConfig) : null;
 
     insertGraph(database, context.graphId, context.rootPath);
 
@@ -1519,15 +1828,19 @@ function createProjectionContext(
     projectIndex: ProjectIndexSnapshot
 ): ProjectionContext {
     return {
+        callableNodesByFilePath: new Map(),
         edgeRecords: [],
         fileRecords: [],
         graphId,
+        nodeById: new Map(),
         nodeIdsByName: new Map(),
         nodeIdsByScipSymbol: new Map(),
         nodeIdsByScopeId: new Map(),
+        projectNodeId: null,
         nodeRecords: [],
         projectIndex,
         resourcePathByGmlFile: new Map(),
+        scriptNodeIdByResourcePath: new Map(),
         rootPath
     };
 }
@@ -1652,7 +1965,7 @@ function rankSemanticMatches(
         return;
     }
 
-    const queryVector = createGraphEmbeddingProvider(embeddingsConfig).embedText(query);
+    const queryVector = new LocalTokenHashEmbeddingProvider(embeddingsConfig).embedText(query);
     const embeddingRows = database
         .prepare("SELECT node_id AS nodeId, vector_blob AS vectorBlob FROM embeddings")
         .all() as Array<{ nodeId: string; vectorBlob: Buffer }>;
@@ -1662,6 +1975,18 @@ function rankSemanticMatches(
         const currentScore = candidateScores.get(row.nodeId) ?? 0;
         candidateScores.set(row.nodeId, currentScore + similarity * 2);
     }
+}
+
+function calculateExactGraphSearchMatchScore(row: {
+    kind: string;
+    resourcePath: string | null;
+    scipSymbol: string | null;
+}): number {
+    if (row.kind === "script" && row.resourcePath !== null) {
+        return 8;
+    }
+
+    return row.scipSymbol ? 7 : 5;
 }
 
 function applyGraphProximityBoost(database: GraphDatabase, candidateScores: Map<string, number>): void {
@@ -1723,8 +2048,7 @@ function shouldReprojectGraph(
     embeddingsConfig: GraphEmbeddingsConfig
 ): boolean {
     const graphRow = database.prepare("SELECT root_path AS rootPath FROM graphs WHERE id = ?").get(context.graphId) as
-        | { rootPath: string }
-        | undefined;
+        { rootPath: string } | undefined;
     if (!graphRow || graphRow.rootPath !== context.rootPath) {
         return true;
     }
@@ -1753,6 +2077,40 @@ function shouldReprojectGraph(
     }
 
     return false;
+}
+
+function isGraphProjectionCurrentForManifest(
+    database: GraphDatabase,
+    graphId: GraphIndexScope,
+    rootPath: string,
+    manifest: SemanticFileManifest,
+    embeddingsConfig: GraphEmbeddingsConfig
+): boolean {
+    const graphRow = database.prepare("SELECT root_path AS rootPath FROM graphs WHERE id = ?").get(graphId) as
+        { rootPath: string } | undefined;
+    if (!graphRow || graphRow.rootPath !== rootPath) {
+        return false;
+    }
+
+    const indexStateRow = database
+        .prepare("SELECT embedding_model AS embeddingModel FROM index_state WHERE graph_id = ?")
+        .get(graphId) as { embeddingModel: string } | undefined;
+    const expectedEmbeddingModel = embeddingsConfig.enabled ? embeddingsConfig.provider : "disabled";
+    if (!indexStateRow || indexStateRow.embeddingModel !== expectedEmbeddingModel) {
+        return false;
+    }
+
+    const indexedFileHashes = readIndexedFileHashes(database, graphId);
+    if (indexedFileHashes.size !== manifest.entries.size) {
+        return false;
+    }
+
+    for (const entry of manifest.entries.values()) {
+        if (indexedFileHashes.get(entry.relativePath) !== entry.contentHash) {
+            return false;
+        }
+    }
+    return true;
 }
 
 function deleteGraphProjection(database: GraphDatabase, graphId: GraphIndexScope): void {
@@ -1784,6 +2142,209 @@ function readGraphDatabaseIntegrityStatus(database: GraphDatabase): GraphDatabas
     });
 }
 
+function tolerantGraphProjectParser(sourceText: string): unknown {
+    try {
+        return Parser.GMLParser.parse(sourceText, {
+            getComments: true,
+            getLocations: true,
+            simplifyLocations: false,
+            // Keep medium-sized scripts on ANTLR's faster SLL path while
+            // bounding prediction-cache growth for very large sources.
+            sllPredictionMaxSourceLength: PROJECT_INDEX_SLL_PREDICTION_MAX_SOURCE_LENGTH
+        });
+    } catch (error) {
+        if (!Core.isSyntaxErrorWithLocation(error)) {
+            throw error;
+        }
+        return Parser.GMLParser.parse("", {
+            getComments: true,
+            getLocations: true,
+            simplifyLocations: false,
+            sllPredictionMaxSourceLength: PROJECT_INDEX_SLL_PREDICTION_MAX_SOURCE_LENGTH
+        });
+    }
+}
+
+function createTolerantGraphProjectParser(): NonNullable<ProjectIndexBuildOptions["parseGml"]> {
+    return tolerantGraphProjectParser;
+}
+
+/**
+ * Create a project index coordinator whose build path tolerates malformed GML
+ * files so a single syntax-invalid source does not fail the whole index build.
+ *
+ * Single responsibility: configure how the project index is built (parser
+ * wiring + coordinator build contract). Any change to the parser chosen for
+ * the build, or to how the coordinator hands work off to `buildProjectIndex`,
+ * lives here.
+ */
+function createTolerantProjectIndexCoordinator(): ProjectIndexCoordinatorInstance {
+    const tolerantParser = createTolerantGraphProjectParser();
+    return createProjectIndexCoordinator({
+        buildIndex: async (resolvedRoot, fsFacade, options) => {
+            return await buildProjectIndex(resolvedRoot, fsFacade, {
+                ...options,
+                parseGml: tolerantParser
+            });
+        }
+    });
+}
+
+/**
+ * Get-or-build a project index snapshot for graph projection.
+ *
+ * Single responsibility: orchestrate the cache-aware get-or-build flow used
+ * by graph projection. Input collection is delegated to
+ * `collectProjectIndexMtimes`, build configuration is delegated to
+ * `createTolerantProjectIndexCoordinator`, and this function owns only the
+ * three-step orchestration plus resource cleanup.
+ */
+async function getOrBuildProjectIndex(
+    projectRoot: string,
+    onProgress: GraphIndexBuildOptions["onProgress"],
+    skipProjectionWhenCurrent: boolean,
+    database: GraphDatabase,
+    graphId: GraphIndexScope,
+    embeddingsConfig: GraphEmbeddingsConfig
+): Promise<ProjectIndexBuildSnapshot> {
+    // This flow only reads persisted tier/manifest/navigation state, publishes
+    // the two-tier snapshot, and closes the connection; it never leases a
+    // snapshot or queries dependencies, so it depends on the narrow reader +
+    // publisher + lifecycle roles instead of the full SemanticIndexStore.
+    const store: SemanticIndexStateReader & SemanticIndexPublisher & SemanticIndexLifecycle =
+        openSemanticIndexStore(projectRoot);
+    let storedManifest;
+    try {
+        storedManifest = store.readSemanticManifest("full") ?? store.readSemanticManifest("definitions");
+    } catch (error) {
+        // Reading the cached manifest is a best-effort optimisation: if the
+        // semantic tables have not been created yet (e.g. a fresh project
+        // never indexed) we simply rebuild the manifest from disk. The
+        // bare `catch {}` we used previously also swallowed unrelated
+        // failures (database corruption, locked database, I/O faults); the
+        // helpers from `sqlite-adapter` now let us narrow the swallow to
+        // the documented "missing table" case and surface everything else
+        // with context so the failure can be diagnosed.
+        if (!isSqliteMissingTableError(error)) {
+            throw Core.toContextualError(
+                `Failed to read cached semantic manifest for graph projection at ${projectRoot}`,
+                error
+            );
+        }
+    }
+    let manifestCacheStats: SemanticFileManifestCacheStats = { cacheHitCount: 0, cacheMissCount: 0 };
+    const manifest = await buildSemanticFileManifest(projectRoot, Core.defaultFsFacade, [], storedManifest, (stats) => {
+        manifestCacheStats = stats;
+    });
+    const sourceSignature = manifest.sourceRevision;
+    const storedState = store.readActiveSemanticSlots().full;
+    if (
+        skipProjectionWhenCurrent &&
+        storedState?.sourceSignature === sourceSignature &&
+        isGraphProjectionCurrentForManifest(database, graphId, projectRoot, manifest, embeddingsConfig)
+    ) {
+        await store.close();
+        return Object.freeze({ manifest, manifestCacheStats, projectIndex: null, wasFreshlyBuilt: false });
+    }
+
+    const storedIndex = store.readSemanticNavigationProjection("full");
+    if (storedIndex && storedState?.sourceSignature === sourceSignature) {
+        await store.close();
+        return Object.freeze({ manifest, manifestCacheStats, projectIndex: storedIndex, wasFreshlyBuilt: false });
+    }
+
+    try {
+        const parser = createTolerantGraphProjectParser();
+        const reconciliation = reconcileSemanticManifests(storedManifest, manifest);
+        const index = (await buildProjectIndex(
+            projectRoot,
+            Core.defaultFsFacade,
+            storedIndex && reconciliation.changedFiles.length > 0
+                ? {
+                      incremental: {
+                          changes: reconciliation.changedFiles.map((change) => ({
+                              filePath: path.resolve(projectRoot, change.relativePath),
+                              kind: change.kind
+                          })),
+                          existingIndex: storedIndex
+                      },
+                      onProgress,
+                      parseGml: parser
+                  }
+                : {
+                      onProgress,
+                      parseGml: parser
+                  }
+        )) as ProjectIndexSnapshot;
+        const publication = publishSemanticTwoTierSnapshot(store, {
+            definitionsSnapshot: createSemanticSnapshotFromProjectIndex(index, "definitions", manifest.sourceRevision),
+            fullSnapshot: createSemanticSnapshotFromProjectIndex(index, "full", manifest.sourceRevision),
+            manifest,
+            navigationProjection: index,
+            sourceRevision: sourceSignature
+        });
+        if (publication.status === "superseded") {
+            throw new Error(`Semantic graph-index publication was superseded for ${projectRoot}.`);
+        }
+        return Object.freeze({ manifest, manifestCacheStats, projectIndex: index, wasFreshlyBuilt: true });
+    } finally {
+        await store.close();
+    }
+}
+
+const BUILD_SUMMARY_SLOWEST_FILES_LIMIT = 10;
+
+/**
+ * Read the per-file parse/analyze durations a build recorded into its
+ * metrics, if any. Only meaningful for a freshly-built `projectIndex` — a
+ * reused stored projection is the same object persisted the last time it
+ * *was* freshly built, so it still carries that earlier build's own
+ * `.metrics`; reading those back on a later, unrelated reuse would misreport
+ * stale work as having just happened.
+ */
+function readFileTimings(
+    build: ProjectIndexBuildSnapshot
+): ReadonlyArray<Readonly<{ relativePath: string; durationMs: number }>> {
+    if (!build.wasFreshlyBuilt) {
+        return [];
+    }
+    const timings = build.projectIndex?.metrics?.metadata.gmlFileTimings;
+    return Array.isArray(timings)
+        ? (timings as ReadonlyArray<Readonly<{ relativePath: string; durationMs: number }>>)
+        : [];
+}
+
+/**
+ * Combine one or more `getOrBuildProjectIndex` results (project + optional
+ * toolset) into the single summary reported to `onProgress` once a build
+ * completes. Surfaces data the build already computed — the per-file timings
+ * recorded during parsing/analysis and the manifest's cache hit/miss counts —
+ * rather than tracking anything new.
+ *
+ * Returns `null` when no root was actually rebuilt (every root reused its
+ * stored projection unchanged) — nothing happened worth reporting.
+ */
+function createGraphIndexBuildSummary(
+    totalDurationMs: number,
+    builds: ReadonlyArray<ProjectIndexBuildSnapshot>
+): GraphIndexBuildSummary | null {
+    if (!builds.some((build) => build.wasFreshlyBuilt)) {
+        return null;
+    }
+
+    const allFileTimings = builds.flatMap((build) => readFileTimings(build));
+
+    const slowestFiles = allFileTimings
+        .toSorted((left, right) => right.durationMs - left.durationMs)
+        .slice(0, BUILD_SUMMARY_SLOWEST_FILES_LIMIT);
+    return Object.freeze({
+        cacheHitCount: builds.reduce((sum, build) => sum + build.manifestCacheStats.cacheHitCount, 0),
+        cacheMissCount: builds.reduce((sum, build) => sum + build.manifestCacheStats.cacheMissCount, 0),
+        slowestFiles,
+        totalDurationMs
+    });
+}
+
 /**
  * Build or rebuild the SQLite-backed graph index.
  */
@@ -1806,8 +2367,33 @@ export async function buildGraphIndex(options: GraphIndexBuildOptions): Promise<
             ensureGraphEmbeddingModelAssets(config.embeddings);
         }
         const buildStart = performance.now();
-        const projectIndex = (await buildProjectIndex(config.projectRoot)) as ProjectIndexSnapshot;
-        const projectContext = createProjectionContext("project", config.projectRoot, projectIndex);
+        const projectBuild = await getOrBuildProjectIndex(
+            config.projectRoot,
+            options.onProgress,
+            config.toolsetRoot === null,
+            database,
+            "project",
+            config.embeddings
+        );
+        const toolsetBuild = config.toolsetRoot
+            ? await getOrBuildProjectIndex(
+                  config.toolsetRoot,
+                  options.onProgress,
+                  false,
+                  database,
+                  "toolset",
+                  config.embeddings
+              )
+            : null;
+        if (projectBuild.projectIndex === null) {
+            return Object.freeze({
+                config,
+                databasePath: config.databasePath,
+                graphIds: ["project"] as Array<GraphIndexScope>
+            });
+        }
+
+        const projectContext = createProjectionContext("project", config.projectRoot, projectBuild.projectIndex);
         projectResources(projectContext);
         projectObjectEventScopes(projectContext);
         projectRoomLayerScopes(projectContext);
@@ -1817,9 +2403,8 @@ export async function buildGraphIndex(options: GraphIndexBuildOptions): Promise<
         removeDanglingEdges(projectContext);
 
         let toolsetContext: ProjectionContext | null = null;
-        if (config.toolsetRoot) {
-            const toolsetIndex = (await buildProjectIndex(config.toolsetRoot)) as ProjectIndexSnapshot;
-            toolsetContext = createProjectionContext("toolset", config.toolsetRoot, toolsetIndex);
+        if (config.toolsetRoot && toolsetBuild?.projectIndex) {
+            toolsetContext = createProjectionContext("toolset", config.toolsetRoot, toolsetBuild.projectIndex);
             projectResources(toolsetContext);
             projectObjectEventScopes(toolsetContext);
             projectRoomLayerScopes(toolsetContext);
@@ -1830,6 +2415,13 @@ export async function buildGraphIndex(options: GraphIndexBuildOptions): Promise<
         }
 
         const buildDurationMs = performance.now() - buildStart;
+        const buildSummary = createGraphIndexBuildSummary(
+            buildDurationMs,
+            toolsetBuild ? [projectBuild, toolsetBuild] : [projectBuild]
+        );
+        if (buildSummary) {
+            options.onProgress?.({ stage: "complete", summary: buildSummary });
+        }
         rebuildGraphProjectionIfNeeded(database, projectContext, config.embeddings, buildDurationMs);
         if (toolsetContext) {
             rebuildGraphProjectionIfNeeded(database, toolsetContext, config.embeddings, buildDurationMs);
@@ -1928,10 +2520,17 @@ export function searchGraphIndex(
         }
 
         const exactRows = database
-            .prepare("SELECT id, scip_symbol AS scipSymbol FROM nodes WHERE name = ? OR scip_symbol = ?")
-            .all(normalizedQuery, normalizedQuery) as Array<{ id: string; scipSymbol: string | null }>;
+            .prepare(
+                "SELECT id, kind, resource_path AS resourcePath, scip_symbol AS scipSymbol FROM nodes WHERE name = ? OR scip_symbol = ?"
+            )
+            .all(normalizedQuery, normalizedQuery) as Array<{
+            id: string;
+            kind: string;
+            resourcePath: string | null;
+            scipSymbol: string | null;
+        }>;
         for (const row of exactRows) {
-            candidateScores.set(row.id, (candidateScores.get(row.id) ?? 0) + (row.scipSymbol ? 7 : 5));
+            candidateScores.set(row.id, (candidateScores.get(row.id) ?? 0) + calculateExactGraphSearchMatchScore(row));
         }
 
         const aliasRows = database
@@ -2071,6 +2670,11 @@ export function getGraphUsages(
     }
 }
 
+// Databases created before incremental auto-vacuum was enabled can only shed
+// bloat via a full VACUUM; below this threshold it isn't worth recommending
+// one, since a small freelist is normal churn rather than a real problem.
+const GRAPH_DB_BLOAT_WARNING_PERCENT = 10;
+
 /**
  * Inspect the graph database and report high-signal health issues.
  */
@@ -2198,6 +2802,15 @@ export function doctorGraphIndex(options: GraphIndexBuildOptions): GraphDoctorRe
             });
         }
 
+        const bloatPercent = readGraphDatabaseBloatPercent(database);
+        if (bloatPercent !== null && bloatPercent >= GRAPH_DB_BLOAT_WARNING_PERCENT) {
+            issues.push({
+                code: "GRAPH_DB_BLOAT",
+                message: `Graph database has ${String(bloatPercent)}% reclaimable free space. Run 'gmloop graph doctor --vacuum' to compact it.`,
+                severity: "warning"
+            });
+        }
+
         return Object.freeze({
             databasePath: config.databasePath,
             graphs,
@@ -2210,7 +2823,30 @@ export function doctorGraphIndex(options: GraphIndexBuildOptions): GraphDoctorRe
     }
 }
 
+/**
+ * Compact the graph database file, reclaiming all freelist space and
+ * switching it onto incremental auto-vacuum going forward (see
+ * {@link readGraphDatabaseBloatPercent}). This rewrites the whole file, so it
+ * is exposed as an explicit, user-triggered operation rather than something
+ * that runs automatically during indexing.
+ */
+export function vacuumGraphIndex(
+    options: GraphIndexBuildOptions
+): Readonly<{ bloatPercentAfter: number | null; bloatPercentBefore: number | null; databasePath: string }> {
+    const config = resolveGraphIndexConfig(options);
+    const database = openExistingGraphIndexDatabase(config.databasePath);
+    try {
+        const bloatPercentBefore = readGraphDatabaseBloatPercent(database);
+        vacuumGraphDatabase(database);
+        const bloatPercentAfter = readGraphDatabaseBloatPercent(database);
+        return Object.freeze({ bloatPercentAfter, bloatPercentBefore, databasePath: config.databasePath });
+    } finally {
+        database.close();
+    }
+}
+
 export const __graphIndexBuilderTest__ = Object.freeze({
     createSafeFtsQuery,
+    createTolerantProjectIndexCoordinator,
     resolveScipSymbol
 });

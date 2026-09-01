@@ -2,21 +2,19 @@
   "allowInlineControlFlowBlocks": false,
   "printWidth": 95,
   "lintRules": {
+    "gml/remove-doc-function-tags": "error",
     "gml/normalize-doc-comments": "error",
+    "gml/normalize-doc-param-separators": "error",
     "gml/require-argument-separators": "error",
-    "gml/require-trailing-optional-defaults": "error",
+    "feather/gm1056": "error",
     "gml/prefer-is-undefined-check": "error",
     "gml/prefer-epsilon-comparisons": "error",
     "gml/optimize-math-expressions": "error"
   },
-  "refactor": {
-    "codemods": {
-      "docCommentAlignment": {}
-    }
-  },
   "fixture": {
     "kind": "integration",
     "assertion": "transform",
-    "comparison": "exact"
+    "comparison": "exact",
+    "expectedTextFile": "expected.current.txt"
   }
 }

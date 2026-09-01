@@ -1,3 +1,5 @@
+import path from "node:path";
+
 import { Core } from "@gmloop/core";
 
 import type {
@@ -12,8 +14,19 @@ import type {
 
 const FIXTURE_KIND_VALUES = new Set<FixtureKind>(["format", "lint", "refactor", "integration", "external-project"]);
 const FIXTURE_ASSERTION_VALUES = new Set<FixtureAssertion>(["transform", "idempotent", "project-tree", "parse-error"]);
-const FIXTURE_COMPARISON_VALUES = new Set<FixtureComparison>(["exact", "ignore-whitespace-and-line-endings"]);
-const FIXTURE_SECTION_KEYS = new Set(["kind", "assertion", "comparison", "externalProject", "profile"]);
+export const FIXTURE_COMPARISONS = Object.freeze({
+    EXACT: "exact",
+    IGNORE_WHITESPACE_AND_LINE_ENDINGS: "ignore-whitespace-and-line-endings"
+} as const satisfies Record<string, FixtureComparison>);
+const FIXTURE_COMPARISON_VALUES = new Set<FixtureComparison>(Object.values(FIXTURE_COMPARISONS));
+const FIXTURE_SECTION_KEYS = new Set([
+    "kind",
+    "assertion",
+    "comparison",
+    "expectedTextFile",
+    "externalProject",
+    "profile"
+]);
 const EXTERNAL_PROJECT_KEYS = new Set(["sourcePath", "excludes"]);
 const EXTERNAL_PROJECT_EXCLUDE_KEYS = new Set(["directoryNames", "fileNames", "relativePaths", "extensions"]);
 const FIXTURE_PROFILE_KEYS = new Set(["budgets", "deepCpuProfile"]);
@@ -57,15 +70,37 @@ function validateOptionalEnumValue<ValueType extends string>(
     context: string,
     propertyName: string
 ): ValueType | undefined {
-    if (value === undefined) {
-        return undefined;
-    }
-
-    if (typeof value !== "string" || !validValues.has(value as ValueType)) {
+    if (value !== undefined && (typeof value !== "string" || !validValues.has(value as ValueType))) {
         throw new TypeError(`${context}.${propertyName} must be one of ${[...validValues].join(", ")}.`);
     }
 
-    return value as ValueType;
+    return value as ValueType | undefined;
+}
+
+function validateExpectedTextFile(value: unknown, context: string): string | undefined {
+    let result: string | undefined;
+    if (value === undefined) {
+        result = undefined;
+    } else {
+        if (typeof value !== "string" || value.trim().length === 0) {
+            throw new TypeError(`${context}.expectedTextFile must be a non-empty string.`);
+        }
+
+        if (
+            value !== path.basename(value) ||
+            value.includes("\\") ||
+            value === "gmloop.json" ||
+            value === "input.gml" ||
+            value === "expected.gml" ||
+            value.endsWith(".gml")
+        ) {
+            throw new TypeError(`${context}.expectedTextFile must name a non-GML file in the fixture case directory.`);
+        }
+
+        result = value;
+    }
+
+    return result;
 }
 
 function validateFixtureProfile(value: unknown, context: string): NonNullable<FixtureProjectConfigMetadata["profile"]> {
@@ -211,6 +246,11 @@ function validateFixtureMetadata(value: unknown, context: string): FixtureProjec
     const comparison = validateOptionalEnumValue(object.comparison, FIXTURE_COMPARISON_VALUES, context, "comparison");
     if (comparison !== undefined) {
         metadata.comparison = comparison;
+    }
+
+    const expectedTextFile = validateExpectedTextFile(object.expectedTextFile, context);
+    if (expectedTextFile !== undefined) {
+        metadata.expectedTextFile = expectedTextFile;
     }
 
     if (object.profile !== undefined) {

@@ -10,12 +10,15 @@
       "@gmloop/format": ["./src/format/index.ts"],
       "@gmloop/fixture-runner": ["./src/fixture-runner/index.ts"],
       "@gmloop/lint": ["./src/lint/index.ts"],
+      "@gmloop/lsp": ["./src/lsp/index.ts"],
       "@gmloop/semantic": ["./src/semantic/index.ts"],
       "@gmloop/transpiler": ["./src/transpiler/index.ts"],
       "@gmloop/refactor": ["./src/refactor/index.ts"],
       "@gmloop/runtime-wrapper": ["./src/runtime-wrapper/index.ts"],
       "@gmloop/mcp": ["./src/mcp/index.ts"],
-      "@gmloop/cli": ["./src/cli/index.ts"]
+      "@gmloop/cli": ["./src/cli/index.ts"],
+      "@gmloop/vscode": ["./src/vscode/index.ts"],
+      "@gmloop/syntax-highlight": ["./src/syntax-highlight/index.ts"]
     },
     "lib": ["ES2023"],
     "moduleDetection": "force",

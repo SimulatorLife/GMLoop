@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { applyManualMathNormalization } from "../../src/rules/gml/transforms/math-traversal-normalization.js";
+import { applyManualMathNormalization } from "../../src/rules/gml/math/index.js";
 
 void describe("applyManualMathNormalization", () => {
     void it("removes multiplicative identity operands", () => {

@@ -52,6 +52,24 @@ Then implement the UI with:
 - minimal, purposeful motion
 - framework-native patterns instead of legacy or workaround patterns
 
+## Design Token Discipline
+
+All visual styling values must be defined as global CSS custom properties (CSS variables) in the shared design-token stylesheet ([tokens.css](../../../src/ui/src/web/styles/tokens.css)) and consumed exclusively through those variables across all component and surface stylesheets. This applies to every category of styling value:
+
+- **Colors**: text, background, surface, border, accent, status, and semantic colors
+- **Font weights**: all font-weight values (normal, medium, semibold, bold, etc.)
+- **Text sizes**: all font-size values
+- **Line heights**: all line-height values
+- **Spacing**: all margins, paddings, gaps, and layout offsets
+- **Border radii**: all border-radius values
+- **Shadows**: all box-shadow and text-shadow values
+- **Transitions**: all transition timing and easing values
+- **Component heights**: all standard interactive element heights
+- **Icon sizes**: all icon dimension values
+- **Font families**: all font-family stacks
+
+Do not use hardcoded literal values (pixel values, hex colors, rgb/rgba values, raw font-weight numbers, raw font-size values, etc.) in component or page CSS files. If a needed token does not exist in [tokens.css](../../../src/ui/src/web/styles/tokens.css), add it there first, then reference the new variable. This keeps the visual system DRY, consistent, and easy to adjust globally.
+
 ## Core Design Principles
 
 ### Intentionality
@@ -69,13 +87,15 @@ Then implement the UI with:
 ### Color and Theme
 
 - Use a cohesive palette with a dominant direction and controlled accents.
-- Define colors through CSS variables or equivalent tokens.
+- All color values must be defined as global CSS variables in the design-token stylesheet and consumed exclusively through those variables (see **Design Token Discipline** above). Do not use hardcoded color values (hex, rgb, or rgba) in individual component or page CSS files.
+- Keep color formats consistent (e.g. lowercase hex format) for all color token definitions in the global stylesheet.
+- Map status-related styles to global semantic status tokens (representing success, warning, and danger states) rather than introducing ad-hoc status colors.
 - Avoid timid, evenly distributed palettes with no hierarchy.
 - Support both readability and state clarity in all themes.
 
 ### Layout and Rhythm
 
-- Use a consistent spacing system.
+- Use a consistent spacing system. Rely exclusively on the standard global spacing variables (which define a limited, unified set of sizing increments) for all margins, paddings, gaps, and layout offsets (see **Design Token Discipline** above). Do not use ad-hoc pixel values or spacing aliases.
 - Apply the Gestalt principle of proximity so related controls and information are visually grouped and unrelated elements are clearly separated.
 - Keep alignment intentional to a grid, baseline, edge, or optical center.
 - Maintain predictable content widths by breakpoint.
@@ -85,7 +105,7 @@ Then implement the UI with:
 ### Motion
 
 - Use animation only when it improves understanding or delight.
-- Keep micro-interactions around 150 to 300 ms with appropriate easing.
+- Keep micro-interactions around 150 to 300 ms with appropriate easing. All hover, active, and focus transitions must use the standard global transition variable (see **Design Token Discipline** above) for project-wide visual consistency.
 - Avoid gratuitous motion, sluggish transitions, and layout-jitter effects.
 
 ## Visual System Rules
@@ -290,6 +310,10 @@ Then implement the UI with:
 - Ensure display rules respect the `hidden` attribute.
 - Represent component-owned states consistently through attributes, classes, or host selectors as appropriate for the chosen rendering mode.
 - Expose CSS custom properties for supported theming hooks, with sensible defaults.
+- Use standard box-shadow variables: use standard global shadow variables for cards, dialogs, and elevated panels. Use the standard global focus shadow variable for all focus-visible borders and rings.
+- Use global font-weight variables for all `font-weight` declarations. Do not use raw numeric weight values (e.g. `400`, `600`, `700`) in component CSS.
+- Use global text-size variables for all `font-size` declarations. Do not use raw pixel or rem values in component CSS.
+- All spacing (`margin`, `padding`, `gap`), border-radius, transition, and component-height values must reference the corresponding global token variables. See **Design Token Discipline** for the complete list.
 
 ## Performance Expectations
 

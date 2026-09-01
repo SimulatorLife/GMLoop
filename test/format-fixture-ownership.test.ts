@@ -84,7 +84,8 @@ function assertFixtureCaseLayout(
     fixtureRoot: FixtureRootDefinition,
     caseDirectory: string,
     fileNames: ReadonlySet<string>,
-    directoryNames: ReadonlySet<string>
+    directoryNames: ReadonlySet<string>,
+    parsedConfig: Record<string, unknown>
 ): void {
     if (fixtureRoot.kind === "refactor") {
         assert.deepEqual(
@@ -101,8 +102,17 @@ function assertFixtureCaseLayout(
 
     assert.equal(fileNames.has("gmloop.json"), true, `${caseDirectory} is missing gmloop.json.`);
     assert.equal(fileNames.has("input.gml"), true, `${caseDirectory} is missing input.gml.`);
+    const fixtureSection = parsedConfig.fixture;
+    const expectedTextFile =
+        fixtureSection && typeof fixtureSection === "object" && !Array.isArray(fixtureSection)
+            ? (fixtureSection as Record<string, unknown>).expectedTextFile
+            : undefined;
     const unexpectedFiles = [...fileNames].filter(
-        (fileName) => fileName !== "gmloop.json" && fileName !== "input.gml" && fileName !== "expected.gml"
+        (fileName) =>
+            fileName !== "gmloop.json" &&
+            fileName !== "input.gml" &&
+            fileName !== "expected.gml" &&
+            fileName !== expectedTextFile
     );
     assert.deepEqual(unexpectedFiles, [], `${caseDirectory} contains unexpected files: ${unexpectedFiles.join(", ")}`);
     assert.deepEqual(
@@ -120,12 +130,12 @@ async function processFixtureCaseDirectories(fixtureRoot: FixtureRootDefinition)
         const entries = await fs.readdir(caseDirectory, { withFileTypes: true });
         const fileNames = new Set(entries.filter((entry) => entry.isFile()).map((entry) => entry.name));
         const directoryNames = new Set(entries.filter((entry) => entry.isDirectory()).map((entry) => entry.name));
-
-        assertNoLegacyFiles(caseDirectory, fileNames);
-        assertFixtureCaseLayout(fixtureRoot, caseDirectory, fileNames, directoryNames);
-
         const configPath = path.join(caseDirectory, "gmloop.json");
         const parsed = JSON.parse(await fs.readFile(configPath, "utf8")) as Record<string, unknown>;
+
+        assertNoLegacyFiles(caseDirectory, fileNames);
+        assertFixtureCaseLayout(fixtureRoot, caseDirectory, fileNames, directoryNames, parsed);
+
         assertRemovedFormatterKeysAreAbsent(configPath, parsed);
         assertRemovedFixtureKeysAreAbsent(configPath, parsed);
     };

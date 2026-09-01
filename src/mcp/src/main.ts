@@ -1,7 +1,12 @@
 #!/usr/bin/env node
-// Set the skip flag BEFORE importing anything to prevent CLI auto-run
-process.env.PRETTIER_PLUGIN_GML_SKIP_CLI_RUN = "1";
+/**
+ * MCP stdio entrypoint.
+ *
+ * Importing the MCP server statically is safe because the CLI now auto-runs
+ * only when its own compiled entrypoint is the process entrypoint. The MCP
+ * binary therefore no longer needs to mutate a CLI skip environment variable
+ * or use dynamic import ordering as a hidden control-flow hook.
+ */
+import { runGmloopMcpStdioServer } from "./server/index.js";
 
-// Use dynamic import to ensure env var is set before module evaluation
-const { runGmloopMcpStdioServer } = await import("./server/index.js");
 await runGmloopMcpStdioServer();

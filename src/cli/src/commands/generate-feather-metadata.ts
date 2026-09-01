@@ -15,7 +15,7 @@ import {
 import { getManualRootMetadataPath, readManualText, resolveManualSourceCommitHash } from "../modules/manual/source.js";
 import { type ManualWorkflowOptions, prepareManualWorkflow } from "../modules/manual/workflow.js";
 import { writeJsonArtifact } from "../shared/fs-artifacts.js";
-import { createVerboseDurationLogger, timeSync } from "../shared/timing/verbose-timing.js";
+import { createVerboseDurationLogger, resolveVerboseFlag, timeSync } from "../shared/timing/verbose-timing.js";
 import { resolveFromRepoRoot } from "../shared/workspace-paths.js";
 
 const {
@@ -91,10 +91,6 @@ function resolveFeatherMetadataOptions(command?: CommanderCommandLike): Normaliz
     const options: FeatherMetadataCommandOptions = command?.opts?.() ?? {};
 
     return normalizeManualGeneratorBaseOptions(options, DEFAULT_OUTPUT_PATH);
-}
-
-function createVerboseState({ quiet }) {
-    return quiet ? { parsing: false } : { parsing: true };
 }
 
 function normalizeMultilineText(text) {
@@ -274,8 +270,20 @@ interface ManualTable {
     rows: ReadonlyArray<ReadonlyArray<string | null>>;
 }
 
+// The closed set of block shapes `resolveBlockType` can classify a manual DOM
+// node into. Centralizing this list (rather than leaving `ManualBlock.type`
+// as a bare `string`) lets the compiler catch typos at every comparison site
+// below and lets `normalizeContent` reject unrecognized values instead of
+// silently discarding their content into the default bucket.
+const MANUAL_BLOCK_TYPES = ["note", "paragraph", "heading", "list", "table", "code", "html"] as const;
+type ManualBlockType = (typeof MANUAL_BLOCK_TYPES)[number];
+
+function isManualBlockType(value: string): value is ManualBlockType {
+    return (MANUAL_BLOCK_TYPES as ReadonlyArray<string>).includes(value);
+}
+
 interface ManualBlock {
-    type: string;
+    type: ManualBlockType;
     text: string;
     level?: number;
     items?: ReadonlyArray<string>;
@@ -296,7 +304,7 @@ function shouldSkipManualBlock(hasClass) {
     return hasClass("footer") || hasClass("seealso");
 }
 
-function resolveBlockType(tagName, hasClass) {
+function resolveBlockType(tagName, hasClass): ManualBlockType {
     if (tagName === "p") {
         if (hasClass("code")) {
             return "code";
@@ -544,7 +552,24 @@ function collectNamingListMetadata(mainList) {
     return metadata;
 }
 
-const BLOCK_NORMALIZERS = {
+// The bucket shape produced by `normalizeContent`. Declaring it here (rather
+// than relying on an inline object literal) gives the `BLOCK_NORMALIZERS`
+// signature a typed `content` parameter, so each normalizer's `.push`/`.text`
+// access is checked instead of falling through to an implicit `any`.
+interface ManualContent {
+    paragraphs: string[];
+    notes: string[];
+    codeExamples: string[];
+    lists: string[][];
+    headings: string[];
+    tables: ManualTable[];
+}
+
+// Typing this as `Record<ManualBlockType, ...>` (rather than an untyped
+// object with a `default` fallback key) forces every member of
+// `MANUAL_BLOCK_TYPES` to have an explicit normalizer, so `normalizeContent`
+// no longer needs to guess at a fallback for types it doesn't recognize.
+const BLOCK_NORMALIZERS: Record<ManualBlockType, (content: ManualContent, block: ManualBlock) => void> = {
     code: (content, block) => {
         if (block.text) {
             content.codeExamples.push(block.text);
@@ -567,13 +592,16 @@ const BLOCK_NORMALIZERS = {
     heading: (content, block) => {
         pushNormalizedText(content.headings, block.text);
     },
-    default: (content, block) => {
+    paragraph: (content, block) => {
+        pushNormalizedText(content.paragraphs, block.text);
+    },
+    html: (content, block) => {
         pushNormalizedText(content.paragraphs, block.text);
     }
 };
 
-function normalizeContent(blocks) {
-    const content = {
+function normalizeContent(blocks: ReadonlyArray<unknown>): ManualContent {
+    const content: ManualContent = {
         paragraphs: [],
         notes: [],
         codeExamples: [],
@@ -582,12 +610,25 @@ function normalizeContent(blocks) {
         tables: []
     };
 
-    for (const block of blocks) {
-        if (!block) {
+    for (const entry of blocks) {
+        // Treat non-object entries (and `null`) as absent rather than throwing
+        // so partial DOM scans that produce stray text nodes do not poison the
+        // whole bucket. The real validation gate lives one step below, where
+        // reading `type` as `string` first lets the failed-check branch
+        // interpolate a mis-typed value into the error message without
+        // collapsing to `never` (and lets the success branch narrow back to
+        // `ManualBlockType` for the `BLOCK_NORMALIZERS` lookup).
+        if (!entry || typeof entry !== "object") {
             continue;
         }
 
-        const normalizeBlock = BLOCK_NORMALIZERS[block.type] ?? BLOCK_NORMALIZERS.default;
+        const block = entry as ManualBlock;
+        const blockType: string = block.type;
+        if (!isManualBlockType(blockType)) {
+            throw new Error(`Unrecognized Feather manual block type: "${blockType}"`);
+        }
+
+        const normalizeBlock = BLOCK_NORMALIZERS[blockType];
         normalizeBlock(content, block);
     }
 
@@ -617,6 +658,37 @@ function slugify(text) {
 }
 
 // Split the collected manual blocks into descriptive and trailing sections.
+//
+// GameMaker Feather diagnostics follow a recurring layout inside the manual:
+// a prose description (possibly multiple paragraphs and bullet lists), an
+// "Example" heading that introduces a bad code sample, an optional correction
+// paragraph, a good code sample, and any closing notes. We split on the first
+// such signal because `summariseDiagnosticBlocks` relies on the trailing tail
+// to disambiguate correction prose from a second example.
+//
+// Boundary precedence (matters for the trailing shape — keep stable):
+//   1. An "Example"-style heading wins outright. Everything from the heading
+//      onward, *including* the heading itself, is treated as trailing so that
+//      downstream collectors do not have to re-skip it. The heading remains
+//      dropped (we do not surface it in the structured record).
+//   2. Otherwise, fall back to the first code block: Feather authors sometimes
+//      omit the explicit "Example" heading and lead directly with a snippet.
+//      Starting the trailing region at the first code block (not after it)
+//      matches case (1) and prevents the badExample detector below from
+//      accepting the snippet's surrounding paragraph as description prose.
+//   3. If neither signal is present, the whole block list stays in the
+//      description bucket so we never silently truncate a diagnostic that
+//      lacks examples.
+//
+// What would break if the precedence is reordered: trusting the next code
+// block before an "Example" heading would misclassify the heading's lead-in
+// paragraph as description; trusting description first would either drop the
+// snippet from the trailing region or fold the correction paragraph into the
+// bad example. Both regressions surface as Feather diagnostics that lose
+// either their correction guidance or one of the two code samples.
+//
+// See docs/feather-data-plan.md for the upstream HTML topic layout that these
+// heuristics target (Feather_Messages in vendor/GameMaker-Manual).
 function splitDiagnosticBlocks(blocks) {
     const exampleHeadingIndex = blocks.findIndex(
         (block) => block.type === "heading" && /example/i.test(block.text ?? "")
@@ -693,6 +765,33 @@ function collectDiagnosticTrailingContent(blocks) {
 }
 
 // Convert the raw manual blocks into structured diagnostic metadata.
+//
+// This is the contract surface for the rest of the Feather pipeline:
+// `createDiagnosticMetadataFromHeading` consumes the returned shape verbatim
+// (`description`, `correction`, `badExample`, `goodExample`). The function is
+// a thin orchestrator — `splitDiagnosticBlocks` decides the description/
+// trailing boundary and `collectDiagnosticTrailingContent` walks the trailing
+// region to label each snippet as bad-then-good and to keep correction prose
+// separate from extra description fragments. We then re-attach those trailing
+// description fragments to the description list because Feather authors
+// frequently add a follow-up note *after* the example pair that still belongs
+// to the diagnostic description.
+//
+// Why the trailing scanner yields at most one bad example and N good examples:
+// the manual only ever shows a single bad snippet per diagnostic, but authors
+// sometimes include multiple good snippets when the fix has several variants.
+// Preserving that multiplicity (rather than overwriting or dropping extras)
+// matters for the formatter/feather rule surfaces that key on example parity.
+//
+// What would break if the description/trailing split here were merged into a
+// single pass: the bad-example detector would mis-identify the first sentence
+// of correction prose as a `badExample` whenever a diagnostic opens with a
+// note before its code sample. The correction prose would also fold into
+// `descriptionParts`, hiding the actionable guidance users see in tooling.
+//
+// See `splitDiagnosticBlocks` above for the boundary semantics and
+// docs/feather-data-plan.md (HTML parsing → diagnostics section) for the
+// upstream page layout this orchestration targets.
 function summariseDiagnosticBlocks(blocks) {
     const { descriptionBlocks, trailingBlocks } = splitDiagnosticBlocks(blocks);
     const descriptionParts = collectDiagnosticDescriptionParts(descriptionBlocks);
@@ -1109,7 +1208,7 @@ export async function runGenerateFeatherMetadata({ command, workflow }: FeatherM
     assertSupportedNodeVersion();
 
     const { outputPath, manualRoot, manualPackage, quiet } = resolveFeatherMetadataOptions(command);
-    const verbose = createVerboseState({ quiet });
+    const verbose = resolveVerboseFlag({ quiet });
     const { workflowPathFilter, manualSource } = await prepareManualWorkflow({
         workflow,
         outputPath,
@@ -1154,3 +1253,10 @@ if (isMainModule(import.meta.url)) {
         errorPrefix: "Failed to generate Feather metadata."
     });
 }
+
+// `isManualBlockType` and `normalizeContent` are exported separately (rather
+// than only through a test-only helper) so direct unit tests can exercise the
+// `ManualBlockType` validation and fail-fast behavior without spinning up a
+// full manual-parsing workflow. Neither is part of the CLI's public surface;
+// the inline `export` keeps them reachable without adding a new barrel entry.
+export { isManualBlockType, normalizeContent };

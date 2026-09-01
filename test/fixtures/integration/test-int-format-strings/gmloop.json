@@ -2,17 +2,15 @@
   "allowInlineControlFlowBlocks": false,
   "printWidth": 120,
   "lintRules": {
+    "gml/remove-doc-function-tags": "error",
     "gml/normalize-doc-comments": "error",
+    "gml/normalize-doc-param-separators": "error",
     "gml/prefer-string-interpolation": "error"
-  },
-  "refactor": {
-    "codemods": {
-      "docCommentAlignment": {}
-    }
   },
   "fixture": {
     "kind": "integration",
     "assertion": "transform",
-    "comparison": "exact"
+    "comparison": "exact",
+    "expectedTextFile": "expected.current.txt"
   }
 }

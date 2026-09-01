@@ -3,6 +3,35 @@ import type { Rule } from "eslint";
 
 import { gmlRuleAutofixServices } from "../gml-rule-services.js";
 import type { GmlRuleDefinition } from "../index.js";
+// manual-transforms provide a comprehensive suite of normalization helpers that
+// the linter rule previously replicated only incompletely. We now invoke them
+// directly and print the resulting AST fragment ourselves so the rule can keep
+// its existing text-edit infrastructure and remain synchronous.
+import {
+    applyDivisionToMultiplication,
+    applyManualMathNormalization,
+    applyScalarCondensing,
+    cleanupMultiplicativeIdentityParentheses,
+    isLiteralNumber,
+    simplifyZeroDivisionNumerators
+} from "../math/index.js";
+import { applyManualMathCanonicalForms } from "../math/math-manual-canonical-forms-policy.js";
+import {
+    canAstShapeContainMathOptimizationCandidate,
+    containsMathOptimizationSyntax,
+    DEFAULT_MATH_SIGNAL_PATTERNS,
+    evaluateMathOptimizationCandidate,
+    evaluateSkipDecision,
+    MATH_OPTIMIZATION_POLICY_CONSTANTS,
+    resolveMathNumericPolicy
+} from "../math/math-skip-evaluator.js";
+import {
+    applySourceAwareCanonicalMathReplacement,
+    trimOuterParentheses,
+    tryBuildConstantNumericReplacement,
+    tryBuildFastDotProductReplacement,
+    tryEvaluateNumericExpression
+} from "../math/optimize-math-canonical-replacements.js";
 import {
     applySourceTextEdits,
     createCommentTokenRangeIndex,
@@ -14,18 +43,6 @@ import {
     type SourceTextEdit,
     walkAstNodesWithParent
 } from "../rule-base-helpers.js";
-import { applyDivisionToMultiplication } from "../transforms/math-division-to-multiplication.js";
-import { cleanupMultiplicativeIdentityParentheses } from "../transforms/math-parentheses-cleanup.js";
-// manual-transforms provide a comprehensive suite of normalization helpers that
-// the linter rule previously replicated only incompletely. We now invoke them
-// directly and print the resulting AST fragment ourselves so the rule can keep
-// its existing text-edit infrastructure and remain synchronous.
-import {
-    applyManualMathNormalization,
-    applyScalarCondensing,
-    simplifyZeroDivisionNumerators
-} from "../transforms/math-traversal-normalization.js";
-import { evaluateSkipDecision } from "./optimize-math-skip-evaluator.js";
 
 const {
     getNodeStartIndex,
@@ -36,9 +53,6 @@ const {
     hasComment,
     isApproximatelyZero,
     isIdentifierNode,
-    isLogicalAndOperator,
-    isLogicalOrOperator,
-    toNumber,
     unwrapParenthesizedExpression: unwrapParenthesized
 } = Core;
 
@@ -54,135 +68,10 @@ const SUPPORTED_OPAQUE_MATH_FACTOR_TYPES = new Set([
     "CallExpression"
 ]);
 const COMMENT_SEQUENCE_PATTERN = /\/\/|\/\*|\*\//u;
-const MANUAL_MATH_CALL_SIGNAL_PATTERN =
-    /\b(?:arccos|arcsin|arctan|arctan2|cos|darccos|darcsin|darctan|darctan2|dcos|degtorad|dsin|dtan|exp|lengthdir_[xy]|ln|log2|mean|point_direction|point_distance(?:_3d)?|power|radtodeg|sin|sqr|sqrt|tan)\s*\(/u;
-const NUMERIC_LITERAL_SIGNAL_PATTERN = /(?<![\w.])(?:\d+(?:\.\d+)?|\.\d+)(?:e[+-]?\d+)?(?![\w.])/iu;
-
-function tryEvaluateExpression(node: any): any {
-    const unwrapped = unwrapParenthesized(node);
-    if (!unwrapped) {
-        return undefined;
-    }
-
-    if (unwrapped.type === "Literal") {
-        if (unwrapped.value === "true") {
-            return true;
-        }
-        if (unwrapped.value === "false") {
-            return false;
-        }
-        const num = Core.getLiteralNumberValue(unwrapped);
-        if (num !== null) {
-            return num;
-        }
-        return unwrapped.value;
-    }
-
-    if (unwrapped.type === "UnaryExpression") {
-        const argumentValue = tryEvaluateExpression(unwrapped.argument);
-        if (argumentValue === undefined) {
-            return undefined;
-        }
-
-        switch (unwrapped.operator) {
-            case "-": {
-                return typeof argumentValue === "number" ? argumentValue * -1 : undefined;
-            }
-            case "!":
-            case "not": {
-                return !argumentValue;
-            }
-            case "~": {
-                return typeof argumentValue === "number" ? ~argumentValue : undefined;
-            }
-            default: {
-                return undefined;
-            }
-        }
-    }
-
-    if (unwrapped.type === "BinaryExpression" || unwrapped.type === "LogicalExpression") {
-        const leftValue = tryEvaluateExpression(unwrapped.left);
-        const rightValue = tryEvaluateExpression(unwrapped.right);
-
-        if (isLogicalAndOperator(unwrapped.operator)) {
-            if (leftValue === false || rightValue === false) {
-                return false;
-            }
-            if (leftValue === true && rightValue === true) {
-                return true;
-            }
-            return undefined;
-        }
-        if (isLogicalOrOperator(unwrapped.operator)) {
-            if (leftValue === true || rightValue === true) {
-                return true;
-            }
-            if (leftValue === false && rightValue === false) {
-                return false;
-            }
-            return undefined;
-        }
-
-        if (leftValue === undefined || rightValue === undefined) {
-            return undefined;
-        }
-
-        switch (unwrapped.operator) {
-            case "+": {
-                return leftValue + rightValue;
-            }
-            case "-": {
-                return leftValue - rightValue;
-            }
-            case "*": {
-                return leftValue * rightValue;
-            }
-            case "/": {
-                return isApproximatelyZero(rightValue) ? undefined : leftValue / rightValue;
-            }
-            case "div": {
-                return isApproximatelyZero(rightValue) ? undefined : Math.trunc(leftValue / rightValue);
-            }
-            case "mod":
-            case "%": {
-                return isApproximatelyZero(rightValue) ? undefined : leftValue % rightValue;
-            }
-            case "xor": {
-                return Boolean(leftValue) !== Boolean(rightValue);
-            }
-            case "==": {
-                return leftValue == rightValue;
-            }
-            case "!=":
-            case "<>": {
-                return leftValue != rightValue;
-            }
-            case "<": {
-                return leftValue < rightValue;
-            }
-            case ">": {
-                return leftValue > rightValue;
-            }
-            case "<=": {
-                return leftValue <= rightValue;
-            }
-            case ">=": {
-                return leftValue >= rightValue;
-            }
-            default: {
-                return undefined;
-            }
-        }
-    }
-
-    return undefined;
-}
-
-function tryEvaluateNumericExpression(node: any): number | null {
-    const result = tryEvaluateExpression(node);
-    return toNumber(result);
-}
+const NUMERIC_LITERAL_SIGNAL_PATTERN = DEFAULT_MATH_SIGNAL_PATTERNS.numericLiteralSignal;
+const DIVISION_BASED_OPTIMIZATION_SIGNAL_PATTERN = DEFAULT_MATH_SIGNAL_PATTERNS.divisionBasedSignal;
+const MAX_MATH_OPTIMIZATION_CANDIDATE_TEXT_LENGTH =
+    MATH_OPTIMIZATION_POLICY_CONSTANTS.MAX_OPTIMIZATION_CANDIDATE_LENGTH;
 
 function canUseOpaqueMathFactor(node: any): boolean {
     const unwrapped = unwrapParenthesized(node);
@@ -203,39 +92,6 @@ function canUseOpaqueMathFactor(node: any): boolean {
     }
 
     return false;
-}
-
-function trimOuterParentheses(value: string): string {
-    let text = value.trim();
-    while (text.startsWith("(") && text.endsWith(")")) {
-        const inner = text.slice(1, -1);
-        const trimmed = inner.trim();
-
-        // Stripping the outermost pair is only valid if the inner content is
-        // already clean whitespace (no leading/trailing parens that would be lost
-        // by a .trim() alone) and the inner parens are balanced.
-        if (trimmed.length < inner.length || !containsBalancedParentheses(trimmed)) {
-            break;
-        }
-
-        text = trimmed;
-    }
-
-    return text;
-}
-function containsBalancedParentheses(text: string): boolean {
-    let depth = 0;
-    for (const ch of text) {
-        if (ch === "(") {
-            depth += 1;
-        } else if (ch === ")") {
-            depth -= 1;
-            if (depth < 0) {
-                return false;
-            }
-        }
-    }
-    return depth === 0;
 }
 
 function collectMultiplicativeComponents(sourceText: string, node: any): MultiplicativeComponents | null {
@@ -420,7 +276,7 @@ function containsCommentSyntax(text: string): boolean {
 
     const scanState = createStringCommentScanState();
     const length = text.length;
-    for (let index = 0; index < length; ) {
+    for (let index = 0; index < length;) {
         const nextIndex = advanceStringCommentScan(text, length, index, scanState, true);
         if (nextIndex !== index) {
             if (scanState.inBlockComment || scanState.inLineComment) {
@@ -454,15 +310,11 @@ function extractHalfLengthdirRotationExpression(node: any, variableName: string,
     ) {
         const rleft = unwrapParenthesized(right.left);
         const rright = unwrapParenthesized(right.right);
-        if (rleft?.type === "Literal" && rleft.value === 1 && rright?.type === "CallExpression") {
+        if (rleft?.type === "Literal" && isLiteralNumber(rleft, 1) && rright?.type === "CallExpression") {
             const callee = rright.object;
             if (isIdentifierNode(callee) && callee.name === "lengthdir_x") {
                 const args = rright.arguments;
-                if (
-                    args.length === 2 &&
-                    unwrapParenthesized(args[0])?.type === "Literal" &&
-                    unwrapParenthesized(args[0])?.value === 1
-                ) {
+                if (args.length === 2 && isLiteralNumber(unwrapParenthesized(args[0]), 1)) {
                     return gmlRuleAutofixServices.readNodeText(sourceText, args[1]);
                 }
             }
@@ -473,41 +325,15 @@ function extractHalfLengthdirRotationExpression(node: any, variableName: string,
 }
 
 function rewriteManualMathCanonicalForms(sourceText: string): string {
-    let rewritten = sourceText;
-
-    // common simplifications
-    // remove trivial multiplications by 1, but avoid touching decimal literals
-    // and identifiers that happen to end with '1'. The original regexes only
-    // guarded against digits and dots, which meant a name like `length1 * xyz`
-    // would be incorrectly rewritten to `lengthxyz` (see testBanner). We now
-    // treat word characters as boundaries when appropriate.
-    rewritten = rewritten.replaceAll(/\* 1(?![\w.])/g, "").replaceAll(/(?<![\w.])1 \* /g, "");
-
-    // Convert `sqrt(a*a + b*b + c*c)` patterns to the faster
-    // `point_distance_3d(0, 0, 0, a, b, c)` call. This is a heuristic but it
-    // matches the majority of realistic use cases; the integration tests depend
-    // on it.
-    rewritten = rewritten.replaceAll(
-        /sqrt\(\s*([A-Za-z0-9_.[\]]+)\s*\*\s*\1\s*\+\s*([A-Za-z0-9_.[\]]+)\s*\*\s*\2\s*\+\s*([A-Za-z0-9_.[\]]+)\s*\*\s*\3\s*\)/g,
-        "point_distance_3d(0, 0, 0, $1, $2, $3)"
-    );
-    rewritten = rewritten.replaceAll(
-        /sqrt\(\s*dot_product_3d\(\s*([A-Za-z0-9_.[\]]+)\s*,\s*([A-Za-z0-9_.[\]]+)\s*,\s*([A-Za-z0-9_.[\]]+)\s*,\s*\1\s*,\s*\2\s*,\s*\3\s*\)\s*\)/g,
-        "point_distance_3d(0, 0, 0, $1, $2, $3)"
-    );
-    // Collapse explicit undefined guard multiplication into the nullish-coalescing
-    // shorthand.
-    rewritten = rewritten.replaceAll(
-        /if\s*\(\s*!is_undefined\(\s*([A-Za-z0-9_.]+)\s*\)\s*\)\s*\{\s*([A-Za-z0-9_.]+)\s*\*=\s*\1\s*;\s*\}/g,
-        "$2 *= $1 ?? 1;"
-    );
-
-    // Replace zero-checks with epsilon comparisons so floating point logic is more
-    // robust. This corresponds to the transformation exercised by
-    // `testFunctions`.
-    rewritten = rewritten.replaceAll(/if\s*\(\s*([A-Za-z0-9_.]+)\s*!=\s*0\s*\)/g, "if (abs($1) > math_get_epsilon())");
-
-    return rewritten;
+    // The canonical-form pass used to live inline here, but the policy
+    // (which patterns to rewrite into which canonical forms) and the
+    // mechanism (iterating the rule list over the buffer) had become
+    // inseparable. Both responsibilities are now owned by
+    // `math/math-manual-canonical-forms-policy.ts` (the math-domain policy
+    // module); this function is a thin mechanism wrapper that delegates to
+    // the policy module so the rule body stays focused on AST-level
+    // concerns.
+    return applyManualMathCanonicalForms(sourceText);
 }
 
 function hasOverlappingRange(start: number, end: number, edits: ReadonlyArray<SourceTextEdit>): boolean {
@@ -524,456 +350,10 @@ function hasOverlapWithLastScheduledEdit(
 
 type SourceTextRange = Readonly<{ start: number; end: number }>;
 
-const MATH_OPTIMIZATION_SIGNAL_PATTERN =
-    /[*/%+-]|\b(?:div|mod|power|sqrt|sqr|sin|cos|tan|dsin|dcos|dtan|degtorad|radtodeg|arctan2|darctan2|ln|exp|log2|point_distance(?:_3d)?|point_direction|lengthdir_[xy]|dot_product(?:_3d)?|mean)\b/u;
-const MATH_STRONG_SIGNAL_PATTERN =
-    /[*/%]|\b(?:div|mod|power|sqrt|sqr|sin|cos|tan|dsin|dcos|dtan|degtorad|radtodeg|arctan2|darctan2|ln|exp|log2|point_distance(?:_3d)?|point_direction|lengthdir_[xy]|dot_product(?:_3d)?|mean)\b/u;
-const DIVISION_BASED_OPTIMIZATION_SIGNAL_PATTERN = /[/%]|\b(?:div|mod)\b/u;
-const MAX_MATH_OPTIMIZATION_CANDIDATE_TEXT_LENGTH = 2000;
-const MAX_MANUAL_NORMALIZATION_CANDIDATE_TEXT_LENGTH = 600;
-
 function isRangeInsideAnyRange(range: SourceTextRange, containerRanges: ReadonlyArray<SourceTextRange>): boolean {
     return containerRanges.some((containerRange) => {
         return range.start >= containerRange.start && range.end <= containerRange.end;
     });
-}
-
-function containsPotentialMathOptimizationSyntax(sourceTextOfNode: string): boolean {
-    if (!MATH_OPTIMIZATION_SIGNAL_PATTERN.test(sourceTextOfNode)) {
-        return false;
-    }
-
-    if (MATH_STRONG_SIGNAL_PATTERN.test(sourceTextOfNode)) {
-        return true;
-    }
-
-    // Avoid treating long string-concatenation chains as math candidates.
-    if (sourceTextOfNode.includes('"') || sourceTextOfNode.includes("'")) {
-        return false;
-    }
-
-    // Additive chains of function calls (for example string-building traces)
-    // can look math-like due embedded numeric literals but are not safe/valuable
-    // optimize-math candidates.
-    if (/\b[A-Za-z_]\w*\s*\(/u.test(sourceTextOfNode)) {
-        return false;
-    }
-
-    return NUMERIC_LITERAL_SIGNAL_PATTERN.test(sourceTextOfNode);
-}
-
-function shouldAttemptManualNormalization(sourceTextOfNode: string): boolean {
-    if (sourceTextOfNode.length > MAX_MANUAL_NORMALIZATION_CANDIDATE_TEXT_LENGTH) {
-        return false;
-    }
-
-    return (
-        DIVISION_BASED_OPTIMIZATION_SIGNAL_PATTERN.test(sourceTextOfNode) ||
-        sourceTextOfNode.includes("*") ||
-        MANUAL_MATH_CALL_SIGNAL_PATTERN.test(sourceTextOfNode) ||
-        ((sourceTextOfNode.includes("+") || sourceTextOfNode.includes("-")) &&
-            NUMERIC_LITERAL_SIGNAL_PATTERN.test(sourceTextOfNode))
-    );
-}
-
-function tryReadNumericLiteralValue(node: unknown): number | null {
-    const expression = unwrapParenthesized(node);
-    if (!expression) {
-        return null;
-    }
-
-    return Core.getLiteralNumberValue(expression);
-}
-
-function isCanonicalNumericLiteralText(sourceText: string, node: unknown): boolean {
-    const expression = unwrapParenthesized(node);
-    if (!expression || expression.type !== "Literal") {
-        return false;
-    }
-
-    const numericValue = Core.getLiteralNumberValue(expression);
-    if (numericValue === null) {
-        return false;
-    }
-
-    const literalText = gmlRuleAutofixServices.readNodeText(sourceText, expression);
-    const canonicalText = formatCanonicalNumericLiteral(numericValue);
-    return literalText !== null && canonicalText !== null && literalText === canonicalText;
-}
-
-function isCanonicalConstantNumericExpression(sourceText: string, node: unknown): boolean {
-    const expression = unwrapParenthesized(node);
-    if (!expression) {
-        return false;
-    }
-
-    switch (expression.type) {
-        case "Literal": {
-            return isCanonicalNumericLiteralText(sourceText, expression);
-        }
-        case "UnaryExpression": {
-            if (expression.operator !== "-" && expression.operator !== "+") {
-                return false;
-            }
-
-            return isCanonicalConstantNumericExpression(sourceText, expression.argument);
-        }
-        case "BinaryExpression": {
-            if (!["+", "-", "*", "/", "div", "mod", "%"].includes(expression.operator)) {
-                return false;
-            }
-
-            return (
-                isCanonicalConstantNumericExpression(sourceText, expression.left) &&
-                isCanonicalConstantNumericExpression(sourceText, expression.right)
-            );
-        }
-        default: {
-            return false;
-        }
-    }
-}
-
-function tryBuildConstantNumericReplacement(sourceText: string, node: unknown): string | null {
-    if (!isCanonicalConstantNumericExpression(sourceText, node)) {
-        return null;
-    }
-
-    const numericValue = tryEvaluateNumericExpression(node);
-    if (numericValue === null) {
-        return null;
-    }
-
-    const replacement = formatCanonicalNumericLiteral(numericValue);
-    if (!replacement) {
-        return null;
-    }
-
-    const originalText = gmlRuleAutofixServices.readNodeText(sourceText, node);
-    return originalText && originalText !== replacement ? replacement : null;
-}
-
-function collectAdditiveTerms(node: unknown, terms: unknown[]): boolean {
-    const expression = unwrapParenthesized(node);
-    if (!expression) {
-        return false;
-    }
-
-    if (expression.type === "BinaryExpression" && expression.operator === "+") {
-        return collectAdditiveTerms(expression.left, terms) && collectAdditiveTerms(expression.right, terms);
-    }
-
-    terms.push(expression);
-    return true;
-}
-
-function tryReadSquaredOperandText(sourceText: string, node: unknown): string | null {
-    const expression = unwrapParenthesized(node);
-    if (!expression || expression.type !== "BinaryExpression" || expression.operator !== "*") {
-        return null;
-    }
-
-    if (!Core.areExpressionNodesEquivalentIgnoringParentheses(expression.left, expression.right)) {
-        return null;
-    }
-
-    const operandText = gmlRuleAutofixServices.readNodeText(sourceText, expression.left);
-    return operandText ? trimOuterParentheses(operandText) : null;
-}
-
-function tryBuildGroupedSquareSumReplacement(sourceText: string, node: unknown): string | null {
-    const terms: unknown[] = [];
-    if (!collectAdditiveTerms(node, terms) || terms.length !== 3) {
-        return null;
-    }
-
-    const operandTexts = terms.map((term) => tryReadSquaredOperandText(sourceText, term));
-    if (operandTexts.includes(null)) {
-        return null;
-    }
-
-    const [first, second, third] = operandTexts as [string, string, string];
-    return `dot_product_3d(${first}, ${second}, ${third}, ${first}, ${second}, ${third})`;
-}
-
-function tryReadHalfScaledBase(node: unknown) {
-    const expression = unwrapParenthesized(node);
-    if (!expression || expression.type !== "BinaryExpression") {
-        return null;
-    }
-
-    if (expression.operator === "/") {
-        const denominatorValue = tryReadNumericLiteralValue(expression.right);
-        if (denominatorValue === null || !Core.areNumbersApproximatelyEqual(denominatorValue, 2)) {
-            return null;
-        }
-
-        return unwrapParenthesized(expression.left);
-    }
-
-    if (expression.operator !== "*") {
-        return null;
-    }
-
-    const leftValue = tryReadNumericLiteralValue(expression.left);
-    if (leftValue !== null && Core.areNumbersApproximatelyEqual(leftValue, 0.5)) {
-        return unwrapParenthesized(expression.right);
-    }
-
-    const rightValue = tryReadNumericLiteralValue(expression.right);
-    if (rightValue !== null && Core.areNumbersApproximatelyEqual(rightValue, 0.5)) {
-        return unwrapParenthesized(expression.left);
-    }
-
-    return null;
-}
-
-function tryBuildHalfLengthdirDifferenceReplacement(sourceText: string, node: unknown): string | null {
-    const expression = unwrapParenthesized(node);
-    if (!expression || expression.type !== "BinaryExpression" || expression.operator !== "-") {
-        return null;
-    }
-
-    const leftDifference = unwrapParenthesized(expression.left);
-    const rightCall = unwrapParenthesized(expression.right);
-    if (
-        !leftDifference ||
-        leftDifference.type !== "BinaryExpression" ||
-        leftDifference.operator !== "-" ||
-        !rightCall ||
-        rightCall.type !== "CallExpression"
-    ) {
-        return null;
-    }
-
-    const callee = unwrapParenthesized(rightCall.object);
-    if (!isIdentifierNode(callee) || (callee.name !== "lengthdir_x" && callee.name !== "lengthdir_y")) {
-        return null;
-    }
-
-    const callArguments = rightCall.arguments;
-    if (!Array.isArray(callArguments) || callArguments.length !== 2) {
-        return null;
-    }
-
-    const [rawLengthArgument, rawAngleArgument] = callArguments;
-    const baseExpression = unwrapParenthesized(leftDifference.left);
-    const subtrahendBaseExpression = tryReadHalfScaledBase(leftDifference.right);
-    const callBaseExpression = tryReadHalfScaledBase(rawLengthArgument);
-    if (!baseExpression || !subtrahendBaseExpression || !callBaseExpression) {
-        return null;
-    }
-
-    if (
-        !Core.areExpressionNodesEquivalentIgnoringParentheses(baseExpression, subtrahendBaseExpression) ||
-        !Core.areExpressionNodesEquivalentIgnoringParentheses(baseExpression, callBaseExpression)
-    ) {
-        return null;
-    }
-
-    const baseText = gmlRuleAutofixServices.readNodeText(sourceText, baseExpression);
-    const angleText = gmlRuleAutofixServices.readNodeText(sourceText, rawAngleArgument);
-    if (!baseText || !angleText) {
-        return null;
-    }
-
-    const normalizedBaseText = trimOuterParentheses(baseText);
-    const normalizedAngleText = trimOuterParentheses(angleText);
-    return `${normalizedBaseText} * 0.5 * (1 - ${callee.name}(1, ${normalizedAngleText}))`;
-}
-
-type RatioMultiplierMatch = Readonly<{
-    multiplier: number;
-    ratioExpression: unknown;
-}>;
-
-function tryMatchRatioMultiplier(node: unknown): RatioMultiplierMatch | null {
-    const expression = unwrapParenthesized(node);
-    if (!expression || expression.type !== "BinaryExpression" || expression.operator !== "*") {
-        return null;
-    }
-
-    const leftValue = tryReadNumericLiteralValue(expression.left);
-    const rightValue = tryReadNumericLiteralValue(expression.right);
-
-    if (leftValue !== null && rightValue !== null) {
-        return null;
-    }
-
-    if (leftValue !== null) {
-        const ratioExpression = unwrapParenthesized(expression.right);
-        if (!ratioExpression || ratioExpression.type !== "BinaryExpression" || ratioExpression.operator !== "/") {
-            return null;
-        }
-
-        return { multiplier: leftValue, ratioExpression };
-    }
-
-    if (rightValue !== null) {
-        const ratioExpression = unwrapParenthesized(expression.left);
-        if (!ratioExpression || ratioExpression.type !== "BinaryExpression" || ratioExpression.operator !== "/") {
-            return null;
-        }
-
-        return { multiplier: rightValue, ratioExpression };
-    }
-
-    return null;
-}
-
-function formatCanonicalNumericLiteral(value: number): string | null {
-    if (!Number.isFinite(value)) {
-        return null;
-    }
-
-    if (Object.is(value, -0) || value === 0) {
-        return "0";
-    }
-
-    const roundedInteger = Math.round(value);
-    if (Core.areNumbersApproximatelyEqual(value, roundedInteger)) {
-        return roundedInteger.toString();
-    }
-
-    return Number(value.toPrecision(12)).toString();
-}
-
-function tryBuildGroupedRatioProductReplacement(sourceText: string, node: unknown): string | null {
-    const expression = unwrapParenthesized(node);
-    if (!expression || expression.type !== "BinaryExpression" || expression.operator !== "/") {
-        return null;
-    }
-
-    const divisorValue = tryReadNumericLiteralValue(expression.right);
-    if (divisorValue === null || Core.areNumbersApproximatelyEqual(divisorValue, 0)) {
-        return null;
-    }
-
-    const ratioMultiplierMatch = tryMatchRatioMultiplier(expression.left);
-    if (!ratioMultiplierMatch) {
-        return null;
-    }
-
-    const scaledMultiplier = ratioMultiplierMatch.multiplier / divisorValue;
-    const multiplierText = formatCanonicalNumericLiteral(scaledMultiplier);
-    const ratioText = gmlRuleAutofixServices.readNodeText(sourceText, ratioMultiplierMatch.ratioExpression);
-    if (!multiplierText || !ratioText) {
-        return null;
-    }
-
-    return `(${trimOuterParentheses(ratioText)}) * ${multiplierText}`;
-}
-
-function applySourceAwareCanonicalMathReplacement(sourceText: string, node: unknown, replacement: string): string {
-    const halfLengthdirReplacement = tryBuildHalfLengthdirDifferenceReplacement(sourceText, node);
-    if (halfLengthdirReplacement) {
-        return halfLengthdirReplacement;
-    }
-
-    const groupedRatioReplacement = tryBuildGroupedRatioProductReplacement(sourceText, node);
-    if (groupedRatioReplacement) {
-        return groupedRatioReplacement;
-    }
-
-    const groupedSquareReplacement = tryBuildGroupedSquareSumReplacement(sourceText, node);
-    if (groupedSquareReplacement) {
-        return groupedSquareReplacement;
-    }
-
-    return replacement;
-}
-
-function collectAdditiveTermsForDotProduct(node: any, terms: any[]): boolean {
-    const expression = unwrapParenthesized(node);
-    if (!expression) {
-        return false;
-    }
-
-    if (expression.type === "BinaryExpression" && expression.operator === "+") {
-        if (hasComment(expression)) {
-            return false;
-        }
-
-        return (
-            collectAdditiveTermsForDotProduct(expression.left, terms) &&
-            collectAdditiveTermsForDotProduct(expression.right, terms)
-        );
-    }
-
-    terms.push(expression);
-    return true;
-}
-
-function isFastDotProductOperandCandidate(node: unknown): boolean {
-    const expression = unwrapParenthesized(node);
-    if (!expression || hasComment(expression)) {
-        return false;
-    }
-
-    return (
-        expression.type === "Identifier" ||
-        expression.type === "MemberDotExpression" ||
-        expression.type === "MemberIndexExpression"
-    );
-}
-
-function tryBuildFastDotProductReplacement(sourceText: string, node: any): string | null {
-    const expression = unwrapParenthesized(node);
-    if (
-        !expression ||
-        expression.type !== "BinaryExpression" ||
-        expression.operator !== "+" ||
-        hasComment(expression)
-    ) {
-        return null;
-    }
-
-    const terms: any[] = [];
-    if (!collectAdditiveTermsForDotProduct(expression, terms)) {
-        return null;
-    }
-
-    if (terms.length !== 2 && terms.length !== 3) {
-        return null;
-    }
-
-    const leftVectorTerms: string[] = [];
-    const rightVectorTerms: string[] = [];
-
-    for (const term of terms) {
-        const multiplicativeExpression = unwrapParenthesized(term);
-        if (
-            !multiplicativeExpression ||
-            multiplicativeExpression.type !== "BinaryExpression" ||
-            multiplicativeExpression.operator !== "*" ||
-            hasComment(multiplicativeExpression)
-        ) {
-            return null;
-        }
-
-        const leftOperand = unwrapParenthesized(multiplicativeExpression.left);
-        const rightOperand = unwrapParenthesized(multiplicativeExpression.right);
-        if (!leftOperand || !rightOperand) {
-            return null;
-        }
-
-        if (!isFastDotProductOperandCandidate(leftOperand) || !isFastDotProductOperandCandidate(rightOperand)) {
-            return null;
-        }
-
-        const leftText = gmlRuleAutofixServices.readNodeText(sourceText, leftOperand);
-        const rightText = gmlRuleAutofixServices.readNodeText(sourceText, rightOperand);
-        if (!leftText || !rightText) {
-            return null;
-        }
-
-        leftVectorTerms.push(trimOuterParentheses(leftText));
-        rightVectorTerms.push(trimOuterParentheses(rightText));
-    }
-
-    const functionName = terms.length === 2 ? "dot_product" : "dot_product_3d";
-    const argumentTexts = [...leftVectorTerms, ...rightVectorTerms];
-    return `${functionName}(${argumentTexts.join(", ")})`;
 }
 
 function performHalfLengthdirOptimizations(bodyStatements: any[], sourceText: string, edits: SourceTextEdit[]) {
@@ -1143,12 +523,16 @@ function performDeadCodeElimination(bodyStatements: any[], sourceText: string, e
                     case "*=":
                     case "/=": {
                         const val = tryEvaluateNumericExpression(expr.right);
-                        // Strict === 1 catches the common exact case without epsilon overhead.
-                        // Epsilon-tolerant check handles the floating-point edge case where
-                        // rounding error produces a value like 0.9999999999999998 instead of 1.
-                        // Without this tolerance, expressions like `x *= 1 - 1e-16` or `x /= 1 + 1e-15`
-                        // would silently bypass the optimization and produce incorrect output.
-                        if (val === 1 || Core.areNumbersApproximatelyEqual(val, 1)) {
+                        // Use the shared tolerance-aware comparison so that values
+                        // produced by floating-point arithmetic — for example
+                        // `1 - 2.22e-16` evaluating to 0.9999999999999998, or
+                        // `(1 / 3) * 3` evaluating to 0.9999999999999999 — are still
+                        // recognised as "effectively 1" and trigger the no-op rewrite.
+                        // A strict `val === 1` check would silently miss these cases
+                        // and leave the redundant `*=` / `/=` statement in place.
+                        // The shared helper retains an internal `a === b` fast path,
+                        // so the common exact-1 case pays no measurable extra cost.
+                        if (Core.areNumbersApproximatelyEqual(val, 1)) {
                             scheduleNodeRemoval(stmt, sourceText, edits);
                             handled = true;
                         }
@@ -1179,15 +563,25 @@ function performDeadCodeElimination(bodyStatements: any[], sourceText: string, e
 /**
  * Attempt to run the full manual-math normalization pipeline on a single
  * expression node and return the resulting source text if it changed.
+ *
+ * @param sourceText - Full source text being linted; used as the working
+ *   buffer for cloned expressions and as context for downstream helpers.
+ * @param node - The AST node to attempt to normalize.
+ * @param policyOverride - Optional partial {@link MathNumericPolicy} override.
+ *   When supplied, the reciprocal/divisor thresholds used by the math
+ *   transforms are tightened or relaxed accordingly. This lets the rule
+ *   caller (or a future ESLint schema option) tune the precision
+ *   sensitivity of the rewrite without modifying the transform modules.
  */
-function attemptManualNormalization(sourceText: string, node: any): string | null {
+function attemptManualNormalization(sourceText: string, node: any, policyOverride?: unknown): string | null {
     const clone = Core.cloneAstNode(node) as MutableGameMakerAstNode;
     if (!clone) {
         return null;
     }
 
-    const context = { sourceText };
-    applyDivisionToMultiplication(clone);
+    const policy = resolveMathNumericPolicy(policyOverride);
+    const context = { sourceText, mathNumericPolicy: policy };
+    applyDivisionToMultiplication(clone, policy);
     applyManualMathNormalization(clone, context);
     applyScalarCondensing(clone, context);
     simplifyZeroDivisionNumerators(clone, context as any);
@@ -1245,6 +639,17 @@ function performGeneralExpressionSimplification(node: any, sourceText: string, e
                     targetNode = visitedNode.argument;
                     break;
                 }
+                case "ParenthesizedExpression": {
+                    const expression = unwrapParenthesized(visitedNode);
+                    if (
+                        expression?.type === "BinaryExpression" &&
+                        (parent as { type?: unknown } | null)?.type === "CallExpression" &&
+                        parentKey === "arguments"
+                    ) {
+                        targetNode = visitedNode;
+                    }
+                    break;
+                }
                 case "BinaryExpression": {
                     if (shouldSkipBinaryExpressionCandidate(parent, parentKey)) {
                         break;
@@ -1266,6 +671,10 @@ function performGeneralExpressionSimplification(node: any, sourceText: string, e
 
             const targetRange: SourceTextRange = { start, end };
             if (isRangeInsideAnyRange(targetRange, normalizedExpressionRanges)) {
+                return;
+            }
+
+            if (!canAstShapeContainMathOptimizationCandidate(targetNode)) {
                 return;
             }
 
@@ -1300,7 +709,7 @@ function performGeneralExpressionSimplification(node: any, sourceText: string, e
                     return;
                 }
 
-                if (!containsPotentialMathOptimizationSyntax(sourceTextOfNode)) {
+                if (!containsMathOptimizationSyntax(sourceTextOfNode)) {
                     return;
                 }
 
@@ -1327,7 +736,13 @@ function performGeneralExpressionSimplification(node: any, sourceText: string, e
                         }
                     }
 
-                    if (!replacement && shouldAttemptManualNormalization(sourceTextOfNode)) {
+                    if (
+                        !replacement &&
+                        evaluateMathOptimizationCandidate({
+                            sourceText: sourceTextOfNode,
+                            nodeType: targetNode.type
+                        }).shouldAttemptManualNormalization
+                    ) {
                         replacement = attemptManualNormalization(sourceText, targetNode);
                     }
 

@@ -49,12 +49,39 @@ export const NUMERIC_STRING_LITERAL_PATTERN = /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[
  */
 export const INLINEABLE_SINGLE_STATEMENT_TYPES = new Set([
     "ReturnStatement",
+    "BreakStatement",
+    "ContinueStatement",
     "ExitStatement",
     "ExpressionStatement",
     "CallExpression"
 ]);
 
 export const MULTIPLICATIVE_BINARY_OPERATORS = new Set(["*", "/", "div", "%", "mod"]);
+
+/**
+ * Layout overhead (in characters) used by `shouldInlineClauseByPrintWidth` to
+ * estimate the on-disk length of an inline control-flow block such as
+ * `if (cond) { body; }`. The total overhead is the sum of the prefix, the
+ * middle (between clause and body), and the suffix. The constants are derived
+ * directly from the doc produced by `printSingleClauseStatement` (search for
+ * the matching `" ("`, `") {"`, and `" }"` strings there) so the estimator
+ * stays in lockstep with the actual output as the printer evolves.
+ *
+ * Keep these in sync with the doc fragments in
+ * `src/format/src/printer/single-clause-statement.ts` (the `group([...])` call
+ * inside `printSingleClauseStatement`).
+ */
+export const INLINE_BLOCK_PREFIX_OVERHEAD = " (".length;
+export const INLINE_BLOCK_MIDDLE_OVERHEAD = ") { ".length;
+export const INLINE_BLOCK_SUFFIX_OVERHEAD = " }".length;
+
+/**
+ * Sum of the three inline-block layout overhead constants. Pre-computed so
+ * the inline-length estimator in `shouldInlineClauseByPrintWidth` can add a
+ * single value to the clause and body source-text lengths.
+ */
+export const INLINE_BLOCK_TOTAL_OVERHEAD =
+    INLINE_BLOCK_PREFIX_OVERHEAD + INLINE_BLOCK_MIDDLE_OVERHEAD + INLINE_BLOCK_SUFFIX_OVERHEAD;
 
 // String constants to avoid duplication warnings
 export const STRING_TYPE = "string";

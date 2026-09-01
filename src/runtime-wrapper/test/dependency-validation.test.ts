@@ -1,9 +1,9 @@
 import { strict as assert } from "node:assert";
 import { describe, test } from "node:test";
 
-import { validateBatchPatchDependencies, validatePatchDependencies } from "../browser/runtime/patch-utils.js";
-import { createRuntimeWrapper } from "../browser/runtime/runtime-wrapper.js";
-import type { Patch, RuntimeRegistry } from "../browser/runtime/types.js";
+import { validateBatchPatchDependencies, validatePatchDependencies } from "../src/browser/runtime/patch-utils.js";
+import { createRuntimeWrapper } from "../src/browser/runtime/runtime-wrapper.js";
+import type { Patch, RuntimeRegistry } from "../src/browser/runtime/types.js";
 import { restoreGlobalProperties, snapshotGlobalProperties } from "./test-helpers/runtime-global-state.js";
 
 void describe("Dependency Validation", () => {
@@ -189,13 +189,86 @@ void describe("Dependency Validation", () => {
             id: "gml/event/oSpider/Step_0",
             js_body: "self.distance = point_distance(0, 0, 3, 4);",
             metadata: {
-                dependencies: ["gml/script/point_distance", "gml/script/lerp", "gml/script/array_copy"]
+                dependencies: [
+                    "gml/script/gml_pragma",
+                    "gml/script/point_distance",
+                    "gml/script/lerp",
+                    "gml/script/array_copy"
+                ]
             }
         };
 
         const result = validatePatchDependencies(patch, registry);
         assert.strictEqual(result.satisfied, true);
         assert.strictEqual(result.missingDependencies.length, 0);
+    });
+
+    void test("validatePatchDependencies discovers minified HTML5 builtin mappings", () => {
+        const snapshot = snapshotGlobalProperties(["_HL4", "_texture_is_ready"]);
+        const globals = globalThis as Record<string, unknown>;
+
+        try {
+            globals._HL4 = {
+                self: "self",
+                mouse_x: "_mouse_x",
+                current_time: "_current_time",
+                variable_instance_get: "_variable_instance_get",
+                texture_is_ready: "_texture_is_ready"
+            };
+            globals._texture_is_ready = () => true;
+
+            const patch: Patch = {
+                kind: "script",
+                id: "gml/script/use_texture_readiness",
+                js_body: "return texture_is_ready(0);",
+                metadata: {
+                    dependencies: ["gml/script/texture_is_ready"]
+                }
+            };
+
+            const result = validatePatchDependencies(patch, {
+                scripts: {},
+                events: {},
+                closures: {}
+            });
+            assert.equal(result.satisfied, true);
+            assert.deepEqual(result.missingDependencies, []);
+        } finally {
+            restoreGlobalProperties(snapshot);
+        }
+    });
+
+    void test("validatePatchDependencies discovers minified base script tables", () => {
+        const snapshot = snapshotGlobalProperties(["_b1"]);
+        const globals = globalThis as Record<string, unknown>;
+
+        try {
+            globals._b1 = {
+                _eu3: ["gml_Script_base_runtime_helper"],
+                _fu3: [() => 42]
+            };
+
+            const result = validatePatchDependencies(
+                {
+                    kind: "script",
+                    id: "gml/script/uses_base_runtime_helper",
+                    js_body: "return base_runtime_helper();",
+                    metadata: {
+                        dependencies: ["gml/script/base_runtime_helper"]
+                    }
+                },
+                {
+                    scripts: {},
+                    events: {},
+                    closures: {}
+                }
+            );
+
+            assert.equal(result.satisfied, true);
+            assert.deepEqual(result.missingDependencies, []);
+        } finally {
+            restoreGlobalProperties(snapshot);
+        }
     });
 
     void test("validateBatchPatchDependencies accepts runtime script dependencies during replay", () => {
@@ -314,9 +387,27 @@ void describe("Dependency Validation", () => {
             }
         };
 
-        assert.throws(() => {
-            wrapper.applyPatch(patchWithDep);
-        }, /unsatisfied dependencies/);
+        // Contract: applyPatch must throw when dependencies are missing,
+        // and the thrown error must identify the offending patch and the
+        // missing dependency IDs so operators can diagnose the failure.
+        // The exact phrasing of the error is intentionally not pinned
+        // here — the README documents the message template, but the
+        // test focuses on the actionable data the caller needs.
+        assert.throws(
+            () => {
+                wrapper.applyPatch(patchWithDep);
+            },
+            (error: unknown) => {
+                assert.ok(error instanceof Error, "expected an Error to be thrown");
+                const message = error.message;
+                assert.ok(message.includes("script:dependent"), `error should mention the patch id: ${message}`);
+                assert.ok(
+                    message.includes("script:base_fn"),
+                    `error should mention the missing dependency: ${message}`
+                );
+                return true;
+            }
+        );
     });
 
     void test("applyPatch succeeds when dependencies are satisfied", () => {

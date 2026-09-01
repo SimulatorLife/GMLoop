@@ -1,13 +1,14 @@
 import { html, nothing } from "lit";
 
-import { type GraphVisualizationUiModel, hasLoadedGraphIndex } from "../contracts.js";
-import type { GraphVisualizationUiPage, GraphVisualizationUiState } from "../state/types.js";
+import { type GraphVisualizationUiModel } from "../contracts.js";
 import {
     GRAPH_UI_EVENT_NAVIGATE_PAGE,
     GRAPH_UI_EVENT_TRIGGER_OPEN_PROJECT,
     type GraphUiNavigatePageDetail
-} from "./events.js";
+} from "../events/events.js";
+import type { GraphVisualizationUiPage, GraphVisualizationUiState } from "../state/types.js";
 import { LightDomLitElement } from "./light-dom-lit-element.js";
+import { renderProcessButtonContent } from "./primitives/gm-button.js";
 
 /**
  * Header, navigation, and loaded-target summary for graph/docs/config surfaces.
@@ -37,10 +38,6 @@ export class GmAppHeader extends LightDomLitElement {
             return;
         }
 
-        if (page === "graph" && !hasLoadedGraphIndex(this.model)) {
-            return;
-        }
-
         this.dispatchEvent(
             new CustomEvent<GraphUiNavigatePageDetail>(GRAPH_UI_EVENT_NAVIGATE_PAGE, {
                 bubbles: true,
@@ -65,9 +62,9 @@ export class GmAppHeader extends LightDomLitElement {
         }
 
         const loadedTarget = this.model.loadedTarget;
-        const hasLoadedIndex = hasLoadedGraphIndex(this.model);
         const liveReloadPage: GraphVisualizationUiPage = "live-reload";
         const activePath = loadedTarget?.activePath ?? this.model.title;
+        const isProjectLoading = this.model.startupState?.phase === "loading";
         return html`
             <header id="app-header" class="app-header">
                 <div class="topbar-row">
@@ -121,10 +118,13 @@ export class GmAppHeader extends LightDomLitElement {
                                     id="tab-graph"
                                     aria-pressed=${this.state.activePage === "graph"}
                                     aria-current=${this.#getAriaCurrentForPage("graph")}
-                                    ?disabled=${!hasLoadedIndex}
-                                    class=${this.state.activePage === "graph"
-                                        ? `${GmAppHeader.#TOP_NAV_BUTTON_BASE_CLASS} active`
-                                        : GmAppHeader.#TOP_NAV_BUTTON_BASE_CLASS}
+                                    aria-keyshortcuts="1"
+                                    title="Graph Index (1)"
+                                    class=${
+                                        this.state.activePage === "graph"
+                                            ? `${GmAppHeader.#TOP_NAV_BUTTON_BASE_CLASS} active`
+                                            : GmAppHeader.#TOP_NAV_BUTTON_BASE_CLASS
+                                    }
                                     @click=${() => this.#emitNavigatePage("graph")}
                                 >
                                     Graph Index
@@ -133,9 +133,13 @@ export class GmAppHeader extends LightDomLitElement {
                                     id="tab-docs"
                                     aria-pressed=${this.state.activePage === "docs"}
                                     aria-current=${this.#getAriaCurrentForPage("docs")}
-                                    class=${this.state.activePage === "docs"
-                                        ? `${GmAppHeader.#TOP_NAV_BUTTON_BASE_CLASS} active`
-                                        : GmAppHeader.#TOP_NAV_BUTTON_BASE_CLASS}
+                                    aria-keyshortcuts="2"
+                                    title="Docs (2)"
+                                    class=${
+                                        this.state.activePage === "docs"
+                                            ? `${GmAppHeader.#TOP_NAV_BUTTON_BASE_CLASS} active`
+                                            : GmAppHeader.#TOP_NAV_BUTTON_BASE_CLASS
+                                    }
                                     @click=${() => this.#emitNavigatePage("docs")}
                                 >
                                     Docs
@@ -144,9 +148,13 @@ export class GmAppHeader extends LightDomLitElement {
                                     id="tab-config"
                                     aria-pressed=${this.state.activePage === "config"}
                                     aria-current=${this.#getAriaCurrentForPage("config")}
-                                    class=${this.state.activePage === "config"
-                                        ? `${GmAppHeader.#TOP_NAV_BUTTON_BASE_CLASS} active`
-                                        : GmAppHeader.#TOP_NAV_BUTTON_BASE_CLASS}
+                                    aria-keyshortcuts="3"
+                                    title="Config (3)"
+                                    class=${
+                                        this.state.activePage === "config"
+                                            ? `${GmAppHeader.#TOP_NAV_BUTTON_BASE_CLASS} active`
+                                            : GmAppHeader.#TOP_NAV_BUTTON_BASE_CLASS
+                                    }
                                     @click=${() => this.#emitNavigatePage("config")}
                                 >
                                     Config
@@ -155,9 +163,13 @@ export class GmAppHeader extends LightDomLitElement {
                                     id="tab-fix"
                                     aria-pressed=${this.state.activePage === "fix"}
                                     aria-current=${this.#getAriaCurrentForPage("fix")}
-                                    class=${this.state.activePage === "fix"
-                                        ? `${GmAppHeader.#TOP_NAV_BUTTON_BASE_CLASS} active`
-                                        : GmAppHeader.#TOP_NAV_BUTTON_BASE_CLASS}
+                                    aria-keyshortcuts="4"
+                                    title="Fix (4)"
+                                    class=${
+                                        this.state.activePage === "fix"
+                                            ? `${GmAppHeader.#TOP_NAV_BUTTON_BASE_CLASS} active`
+                                            : GmAppHeader.#TOP_NAV_BUTTON_BASE_CLASS
+                                    }
                                     @click=${() => this.#emitNavigatePage("fix")}
                                 >
                                     Fix
@@ -166,31 +178,43 @@ export class GmAppHeader extends LightDomLitElement {
                                     id="tab-playground"
                                     aria-pressed=${this.state.activePage === "playground"}
                                     aria-current=${this.#getAriaCurrentForPage("playground")}
-                                    class=${this.state.activePage === "playground"
-                                        ? `${GmAppHeader.#TOP_NAV_BUTTON_BASE_CLASS} active`
-                                        : GmAppHeader.#TOP_NAV_BUTTON_BASE_CLASS}
+                                    aria-keyshortcuts="5"
+                                    title="Playground (5)"
+                                    class=${
+                                        this.state.activePage === "playground"
+                                            ? `${GmAppHeader.#TOP_NAV_BUTTON_BASE_CLASS} active`
+                                            : GmAppHeader.#TOP_NAV_BUTTON_BASE_CLASS
+                                    }
                                     @click=${() => this.#emitNavigatePage("playground")}
                                 >
                                     Playground
                                 </button>
                                 <button
-                                    id="tab-mcp"
-                                    aria-pressed=${this.state.activePage === "mcp"}
-                                    aria-current=${this.#getAriaCurrentForPage("mcp")}
-                                    class=${this.state.activePage === "mcp"
-                                        ? `${GmAppHeader.#TOP_NAV_BUTTON_BASE_CLASS} active`
-                                        : GmAppHeader.#TOP_NAV_BUTTON_BASE_CLASS}
-                                    @click=${() => this.#emitNavigatePage("mcp")}
+                                    id="tab-auto-game"
+                                    aria-pressed=${this.state.activePage === "auto-game"}
+                                    aria-current=${this.#getAriaCurrentForPage("auto-game")}
+                                    aria-keyshortcuts="6"
+                                    title="Auto-Game (6)"
+                                    class=${
+                                        this.state.activePage === "auto-game"
+                                            ? `${GmAppHeader.#TOP_NAV_BUTTON_BASE_CLASS} active`
+                                            : GmAppHeader.#TOP_NAV_BUTTON_BASE_CLASS
+                                    }
+                                    @click=${() => this.#emitNavigatePage("auto-game")}
                                 >
-                                    MCP
+                                    Auto-Game
                                 </button>
                                 <button
                                     id="tab-live-reload"
                                     aria-pressed=${this.state.activePage === liveReloadPage}
                                     aria-current=${this.#getAriaCurrentForPage(liveReloadPage)}
-                                    class=${this.state.activePage === liveReloadPage
-                                        ? `${GmAppHeader.#TOP_NAV_BUTTON_BASE_CLASS} active`
-                                        : GmAppHeader.#TOP_NAV_BUTTON_BASE_CLASS}
+                                    aria-keyshortcuts="7"
+                                    title="Live Reload (7)"
+                                    class=${
+                                        this.state.activePage === liveReloadPage
+                                            ? `${GmAppHeader.#TOP_NAV_BUTTON_BASE_CLASS} active`
+                                            : GmAppHeader.#TOP_NAV_BUTTON_BASE_CLASS
+                                    }
                                     @click=${() => this.#emitNavigatePage(liveReloadPage)}
                                 >
                                     Live Reload
@@ -204,20 +228,22 @@ export class GmAppHeader extends LightDomLitElement {
                                 id="open-project"
                                 class="open-button"
                                 ?disabled=${this.state.isOpenProjectPending}
+                                aria-busy=${this.state.isOpenProjectPending ? "true" : "false"}
                                 @click=${() => this.#emitOpenProject()}
                             >
-                                <span class="button-content">
-                                    ${this.state.isOpenProjectPending
-                                        ? html`<span class="button-spinner" aria-hidden="true"></span>`
-                                        : null}
-                                    <span class="button-label"
-                                        >${this.state.isOpenProjectPending ? "Opening…" : "Open..."}</span
-                                    >
-                                </span>
+                                ${renderProcessButtonContent({
+                                    label: "Open .yyp...",
+                                    pending: this.state.isOpenProjectPending
+                                })}
                             </button>
                         </div>
-                        <div id="loaded-target" class="loaded-path">
+                        <div id="loaded-target" class="loaded-path" aria-busy=${isProjectLoading ? "true" : "false"}>
                             <span class="loaded-path-value">${activePath}</span>
+                            ${
+                                isProjectLoading
+                                    ? html`<span class="loading-spinner loaded-path-spinner" aria-hidden="true"></span>`
+                                    : nothing
+                            }
                         </div>
                     </div>
                 </div>

@@ -11,29 +11,36 @@
  * wrapper to enable true hot-reloading without game restarts.
  */
 
-import {
-    type Dirent,
-    existsSync,
-    type FSWatcher,
-    type Stats,
-    watch,
-    type WatchListener,
-    type WatchOptions
-} from "node:fs";
+import { type Dirent, type FSWatcher, type Stats, watch, type WatchListener, type WatchOptions } from "node:fs";
 import { readdir, readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
+import { setImmediate as scheduleImmediate, setTimeout as scheduleTimeout } from "node:timers";
 
 import { Core, type DebouncedFunction } from "@gmloop/core";
 import { Parser } from "@gmloop/parser";
+import type * as TranspilerTypes from "@gmloop/transpiler";
 import { Transpiler } from "@gmloop/transpiler";
 import { Command, Option } from "commander";
 
 import { createMinimumValueValidator, portValidator } from "../cli-core/command-parsing.js";
 import { applyStandardCommandOptions } from "../cli-core/command-standard-options.js";
-import { formatCliError } from "../cli-core/errors.js";
-import { createStatusUrl, createWebSocketUrl, DEFAULT_GM_TEMP_ROOT } from "../modules/live-reload/config.js";
+import { formatCliError, handleCliError } from "../cli-core/errors.js";
+import {
+    createStatusUrl,
+    createWebSocketUrl,
+    DEFAULT_GM_TEMP_ROOT,
+    DEFAULT_LIVE_RELOAD_STATUS_HOST,
+    DEFAULT_LIVE_RELOAD_STATUS_PORT,
+    DEFAULT_LIVE_RELOAD_WEBSOCKET_HOST,
+    DEFAULT_LIVE_RELOAD_WEBSOCKET_PORT
+} from "../modules/live-reload/config.js";
 import { prepareLiveReload } from "../modules/live-reload/session.js";
+import {
+    type LiveReloadRegisteredSession,
+    removeLiveReloadSessionRegistryForSession,
+    writeLiveReloadSessionRegistry
+} from "../modules/live-reload/session-registry.js";
 import {
     type RuntimeStaticServerHandle,
     type RuntimeStaticServerInstance,
@@ -46,28 +53,24 @@ import {
     type RuntimeSourceDescriptor,
     type RuntimeSourceResolver
 } from "../modules/runtime/source.js";
-import { startStatusServer, type StatusServerHandle, type StatusServerLifecycle } from "../modules/status/server.js";
+import { type ServerLifecycle } from "../modules/server/index.js";
+import { startStatusServer, type StatusServerHandle, type StatusSnapshot } from "../modules/status/server.js";
 import { DependencyTracker } from "../modules/transpilation/dependency-tracker.js";
 import {
+    analyzeFileMetadata,
+    createGmlTranspilerAdapter,
     displayTranspilationStatistics,
     type ErrorCollector,
     type MetricsCollector,
     orderPatchesForReplay,
     type PatchBroadcastService,
     type PatchHistoryStore,
-    registerScriptNamesFromSymbols,
-    type RuntimeTranspilerPatch,
+    type ResourcePatch,
     type TranspilationContext,
     type TranspilationCounter,
-    type TranspilationResult,
     transpileFile,
     type TranspilerProvider
 } from "../modules/transpilation/index.js";
-import {
-    getRuntimePathSegments,
-    resolveScriptFileNameFromSegments
-} from "../modules/transpilation/runtime-identifiers.js";
-import { extractReferencesFromAst, extractSymbolsFromAst } from "../modules/transpilation/symbol-extraction.js";
 import { type PatchWebSocketServer, startPatchWebSocketServer } from "../modules/websocket/server.js";
 import {
     DEFAULT_TRANSIENT_EMPTY_FILE_READ_RETRY_COUNT,
@@ -76,32 +79,119 @@ import {
     DEFAULT_WATCH_IGNORED_DIRECTORY_NAMES,
     DEFAULT_WATCH_MAX_CONCURRENT_DIRS,
     DEFAULT_WATCH_MAX_PATCH_HISTORY,
-    DEFAULT_WATCH_POLLING_INTERVAL_MS
+    DEFAULT_WATCH_POLLING_INTERVAL_MS,
+    WATCHED_GAME_MAKER_EXTENSIONS,
+    WATCHED_GML_EXTENSION,
+    WATCHED_YY_EXTENSION
 } from "./watch/constants.js";
+import {
+    cleanupRemovedFile,
+    processTranspileResult,
+    removeDeletedCachedPatchSources,
+    retranspileDependentFiles
+} from "./watch/dependency-updates.js";
+import { handleResourceFileChange, primeRoomResource } from "./watch/resource-change-handler.js";
 import {
     clearInitialFileDataCache,
     computeHotReloadLatencyStats,
     countSourceLines,
     createExtensionMatcher,
+    ensureScriptNameRegistered,
     type ExtensionMatcher,
+    getScriptNameFromPath,
     hashSourceContent,
     type InitialFileData,
     readSourceFileWithTransientEmptyRetry,
     resolveUnknownScanConcurrency,
     takeInitialFileData
 } from "./watch/source-analysis.js";
+import { evaluateTranspilationSkipPolicy, type TranspilationSkipReason } from "./watch/transpilation-skip-policy.js";
 
 const { debounce, getErrorMessage, isErrorWithCode } = Core;
 const IGNORED_WATCH_DIRECTORY_NAMES = new Set(DEFAULT_WATCH_IGNORED_DIRECTORY_NAMES);
 
+// ANTLR can allocate hundreds of megabytes while parsing CannonFather-sized
+// resources. Keep parser-heavy startup work tightly bounded so directory
+// traversal parallelism cannot multiply that peak beyond the process memory
+// budget. Two workers preserve useful throughput without recreating the
+// unbounded parser concurrency that exhausted large projects.
+const MAX_CONCURRENT_STARTUP_FILES = 2;
 type RuntimeDescriptorFormatter = (source: RuntimeSourceDescriptor) => string;
+
+// Startup directory/file scans call `yieldToEventLoop` many thousands of
+// times for large GameMaker projects (once or twice per file, plus once per
+// directory). A real yield costs at least ~1ms (a `setImmediate` tick plus a
+// 1ms timer, chosen so the event loop's poll phase genuinely runs before
+// resuming), so paying that cost on every call serializes into seconds of
+// pure sleep for projects with thousands of files, directly inflating watch
+// startup latency. Only every Nth call performs the real yield; the rest
+// resolve immediately. This still bounds how long CPU-heavy ANTLR parsing
+// can run before ceding control to the event loop (I/O, the WebSocket
+// server, etc.), just less often than on every single file.
+const EVENT_LOOP_YIELD_INTERVAL = 8;
+let eventLoopYieldCounter = 0;
+
+function yieldToEventLoop(): Promise<void> {
+    eventLoopYieldCounter += 1;
+    if (eventLoopYieldCounter % EVENT_LOOP_YIELD_INTERVAL !== 0) {
+        return Promise.resolve();
+    }
+
+    return new Promise((resolve) => {
+        scheduleImmediate(() => {
+            scheduleTimeout(resolve, 1);
+        });
+    });
+}
+
+/** Exposed for tests only; not part of the command's public surface. */
+export const __watchTest__ = Object.freeze({
+    EVENT_LOOP_YIELD_INTERVAL,
+    yieldToEventLoop
+});
+
+/**
+ * Human-readable label for a `TranspilationSkipReason` so the verbose watcher
+ * log can describe *why* a change event was treated as a no-op without the
+ * mechanism code hard-coding the string mapping.
+ *
+ * Centralised next to the consumer so future reason values only need to be
+ * added in one place. Kept deliberately tiny — anything richer belongs in the
+ * policy module itself.
+ */
+function describeTranspilationSkipReason(reason: TranspilationSkipReason): string {
+    switch (reason) {
+        case "mtime-unchanged": {
+            return "mtime unchanged";
+        }
+        case "content-unchanged": {
+            return "content unchanged";
+        }
+    }
+}
+
+type WatchEventListener = (...args: Parameters<WatchListener<string>>) => void | Promise<void>;
 
 type WatchFactory = (
     path: string,
     options?: WatchOptions | BufferEncoding | "buffer",
-    listener?: WatchListener<string>
+    listener?: WatchEventListener
 ) => FSWatcher;
 
+/**
+ * Sentinel no-op used as the initial value for `removeAbortListener` in the
+ * watch command's teardown path. The watch loop always invokes
+ * `removeAbortListener()` during shutdown to detach the optional
+ * caller-supplied `AbortSignal` listener, but that listener only exists when
+ * `abortSignal` was provided. Using this sentinel means the teardown code
+ * never needs to branch on "was a listener registered?" — the slot is always
+ * safely callable. Replacing the variable with the real teardown (in the
+ * `abortSignal` branch) hands the cleanup path a function that actually
+ * detaches the listener; resetting it back to this sentinel after detachment
+ * keeps subsequent calls safe if teardown ever runs twice. Do not delete this
+ * declaration without also reworking the teardown branch in the abort-handler
+ * block, or every shutdown that lacks an abort signal will throw.
+ */
 const noopAbortListener = () => {};
 
 /**
@@ -109,11 +199,6 @@ const noopAbortListener = () => {};
  * Controls which files to monitor and how to detect changes.
  */
 interface FileWatchingConfig {
-    /**
-     * Legacy programmatic hook retained for internal tests/integration wiring.
-     * CLI input is intentionally fixed to `.gml` to keep watch behavior opinionated.
-     */
-    extensions?: Array<string>;
     polling?: boolean;
     pollingInterval?: number;
     debounceDelay?: number;
@@ -185,6 +270,7 @@ interface InfrastructureConfig {
     abortSignal?: AbortSignal;
     onWebSocketServerReady?: (server: PatchWebSocketServer) => void;
     onStatusServerReady?: (server: StatusServerHandle) => void;
+    liveReloadSession?: Pick<LiveReloadRegisteredSession, "projectRoot" | "sessionId" | "startSource" | "yypPath">;
 }
 
 /**
@@ -233,7 +319,6 @@ interface RuntimePackageInfo {
     packageName: string | null;
     packageJson: Record<string, unknown> | null;
     server: RuntimeStaticServerHandle | null;
-    noticeLogged: boolean;
 }
 
 /**
@@ -253,7 +338,7 @@ interface PatchHistory extends PatchHistoryStore, MetricsCollector, ErrorCollect
  * Extends PatchBroadcastService to demonstrate proper ISP usage.
  */
 interface ServerControllers extends PatchBroadcastService {
-    statusServer: StatusServerLifecycle | null;
+    statusServer: ServerLifecycle | null;
 }
 
 /**
@@ -266,6 +351,7 @@ interface WatchLifecycle {
     scanComplete: boolean;
     unknownScanPromise: Promise<void> | null;
     unknownScanQueued: boolean;
+    unknownScanDetectedAt: number | null;
     unknownScanConcurrency: number;
     dependentRetranspileConcurrency: number;
 }
@@ -299,6 +385,8 @@ interface RuntimeContext
     extensionMatcher: ExtensionMatcher;
     maxConcurrentDirs: number;
     scriptNames: Set<string>;
+    macroDefinitionsBySourcePath: TranspilerTypes.MacroDefinitionsBySourcePath;
+    macroDefinitions: Map<string, TranspilerTypes.MacroDefinition>;
     fileSnapshots: Map<string, number>;
     /** SHA-256 prefix of each file's last-transpiled source text.
      * Used to skip transpilation when a file's mtime changes but content is
@@ -307,29 +395,20 @@ interface RuntimeContext
     /** UTF-16 code-unit length of each file's last-transpiled source text.
      * Used as a low-cost pre-check to avoid hashing when content length changed. */
     fileContentLengths: Map<string, number>;
+    roomResources: Map<string, Record<string, unknown>>;
+    resourcePatches: Map<string, ResourcePatch>;
     transientEmptyFileReadRetryCount: number;
     transientEmptyFileReadRetryDelayMs: number;
-}
-
-/**
- * Runtime state required to derive script names from changed files.
- */
-interface ScriptNameRegistrationContext {
-    scriptNames: Set<string>;
-}
-
-/**
- * Runtime state required when removing cached data for deleted files.
- */
-interface FileRemovalCleanupContext {
-    scriptNames: Set<string>;
-    dependencyTracker: DependencyTracker;
-    fileSnapshots: Map<string, number>;
-    fileContentHashes: Map<string, string>;
-    fileContentLengths: Map<string, number>;
-    lastSuccessfulPatches: Map<string, RuntimeTranspilerPatch>;
-    sourcePathToPatchIds: Map<string, Set<string>>;
-    debouncedHandlers: Map<string, DebouncedFunction<[string, string, FileChangeOptions]>>;
+    /**
+     * Pre-computed `verbose && !quiet` flag for dependency-update helpers.
+     * Set once at runtime-context construction so the watch subcommand does
+     * not have to plumb the `(verbose, quiet)` pair through every helper.
+     */
+    verboseOutputEnabled: boolean;
+    /** Raw `verbose` flag forwarded to helper code that needs the unfiltered signal (not gated by `quiet`). */
+    verbose: boolean;
+    /** Raw `quiet` flag forwarded to helper code that needs to suppress normal logging. */
+    quiet: boolean;
 }
 
 /**
@@ -400,9 +479,7 @@ async function runAutoInjectHotReload(
         const message = getErrorMessage(error, {
             fallback: "Unknown hot-reload injection error"
         });
-        const formattedError = formatCliError(new Error(`Failed to prepare hot-reload injection: ${message}`));
-        console.error(formattedError);
-        process.exit(1);
+        handleCliError(new Error(`Failed to prepare hot-reload injection: ${message}`));
     }
 }
 
@@ -446,8 +523,11 @@ export function createWatchCommand(): Command {
                 .default(DEFAULT_WATCH_MAX_CONCURRENT_DIRS)
         )
         .addOption(
-            new Option("--max-patch-history <count>", "Maximum number of patches to retain in memory")
-                .argParser(createMinimumValueValidator(1, "Max patch history must be a positive integer"))
+            new Option(
+                "--max-patch-history <count>",
+                "Maximum number of patches to retain in memory (set to 0 for unbounded)"
+            )
+                .argParser(createMinimumValueValidator(0, "Max patch history must be a non-negative integer"))
                 .default(DEFAULT_WATCH_MAX_PATCH_HISTORY)
         )
         .addOption(
@@ -471,20 +551,22 @@ export function createWatchCommand(): Command {
         .addOption(
             new Option("--websocket-port <port>", "WebSocket server port for streaming patches")
                 .argParser(portValidator)
-                .default(17_890)
+                .default(DEFAULT_LIVE_RELOAD_WEBSOCKET_PORT)
         )
         .addOption(
-            new Option("--websocket-host <host>", "WebSocket server host for streaming patches").default("127.0.0.1")
+            new Option("--websocket-host <host>", "WebSocket server host for streaming patches").default(
+                DEFAULT_LIVE_RELOAD_WEBSOCKET_HOST
+            )
         )
         .option("--no-websocket-server", "Disable starting the WebSocket server for patch streaming.")
         .addOption(
             new Option("--status-port <port>", "HTTP status server port for querying watch command status")
                 .argParser(portValidator)
-                .default(17_891)
+                .default(DEFAULT_LIVE_RELOAD_STATUS_PORT)
         )
         .addOption(
             new Option("--status-host <host>", "HTTP status server host for querying watch command status").default(
-                "127.0.0.1"
+                DEFAULT_LIVE_RELOAD_STATUS_HOST
             )
         )
         .option("--no-status-server", "Disable starting the HTTP status server.")
@@ -546,40 +628,43 @@ async function performInitialScan(
 
     async function processFile(fullPath: string): Promise<void> {
         try {
-            // Reuse the cached content and AST from the script-name collection pass when
-            // available. This avoids a second disk read and a second ANTLR parse for every
-            // file that was already processed during startup, cutting initial scan overhead
-            // roughly in half for typical GML projects.
+            // Reuse cached source content and metadata when available. ASTs are intentionally
+            // reparsed in this pass: retaining the complete project AST set during startup can
+            // exhaust memory before the watch servers start for large GameMaker projects.
             const cached = takeInitialFileData(fileDataCache, fullPath);
-            const content = cached?.content ?? (await readFile(fullPath, "utf8"));
-            const cachedAst = cached?.ast;
-            const lines = countSourceLines(content);
-            await updateFileSnapshot(runtimeContext, fullPath);
+            // Pipeline the stat with the conditional file read so the per-file
+            // cost tracks the slower of stat-vs-read instead of their sum on
+            // the cache miss path. Cache hits keep the read off the wire.
+            const currentStatsPromise = stat(fullPath);
+            const freshContentPromise = cached === undefined ? readFile(fullPath, "utf8") : null;
+            const currentStats = await currentStatsPromise;
+            const canUseCachedFileData = cached !== undefined && cached.mtimeMs === currentStats.mtimeMs;
+            let resolvedContent: string;
+            if (canUseCachedFileData) {
+                resolvedContent = cached.content;
+            } else if (freshContentPromise === null) {
+                resolvedContent = await readFile(fullPath, "utf8");
+            } else {
+                resolvedContent = await freshContentPromise;
+            }
+            runtimeContext.fileSnapshots.set(fullPath, currentStats.mtimeMs);
 
             // Store the initial content hash so that change events immediately after
             // startup are skipped if the file content has not actually changed.
-            runtimeContext.fileContentHashes.set(fullPath, hashSourceContent(content));
-            runtimeContext.fileContentLengths.set(fullPath, content.length);
+            runtimeContext.fileContentHashes.set(fullPath, hashSourceContent(resolvedContent));
+            runtimeContext.fileContentLengths.set(fullPath, resolvedContent.length);
 
             ensureScriptNameRegistered(fullPath, runtimeContext.scriptNames);
 
-            // Transpile the file (quietly unless verbose mode is on)
-            // Pass cached symbols and references when available to skip a second
-            // full AST traversal in transpileFile (one already happened during
-            // collectScriptNames). This halves AST-walk overhead during startup.
-            const result = transpileFile(runtimeContext, fullPath, content, lines, {
-                verbose: false,
-                quiet: true,
-                cachedAst,
-                cachedSymbols: cached?.symbols,
-                cachedReferences: cached?.references,
-                deliverRuntimePatch: false
-            });
+            // Build dependency metadata without emitting JavaScript. The native HTML5 build
+            // already contains the initial code; startup needs the graph, not duplicate patches.
+            await yieldToEventLoop();
+            const result = analyzeFileMetadata(runtimeContext, fullPath, resolvedContent);
 
             // Track symbols and references
             if (result.success) {
-                runtimeContext.dependencyTracker.replaceFileDefines(fullPath, result.symbols ?? []);
-                runtimeContext.dependencyTracker.replaceFileReferences(fullPath, result.references ?? []);
+                runtimeContext.dependencyTracker.replaceFileDefines(fullPath, result.symbols);
+                runtimeContext.dependencyTracker.replaceFileReferences(fullPath, result.references);
             }
         } catch (error) {
             if (verbose && !quiet) {
@@ -593,6 +678,7 @@ async function performInitialScan(
 
     async function scanDirectory(currentPath: string): Promise<void> {
         try {
+            await yieldToEventLoop();
             const entries = await readdir(currentPath, { withFileTypes: true });
 
             // Delegate low-level entry partitioning so this orchestration flow
@@ -605,9 +691,7 @@ async function performInitialScan(
             );
 
             // Process all files in this directory concurrently for maximum throughput
-            await Core.runInParallel(files, async (filePath) => {
-                await processFile(filePath);
-            });
+            await Core.runInParallelWithLimit(files, processFile, MAX_CONCURRENT_STARTUP_FILES);
 
             // Traverse subdirectories with bounded parallelism to balance throughput
             // and resource usage. Limit concurrent directory operations to avoid
@@ -635,7 +719,7 @@ async function performInitialScan(
     // Files that failed to read or parse in collectScriptNames are not in the cache;
     // they will be processed on their first watch event instead.
     await (fileDataCache !== undefined && fileDataCache.size > 0
-        ? Core.runInParallelWithLimit(Array.from(fileDataCache.keys()), processFile, maxConcurrentDirs)
+        ? Core.runInParallelWithLimit(Array.from(fileDataCache.keys()), processFile, MAX_CONCURRENT_STARTUP_FILES)
         : scanDirectory(dirPath));
 
     const stats = runtimeContext.dependencyTracker.getStatistics();
@@ -666,16 +750,13 @@ async function validateTargetPath(targetPath: string): Promise<string> {
     try {
         const stats = await stat(normalizedPath);
         if (!stats.isDirectory()) {
-            console.error(`${normalizedPath} is not a directory`);
-            process.exit(1);
+            handleCliError(`${normalizedPath} is not a directory`);
         }
     } catch (error) {
         const message = getErrorMessage(error, {
             fallback: "Cannot access path"
         });
-        const formattedError = formatCliError(new Error(`Cannot access ${normalizedPath}: ${message}`));
-        console.error(formattedError);
-        process.exit(1);
+        handleCliError(new Error(`Cannot access ${normalizedPath}: ${message}`));
     }
 
     return normalizedPath;
@@ -736,6 +817,36 @@ async function stopServerAfterStartupFailure(
     }
 }
 
+/**
+ * Stop a watch command server controller, logging any failure without
+ * propagating it to the caller.
+ *
+ * Used by the watch command's shutdown path so the runtime, WebSocket, and
+ * status servers can all be stopped in parallel via {@link Promise.allSettled}.
+ * Each call returns a resolved promise regardless of whether the underlying
+ * `stop()` succeeded, which lets `Promise.allSettled` complete promptly while
+ * preserving the historical "log and continue" error policy that previous
+ * sequential `try`/`catch` blocks enforced for every server.
+ */
+async function stopWatchServerSafely(
+    server: { stop: () => Promise<void> } | null,
+    label: string,
+    unknownServerStopErrorMessage: string
+): Promise<void> {
+    if (server === null) {
+        return;
+    }
+
+    try {
+        await server.stop();
+    } catch (error) {
+        const message = getErrorMessage(error, {
+            fallback: unknownServerStopErrorMessage
+        });
+        console.error(`Failed to stop ${label}: ${message}`);
+    }
+}
+
 async function startWatchRuntimeServerAfterPatchServers({
     runtimeRoot,
     runtimeServerStarter,
@@ -767,8 +878,6 @@ async function startWatchRuntimeServerAfterPatchServers({
         const message = getErrorMessage(error, {
             fallback: "Unknown runtime server error"
         });
-        const formattedError = formatCliError(new Error(`Failed to start runtime static server: ${message}`));
-        console.error(formattedError);
 
         await stopServerAfterStartupFailure(
             "WebSocket server",
@@ -777,7 +886,302 @@ async function startWatchRuntimeServerAfterPatchServers({
         );
         await stopServerAfterStartupFailure("status server", statusServerController, unknownServerStopErrorMessage);
 
-        process.exit(1);
+        handleCliError(new Error(`Failed to start runtime static server: ${message}`));
+    }
+}
+
+async function writeLiveReloadSessionAfterStartup(
+    parameters: Readonly<{
+        liveReloadSession:
+            Pick<LiveReloadRegisteredSession, "projectRoot" | "sessionId" | "startSource" | "yypPath"> | undefined;
+        normalizedPath: string;
+        runtimeServerController: RuntimeStaticServerInstance | null;
+        statusServerController: StatusServerHandle | null;
+        websocketServerController: PatchWebSocketServer | null;
+    }>
+): Promise<void> {
+    if (parameters.liveReloadSession === undefined || parameters.statusServerController === null) {
+        return;
+    }
+
+    const websocketUrl = parameters.websocketServerController?.url ?? "";
+    const statusUrl = parameters.statusServerController.url;
+    const websocketEndpoint = websocketUrl.length > 0 ? new URL(websocketUrl) : null;
+    const statusEndpoint = new URL(statusUrl);
+
+    await writeLiveReloadSessionRegistry({
+        lastHeartbeatAt: Date.now(),
+        processId: process.pid,
+        projectRoot: parameters.liveReloadSession.projectRoot,
+        runtimeUrl: parameters.runtimeServerController?.url ?? null,
+        startSource: parameters.liveReloadSession.startSource,
+        status: "running",
+        statusHost: statusEndpoint.hostname,
+        statusPort: Number(statusEndpoint.port),
+        statusUrl,
+        sessionId: parameters.liveReloadSession.sessionId,
+        watchedRoot: parameters.normalizedPath,
+        websocketHost: websocketEndpoint?.hostname ?? "",
+        websocketPort: websocketEndpoint === null ? 0 : Number(websocketEndpoint.port),
+        websocketUrl,
+        yypPath: parameters.liveReloadSession.yypPath
+    });
+}
+
+/**
+ * Build a status snapshot for the watch command.
+ *
+ * Pulls metrics, errors, and recent patches out of the runtime context and
+ * shapes them into the {@link StatusSnapshot} contract the status server
+ * serves. Kept as a pure function (no I/O) so the snapshot can be tested
+ * and reused independently of the server lifecycle that calls it. The
+ * server URLs are read via getters because the runtime, status, and patch
+ * WebSocket controllers are assigned later in the startup sequence and
+ * the snapshot must reflect the live values whenever the status server
+ * decides to serialize the watch state.
+ *
+ * @param parameters - Sources for the snapshot fields.
+ * @returns A snapshot describing the current watch state.
+ */
+function buildWatchStatusSnapshot({
+    getRuntimeServerController,
+    getStatusServerController,
+    getWebSocketServerController,
+    liveReloadSession,
+    normalizedPath,
+    runtimeContext
+}: Readonly<{
+    getRuntimeServerController: () => RuntimeStaticServerInstance | null;
+    getStatusServerController: () => StatusServerHandle | null;
+    getWebSocketServerController: () => PatchWebSocketServer | null;
+    liveReloadSession:
+        Pick<LiveReloadRegisteredSession, "projectRoot" | "sessionId" | "startSource" | "yypPath"> | undefined;
+    normalizedPath: string;
+    runtimeContext: RuntimeContext;
+}>): StatusSnapshot {
+    const latencyStats = computeHotReloadLatencyStats(runtimeContext.metrics);
+    const recentMetrics = runtimeContext.metrics.slice(-10);
+    const recentErrors = runtimeContext.errors.slice(-10).map((error) => ({
+        timestamp: error.timestamp,
+        filePath: path.relative(normalizedPath, error.filePath),
+        error: error.error
+    }));
+    const lastMetric = runtimeContext.metrics.at(-1) ?? null;
+    const runtimeServerController = getRuntimeServerController();
+    const statusServerController = getStatusServerController();
+    const websocketServerController = getWebSocketServerController();
+
+    return {
+        uptime: Date.now() - runtimeContext.startTime,
+        patchCount: runtimeContext.metrics.length,
+        totalPatchCount: runtimeContext.totalPatchCount,
+        patchHistorySize: runtimeContext.patches.length,
+        maxPatchHistory: runtimeContext.bounds.maxEntries,
+        errorCount: runtimeContext.errors.length,
+        recentPatches: recentMetrics.map((metric) => ({
+            id: metric.patchId,
+            timestamp: metric.timestamp,
+            durationMs: metric.durationMs,
+            filePath: path.relative(normalizedPath, metric.filePath),
+            hotReloadLatencyMs: metric.hotReloadLatencyMs,
+            patchResult: metric.patchResult
+        })),
+        recentErrors,
+        runtimeUrl: runtimeServerController?.url ?? null,
+        statusUrl: statusServerController?.url,
+        websocketUrl: websocketServerController?.url,
+        websocketClients: runtimeContext.websocketServer?.getClientCount() ?? 0,
+        websocketConnectionCount: runtimeContext.websocketServer?.getClientCount() ?? 0,
+        scanComplete: runtimeContext.scanComplete,
+        watchedRoot: normalizedPath,
+        liveReloadSession:
+            liveReloadSession === undefined
+                ? undefined
+                : {
+                      processId: process.pid,
+                      projectRoot: liveReloadSession.projectRoot,
+                      sessionId: liveReloadSession.sessionId
+                  },
+        lastChangedFile: lastMetric === null ? null : path.relative(normalizedPath, lastMetric.filePath),
+        lastPatchId: lastMetric?.patchId ?? null,
+        lastPatchResult: lastMetric?.patchResult ?? null,
+        transpileErrors: recentErrors,
+        runtimeErrors: [],
+        avgHotReloadLatencyMs: latencyStats?.avg,
+        p95HotReloadLatencyMs: latencyStats?.p95
+    };
+}
+
+/**
+ * Start the watch command's patch-broadcasting WebSocket server.
+ *
+ * Wraps {@link startPatchWebSocketServer} with the watch-command-specific
+ * client connect/disconnect/replay wiring and the error-handling policy
+ * (`handleCliError` on failure). Owns a single change-triggering
+ * responsibility: bring the patch WebSocket server online and attach it to
+ * the runtime context, so `runWatchCommand` can stay focused on
+ * orchestration.
+ *
+ * @param parameters - Server options and watch-command context.
+ * @returns The started server handle, or `null` when the server is disabled.
+ */
+async function startWatchPatchWebSocketServer({
+    enableWebSocket,
+    onWebSocketServerReady,
+    runtimeContext,
+    unknownServerStopErrorMessage,
+    verbose,
+    quiet,
+    websocketHost,
+    websocketPort
+}: Readonly<{
+    enableWebSocket: boolean;
+    onWebSocketServerReady: ((server: PatchWebSocketServer) => void) | undefined;
+    runtimeContext: RuntimeContext;
+    unknownServerStopErrorMessage: string;
+    verbose: boolean;
+    quiet: boolean;
+    websocketHost: string;
+    websocketPort: number;
+}>): Promise<PatchWebSocketServer | null> {
+    if (!enableWebSocket) {
+        if (verbose && !quiet) {
+            console.log("WebSocket patch server disabled.");
+        }
+        return null;
+    }
+
+    try {
+        const controller = await startPatchWebSocketServer({
+            host: websocketHost,
+            port: websocketPort,
+            verbose,
+            onClientConnect: (clientId, _socket) => {
+                void _socket;
+                if (verbose) {
+                    console.log(`Patch streaming client connected: ${clientId}`);
+                }
+            },
+            prepareInitialMessages: () => {
+                removeDeletedCachedPatchSources(runtimeContext);
+                return [
+                    ...orderPatchesForReplay(Array.from(runtimeContext.lastSuccessfulPatches.values())),
+                    ...runtimeContext.resourcePatches.values()
+                ];
+            },
+            onClientDisconnect: (clientId) => {
+                if (verbose) {
+                    console.log(`Patch streaming client disconnected: ${clientId}`);
+                }
+            }
+        });
+
+        runtimeContext.websocketServer = controller;
+        onWebSocketServerReady?.(controller);
+
+        console.log(`WebSocket patch server ready at ${controller.url}`);
+        return controller;
+    } catch (error) {
+        const message = getErrorMessage(error, {
+            fallback: "Unknown WebSocket server error"
+        });
+        void unknownServerStopErrorMessage;
+        handleCliError(new Error(`Failed to start WebSocket server: ${message}`));
+    }
+}
+
+/**
+ * Start the watch command's status server and attach it to the runtime context.
+ *
+ * Owns a single change-triggering responsibility: bring the status server
+ * online, wire it up to the runtime context, and apply the watch-command
+ * error policy (tearing down the patch WebSocket server on failure before
+ * delegating to `handleCliError`). The snapshot itself is produced by
+ * {@link buildWatchStatusSnapshot} so the projection logic stays separate
+ * from the lifecycle that serves it.
+ *
+ * @param parameters - Server options and watch-command context.
+ * @returns The started server handle, or `null` when the server is disabled.
+ */
+async function startWatchStatusServer({
+    enableStatus,
+    getRuntimeServerController,
+    liveReloadSession,
+    normalizedPath,
+    onStatusServerReady,
+    runtimeContext,
+    statusHost,
+    statusPort,
+    unknownServerStopErrorMessage,
+    verbose,
+    quiet,
+    getWebSocketServerController
+}: Readonly<{
+    enableStatus: boolean;
+    getRuntimeServerController: () => RuntimeStaticServerInstance | null;
+    getWebSocketServerController: () => PatchWebSocketServer | null;
+    liveReloadSession:
+        Pick<LiveReloadRegisteredSession, "projectRoot" | "sessionId" | "startSource" | "yypPath"> | undefined;
+    normalizedPath: string;
+    onStatusServerReady: ((server: StatusServerHandle) => void) | undefined;
+    runtimeContext: RuntimeContext;
+    statusHost: string;
+    statusPort: number;
+    unknownServerStopErrorMessage: string;
+    verbose: boolean;
+    quiet: boolean;
+}>): Promise<StatusServerHandle | null> {
+    if (!enableStatus) {
+        if (verbose && !quiet) {
+            console.log("Status server disabled.");
+        }
+        return null;
+    }
+
+    let statusServerController: StatusServerHandle | null = null;
+    const getStatusServerController = () => statusServerController;
+
+    const getSnapshot = () =>
+        buildWatchStatusSnapshot({
+            getRuntimeServerController,
+            getStatusServerController,
+            getWebSocketServerController,
+            liveReloadSession,
+            normalizedPath,
+            runtimeContext
+        });
+
+    try {
+        const controller = await startStatusServer({
+            host: statusHost,
+            port: statusPort,
+            getSnapshot
+        });
+
+        statusServerController = controller;
+        runtimeContext.statusServer = controller;
+        onStatusServerReady?.(controller);
+
+        console.log(`Status server ready at ${controller.url}`);
+        return controller;
+    } catch (error) {
+        const message = getErrorMessage(error, {
+            fallback: "Unknown status server error"
+        });
+
+        const websocketServerController = getWebSocketServerController();
+        if (websocketServerController) {
+            try {
+                await websocketServerController.stop();
+            } catch (stopError) {
+                const stopMessage = getErrorMessage(stopError, {
+                    fallback: unknownServerStopErrorMessage
+                });
+                console.error(`Failed to stop WebSocket server during cleanup: ${stopMessage}`);
+            }
+        }
+
+        handleCliError(new Error(`Failed to start status server: ${message}`));
     }
 }
 
@@ -808,11 +1212,11 @@ export async function runWatchCommand(targetPath: string, options: WatchCommandO
         maxPatchHistory = DEFAULT_WATCH_MAX_PATCH_HISTORY,
         transientEmptyFileReadRetryCount = DEFAULT_TRANSIENT_EMPTY_FILE_READ_RETRY_COUNT,
         transientEmptyFileReadRetryDelayMs = DEFAULT_TRANSIENT_EMPTY_FILE_READ_RETRY_DELAY_MS,
-        websocketPort = 17_890,
-        websocketHost = "127.0.0.1",
+        websocketPort = DEFAULT_LIVE_RELOAD_WEBSOCKET_PORT,
+        websocketHost = DEFAULT_LIVE_RELOAD_WEBSOCKET_HOST,
         websocketServer: enableWebSocket = true,
-        statusPort = 17_891,
-        statusHost = "127.0.0.1",
+        statusPort = DEFAULT_LIVE_RELOAD_STATUS_PORT,
+        statusHost = DEFAULT_LIVE_RELOAD_STATUS_HOST,
         statusServer: enableStatus = true,
         abortSignal,
         onWebSocketServerReady,
@@ -827,26 +1231,29 @@ export async function runWatchCommand(targetPath: string, options: WatchCommandO
         runtimeResolver = resolveRuntimeSource,
         runtimeDescriptor = describeRuntimeSource,
         runtimeServerStarter = startRuntimeStaticServer,
-        watchFactory = watch
+        watchFactory = watch,
+        liveReloadSession
     } = options;
     const unknownServerStopErrorMessage = "Unknown server stop error";
 
     // Validate that verbose and quiet are not both enabled
     if (verbose && quiet) {
-        console.error("Error: --verbose and --quiet cannot be used together");
-        process.exit(1);
+        handleCliError("Error: --verbose and --quiet cannot be used together");
     }
 
     const normalizedPath = await validateTargetPath(targetPath);
 
-    const extensionMatcher = createExtensionMatcher(options.extensions ?? [".gml"]);
+    const extensionMatcher = createExtensionMatcher(WATCHED_GAME_MAKER_EXTENSIONS);
+    const gmlExtensionMatcher = createExtensionMatcher([WATCHED_GML_EXTENSION]);
+    const roomExtensionMatcher = createExtensionMatcher([WATCHED_YY_EXTENSION]);
     const extensionSet = extensionMatcher.extensions;
 
-    const { scriptNames, fileDataCache } = await collectScriptNames(
-        normalizedPath,
-        extensionMatcher,
-        maxConcurrentDirs
-    );
+    // Keep the semantic-oracle collection mutable so the watch servers can be
+    // started before the project-wide startup walk. Large projects must remain
+    // observable while their source metadata is being collected.
+    const scriptNames = new Set<string>();
+    let fileDataCache = new Map<string, InitialFileData>();
+    const macroDefinitionsBySourcePath: TranspilerTypes.MacroDefinitionsBySourcePath = new Map();
 
     // Auto-inject hot-reload runtime wrapper if requested
     if (autoInject) {
@@ -856,7 +1263,7 @@ export async function runWatchCommand(targetPath: string, options: WatchCommandO
     const shouldServeRuntime = hydrateRuntime === undefined ? runtimeServer !== false : Boolean(hydrateRuntime);
 
     const semanticOracle = Transpiler.createSemanticOracle({ scriptNames });
-    const transpiler = new Transpiler.GmlTranspiler({
+    const transpiler = createGmlTranspilerAdapter({
         semantic: semanticOracle
     });
     const dependencyTracker = new DependencyTracker();
@@ -868,9 +1275,10 @@ export async function runWatchCommand(targetPath: string, options: WatchCommandO
         packageName: null,
         packageJson: null,
         server: null,
-        noticeLogged: Boolean(verbose),
         transpiler,
         scriptNames,
+        macroDefinitionsBySourcePath,
+        macroDefinitions: Transpiler.createProjectMacroDefinitions(macroDefinitionsBySourcePath),
         patches: [],
         metrics: [],
         errors: [],
@@ -885,12 +1293,18 @@ export async function runWatchCommand(targetPath: string, options: WatchCommandO
         scanComplete: false,
         unknownScanPromise: null,
         unknownScanQueued: false,
+        unknownScanDetectedAt: null,
         unknownScanConcurrency: resolveUnknownScanConcurrency(maxConcurrentDirs),
         dependentRetranspileConcurrency: resolveUnknownScanConcurrency(maxConcurrentDirs),
         fileSnapshots: new Map(),
         fileContentHashes: new Map(),
         fileContentLengths: new Map(),
+        roomResources: new Map(),
+        resourcePatches: new Map(),
         dependencyTracker,
+        verboseOutputEnabled: verbose && !quiet,
+        verbose,
+        quiet,
         transientEmptyFileReadRetryCount,
         transientEmptyFileReadRetryDelayMs
     };
@@ -898,6 +1312,9 @@ export async function runWatchCommand(targetPath: string, options: WatchCommandO
     let websocketServerController: PatchWebSocketServer | null = null;
     let statusServerController: StatusServerHandle | null = null;
     let runtimeServerController: RuntimeStaticServerInstance | null = null;
+
+    const getRuntimeServerController = () => runtimeServerController;
+    const getWebSocketServerController = () => websocketServerController;
 
     if (shouldServeRuntime) {
         const runtimeSource = await runtimeResolver({
@@ -916,108 +1333,31 @@ export async function runWatchCommand(targetPath: string, options: WatchCommandO
         console.log("Runtime static server disabled.");
     }
 
-    if (enableWebSocket) {
-        try {
-            websocketServerController = await startPatchWebSocketServer({
-                host: websocketHost,
-                port: websocketPort,
-                verbose,
-                onClientConnect: (clientId, _socket) => {
-                    void _socket;
-                    if (verbose) {
-                        console.log(`Patch streaming client connected: ${clientId}`);
-                    }
-                },
-                prepareInitialMessages: () => {
-                    removeDeletedCachedPatchSources(runtimeContext, verbose, quiet);
-                    return orderPatchesForReplay(Array.from(runtimeContext.lastSuccessfulPatches.values()));
-                },
-                onClientDisconnect: (clientId) => {
-                    if (verbose) {
-                        console.log(`Patch streaming client disconnected: ${clientId}`);
-                    }
-                }
-            });
+    websocketServerController = await startWatchPatchWebSocketServer({
+        enableWebSocket,
+        onWebSocketServerReady,
+        runtimeContext,
+        unknownServerStopErrorMessage,
+        verbose,
+        quiet,
+        websocketHost,
+        websocketPort
+    });
 
-            runtimeContext.websocketServer = websocketServerController;
-            onWebSocketServerReady?.(websocketServerController);
-
-            console.log(`WebSocket patch server ready at ${websocketServerController.url}`);
-        } catch (error) {
-            const message = getErrorMessage(error, {
-                fallback: "Unknown WebSocket server error"
-            });
-            const formattedError = formatCliError(new Error(`Failed to start WebSocket server: ${message}`));
-            console.error(formattedError);
-
-            process.exit(1);
-        }
-    } else if (verbose && !quiet) {
-        console.log("WebSocket patch server disabled.");
-    }
-
-    if (enableStatus) {
-        try {
-            statusServerController = await startStatusServer({
-                host: statusHost,
-                port: statusPort,
-                getSnapshot: () => {
-                    const latencyStats = computeHotReloadLatencyStats(runtimeContext.metrics);
-                    return {
-                        uptime: Date.now() - runtimeContext.startTime,
-                        patchCount: runtimeContext.metrics.length,
-                        totalPatchCount: runtimeContext.totalPatchCount,
-                        patchHistorySize: runtimeContext.patches.length,
-                        maxPatchHistory: runtimeContext.bounds.maxEntries,
-                        errorCount: runtimeContext.errors.length,
-                        recentPatches: runtimeContext.metrics.slice(-10).map((m) => ({
-                            id: m.patchId,
-                            timestamp: m.timestamp,
-                            durationMs: m.durationMs,
-                            filePath: path.relative(normalizedPath, m.filePath),
-                            hotReloadLatencyMs: m.hotReloadLatencyMs
-                        })),
-                        recentErrors: runtimeContext.errors.slice(-10).map((e) => ({
-                            timestamp: e.timestamp,
-                            filePath: path.relative(normalizedPath, e.filePath),
-                            error: e.error
-                        })),
-                        runtimeUrl: runtimeServerController?.url ?? null,
-                        websocketClients: runtimeContext.websocketServer?.getClientCount() ?? 0,
-                        scanComplete: runtimeContext.scanComplete,
-                        avgHotReloadLatencyMs: latencyStats?.avg,
-                        p95HotReloadLatencyMs: latencyStats?.p95
-                    };
-                }
-            });
-
-            runtimeContext.statusServer = statusServerController;
-            onStatusServerReady?.(statusServerController);
-
-            console.log(`Status server ready at ${statusServerController.url}`);
-        } catch (error) {
-            const message = getErrorMessage(error, {
-                fallback: "Unknown status server error"
-            });
-            const formattedError = formatCliError(new Error(`Failed to start status server: ${message}`));
-            console.error(formattedError);
-
-            if (websocketServerController) {
-                try {
-                    await websocketServerController.stop();
-                } catch (stopError) {
-                    const stopMessage = getErrorMessage(stopError, {
-                        fallback: unknownServerStopErrorMessage
-                    });
-                    console.error(`Failed to stop WebSocket server during cleanup: ${stopMessage}`);
-                }
-            }
-
-            process.exit(1);
-        }
-    } else if (verbose && !quiet) {
-        console.log("Status server disabled.");
-    }
+    statusServerController = await startWatchStatusServer({
+        enableStatus,
+        getRuntimeServerController,
+        getWebSocketServerController,
+        liveReloadSession,
+        normalizedPath,
+        onStatusServerReady,
+        runtimeContext,
+        statusHost,
+        statusPort,
+        unknownServerStopErrorMessage,
+        verbose,
+        quiet
+    });
 
     runtimeServerController = await startWatchRuntimeServerAfterPatchServers({
         runtimeRoot: shouldServeRuntime ? runtimeContext.root : null,
@@ -1027,6 +1367,71 @@ export async function runWatchCommand(targetPath: string, options: WatchCommandO
         verbose,
         websocketServerController
     });
+
+    // The servers are intentionally live before this project-wide walk. The
+    // collection uses lexer and source-directive passes, but a large project
+    // still consumes enough CPU to starve an otherwise-ready status endpoint.
+    //
+    // All three servers are already listening at this point, so anything that
+    // throws between here and the watcher's own cleanup() (below) must stop
+    // them itself. Without this try/catch, a failure in the startup scan, the
+    // room-resource priming pass, or the live-reload session-registry write
+    // (e.g. ENOSPC/EACCES) would leave the WebSocket, status, and runtime
+    // servers listening indefinitely: `runWatchCommand` never reaches the
+    // `cleanup()` defined inside the `Promise` executor below, so nothing
+    // ever calls `.stop()` on them.
+    try {
+        const startupScan = await collectScriptNames(
+            normalizedPath,
+            gmlExtensionMatcher,
+            maxConcurrentDirs,
+            roomExtensionMatcher
+        );
+        for (const scriptName of startupScan.scriptNames) {
+            scriptNames.add(scriptName);
+        }
+        fileDataCache = startupScan.fileDataCache;
+        const roomFilePaths: Array<string> = startupScan.secondaryFilePaths;
+        for (const [sourcePath, definitions] of startupScan.macroDefinitionsBySourcePath) {
+            macroDefinitionsBySourcePath.set(sourcePath, definitions);
+        }
+        // runtimeContext already escaped to the watch servers started above, so eslint's
+        // require-atomic-updates rule conservatively flags this write after the preceding
+        // await. Nothing else writes runtimeContext.macroDefinitions while collectScriptNames()
+        // is pending, so this is the deliberate "compute macros once at startup" design, not a race.
+        // eslint-disable-next-line require-atomic-updates -- no concurrent writer exists; see comment above
+        runtimeContext.macroDefinitions = Transpiler.createProjectMacroDefinitions(macroDefinitionsBySourcePath);
+
+        // Reuse the .yy file paths collected during the startup tree walk instead of
+        // doing a second full traversal just to discover room resources.
+        await Core.runInParallelWithLimit(
+            roomFilePaths,
+            (filePath) => primeRoomResource(filePath, runtimeContext, runtimeContext.roomResources),
+            maxConcurrentDirs
+        );
+
+        await writeLiveReloadSessionAfterStartup({
+            liveReloadSession,
+            normalizedPath,
+            runtimeServerController,
+            statusServerController,
+            websocketServerController
+        });
+    } catch (error) {
+        const message = getErrorMessage(error, {
+            fallback: "Unknown watch startup error"
+        });
+
+        await stopServerAfterStartupFailure("runtime server", runtimeServerController, unknownServerStopErrorMessage);
+        await stopServerAfterStartupFailure("status server", statusServerController, unknownServerStopErrorMessage);
+        await stopServerAfterStartupFailure(
+            "WebSocket server",
+            websocketServerController,
+            unknownServerStopErrorMessage
+        );
+
+        handleCliError(new Error(`Failed to complete watch startup: ${message}`));
+    }
 
     logWatchStartup(normalizedPath, extensionSet, polling, pollingInterval, verbose, quiet);
 
@@ -1089,40 +1494,25 @@ export async function runWatchCommand(targetPath: string, options: WatchCommandO
             }
             runtimeContext.debouncedHandlers.clear();
 
+            if (liveReloadSession !== undefined) {
+                await removeLiveReloadSessionRegistryForSession(
+                    liveReloadSession.projectRoot,
+                    liveReloadSession.sessionId
+                );
+            }
+
             displayTranspilationStatistics(runtimeContext, verbose, quiet);
 
-            if (runtimeServerController) {
-                try {
-                    await runtimeServerController.stop();
-                } catch (error) {
-                    const message = getErrorMessage(error, {
-                        fallback: unknownServerStopErrorMessage
-                    });
-                    console.error(`Failed to stop runtime static server: ${message}`);
-                }
-            }
-
-            if (websocketServerController) {
-                try {
-                    await websocketServerController.stop();
-                } catch (error) {
-                    const message = getErrorMessage(error, {
-                        fallback: unknownServerStopErrorMessage
-                    });
-                    console.error(`Failed to stop WebSocket server: ${message}`);
-                }
-            }
-
-            if (statusServerController) {
-                try {
-                    await statusServerController.stop();
-                } catch (error) {
-                    const message = getErrorMessage(error, {
-                        fallback: unknownServerStopErrorMessage
-                    });
-                    console.error(`Failed to stop status server: ${message}`);
-                }
-            }
+            // Stop the patch, status, and runtime servers in parallel so shutdown
+            // latency tracks the slowest single server rather than the sum of all
+            // three. Each stop is independent (different sockets, different server
+            // handles) so running them concurrently preserves the prior behaviour
+            // while shrinking wall-clock teardown time.
+            await Promise.allSettled([
+                stopWatchServerSafely(runtimeServerController, "runtime static server", unknownServerStopErrorMessage),
+                stopWatchServerSafely(websocketServerController, "WebSocket server", unknownServerStopErrorMessage),
+                stopWatchServerSafely(statusServerController, "status server", unknownServerStopErrorMessage)
+            ]);
 
             if (abortSignal) {
                 resolve();
@@ -1142,17 +1532,14 @@ export async function runWatchCommand(targetPath: string, options: WatchCommandO
                     }
 
                     pollingIntervalHandle = setInterval(() => {
-                        scheduleUnknownFileChanges(
-                            runtimeContext,
-                            verbose,
-                            quiet,
-                            internalAbortController.signal
-                        ).catch((error) => {
-                            const message = getErrorMessage(error, {
-                                fallback: "Unknown polling scan error"
-                            });
-                            console.error(`Error during polling scan: ${message}`);
-                        });
+                        scheduleUnknownFileChanges(runtimeContext, internalAbortController.signal, Date.now()).catch(
+                            (error) => {
+                                const message = getErrorMessage(error, {
+                                    fallback: "Unknown polling scan error"
+                                });
+                                console.error(`Error during polling scan: ${message}`);
+                            }
+                        );
                     }, pollingInterval);
                     pollingIntervalHandle.unref();
                     return null;
@@ -1197,8 +1584,7 @@ export async function runWatchCommand(targetPath: string, options: WatchCommandO
                 const message = getErrorMessage(error, {
                     fallback: "Unknown cleanup error"
                 });
-                console.error(`Error during watch cleanup: ${message}`);
-                process.exit(1);
+                handleCliError(`Error during watch cleanup: ${message}`);
             });
         };
 
@@ -1244,12 +1630,12 @@ export async function runWatchCommand(targetPath: string, options: WatchCommandO
                 (eventType, filename) => {
                     if (!filename) {
                         const unknownKey = `${normalizedPath}::unknown`;
+                        const fileChangeDetectedAt = Date.now();
                         const triggerUnknown = () =>
                             scheduleUnknownFileChanges(
                                 runtimeContext,
-                                verbose,
-                                quiet,
-                                internalAbortController.signal
+                                internalAbortController.signal,
+                                fileChangeDetectedAt
                             ).catch((error) => {
                                 const message = getErrorMessage(error, {
                                     fallback: "Unknown file processing error"
@@ -1292,7 +1678,7 @@ export async function runWatchCommand(targetPath: string, options: WatchCommandO
                     }
 
                     if (debounceDelay === 0) {
-                        handleFileChange(fullPath, eventType, {
+                        return handleFileChange(fullPath, eventType, {
                             verbose,
                             quiet,
                             runtimeContext,
@@ -1335,7 +1721,7 @@ export async function runWatchCommand(targetPath: string, options: WatchCommandO
 
             // Perform initial scan after the watcher is established so test harnesses
             // and callers can trigger events immediately without waiting for the scan.
-            initialScanPromise = runInitialWatchScan(initialScanOptions);
+            initialScanPromise = runInitialWatchScan({ ...initialScanOptions, extensionMatcher: gmlExtensionMatcher });
             void initialScanPromise.catch(handleWatcherError);
         } catch (error) {
             handleWatcherError(error);
@@ -1367,9 +1753,16 @@ async function handleFileChange(
         fileChangeDetectedAt
     }: FileChangeOptions = {}
 ): Promise<void> {
-    if (verbose && runtimeContext?.root && !runtimeContext.noticeLogged) {
-        console.log(`Runtime target: ${runtimeContext.root}`);
-        runtimeContext.noticeLogged = true;
+    if (path.extname(filePath).toLowerCase() === ".yy") {
+        if (runtimeContext) {
+            await handleResourceFileChange(filePath, runtimeContext, runtimeContext.roomResources, {
+                verbose,
+                quiet,
+                fileStats,
+                abortSignal
+            });
+        }
+        return;
     }
 
     // File was created, deleted, or renamed. On some platforms (notably macOS)
@@ -1397,7 +1790,7 @@ async function handleFileChange(
                     console.log(`  ↳ File removed (deleted or renamed away)`);
                 }
                 if (runtimeContext) {
-                    cleanupRemovedFile(runtimeContext, filePath, verbose, quiet);
+                    await processRemovedWatchedFile(runtimeContext, filePath, fileChangeDetectedAt);
                 }
                 return;
             }
@@ -1416,7 +1809,7 @@ async function handleFileChange(
                 if (verbose && !quiet) {
                     console.log("  ↳ File removed before change event could be processed");
                 }
-                cleanupRemovedFile(runtimeContext, filePath, verbose, quiet);
+                await processRemovedWatchedFile(runtimeContext, filePath, fileChangeDetectedAt);
                 return;
             }
 
@@ -1456,29 +1849,30 @@ async function handleFileChange(
                 return;
             }
 
-            // Skip transpilation when content is byte-for-byte identical to what was
-            // last transpiled.  Mtime-based deduplication already handles the common
-            // case where the file is not written at all; this second guard covers
-            // the remaining scenario where an editor or tool updates the mtime without
-            // changing the actual bytes (e.g. redundant saves, `touch`, auto-formatters
-            // that produce no change).
-            const contentLength = content.length;
-            const previousContentLength = runtimeContext.fileContentLengths.get(filePath);
-            const lastContentHash = runtimeContext.fileContentHashes.get(filePath);
-            const shouldCheckHash =
-                previousContentLength !== undefined &&
-                lastContentHash !== undefined &&
-                previousContentLength === contentLength;
-            const contentHash = shouldCheckHash ? hashSourceContent(content) : undefined;
-            if (contentHash !== undefined && lastContentHash === contentHash) {
+            // Defer the transpilation-skip decision to the shared policy so the
+            // heuristic lives in one place (see ./watch/transpilation-skip-policy.ts).
+            // The pre-read mtime guard above already proved the new mtime is strictly
+            // newer than the cached one, so the policy's mtime check is redundant here
+            // and disabled by passing `previousMtimeMs: undefined`. The policy then only
+            // evaluates the content-hash guard, which covers the remaining scenario
+            // where an editor or tool advances the mtime without changing the actual
+            // bytes (e.g. redundant saves, `touch`, auto-formatters that produce no change).
+            const skipDecision = evaluateTranspilationSkipPolicy({
+                currentMtimeMs: resolvedFileStats?.mtimeMs ?? Date.now(),
+                previousMtimeMs: undefined,
+                currentContent: content,
+                previousContentHash: runtimeContext.fileContentHashes.get(filePath)
+            });
+
+            if (skipDecision.action === "skip") {
                 if (verbose && !quiet) {
-                    console.log("  ↳ Skipping transpilation: content unchanged");
+                    console.log(`  ↳ Skipping transpilation: ${describeTranspilationSkipReason(skipDecision.reason)}`);
                 }
                 return;
             }
 
-            runtimeContext.fileContentHashes.set(filePath, contentHash ?? hashSourceContent(content));
-            runtimeContext.fileContentLengths.set(filePath, contentLength);
+            runtimeContext.fileContentHashes.set(filePath, skipDecision.contentHash);
+            runtimeContext.fileContentLengths.set(filePath, content.length);
 
             ensureScriptNameRegistered(filePath, runtimeContext.scriptNames);
 
@@ -1489,10 +1883,10 @@ async function handleFileChange(
                 fileChangeDetectedAt
             });
 
-            await processTranspileResult(runtimeContext, filePath, result, fileChangeDetectedAt, verbose, quiet);
+            await processTranspileResult(runtimeContext, filePath, result, fileChangeDetectedAt);
         } catch (error) {
             if (runtimeContext && isErrorWithCode(error, "ENOENT")) {
-                cleanupRemovedFile(runtimeContext, filePath, verbose, quiet);
+                await processRemovedWatchedFile(runtimeContext, filePath, fileChangeDetectedAt);
                 if (verbose && !quiet) {
                     console.log("  ↳ File missing during read (deleted before processing)");
                 }
@@ -1513,11 +1907,21 @@ async function handleFileChange(
     }
 }
 
+async function processRemovedWatchedFile(
+    runtimeContext: RuntimeContext,
+    filePath: string,
+    fileChangeDetectedAt: number
+): Promise<void> {
+    const affectedDependents = cleanupRemovedFile(runtimeContext, filePath);
+    if (affectedDependents.length > 0) {
+        await retranspileDependentFiles(runtimeContext, filePath, affectedDependents, fileChangeDetectedAt);
+    }
+}
+
 async function handleUnknownFileChanges(
     runtimeContext: RuntimeContext,
-    verbose: boolean,
-    quiet: boolean,
-    abortSignal?: AbortSignal
+    abortSignal: AbortSignal | undefined,
+    fileChangeDetectedAt: number
 ): Promise<void> {
     const discoveredFilePaths = await collectWatchedFilePaths(
         runtimeContext.watchRoot,
@@ -1526,11 +1930,14 @@ async function handleUnknownFileChanges(
     );
     const discoveredFiles = new Set(discoveredFilePaths);
 
-    for (const filePath of runtimeContext.fileSnapshots.keys()) {
-        if (!discoveredFiles.has(filePath)) {
-            cleanupRemovedFile(runtimeContext, filePath, verbose, quiet);
-        }
-    }
+    const removedFilePaths = [...runtimeContext.fileSnapshots.keys()].filter(
+        (filePath) => !discoveredFiles.has(filePath)
+    );
+    await Core.runInParallelWithLimit(
+        removedFilePaths,
+        (filePath) => processRemovedWatchedFile(runtimeContext, filePath, fileChangeDetectedAt),
+        runtimeContext.unknownScanConcurrency
+    );
 
     const changedEntries = await Core.runInParallelWithLimit(
         discoveredFilePaths,
@@ -1548,7 +1955,7 @@ async function handleUnknownFileChanges(
                     eventType: lastModified === undefined ? "rename" : "change"
                 };
             } catch {
-                cleanupRemovedFile(runtimeContext, filePath, verbose, quiet);
+                await processRemovedWatchedFile(runtimeContext, filePath, fileChangeDetectedAt);
                 return null;
             }
         },
@@ -1569,37 +1976,34 @@ async function handleUnknownFileChanges(
         pendingChanges,
         async (entry) => {
             await handleFileChange(entry.filePath, entry.eventType, {
-                verbose,
-                quiet,
+                verbose: runtimeContext.verbose,
+                quiet: runtimeContext.quiet,
                 runtimeContext,
                 fileStats: entry.stats,
-                abortSignal
+                abortSignal,
+                fileChangeDetectedAt
             });
         },
         runtimeContext.unknownScanConcurrency
     );
 }
 
-function processQueuedUnknownFileChanges(
-    runtimeContext: RuntimeContext,
-    verbose: boolean,
-    quiet: boolean,
-    abortSignal?: AbortSignal
-): Promise<void> {
+function processQueuedUnknownFileChanges(runtimeContext: RuntimeContext, abortSignal?: AbortSignal): Promise<void> {
     runtimeContext.unknownScanQueued = false;
+    const fileChangeDetectedAt = runtimeContext.unknownScanDetectedAt ?? Date.now();
+    runtimeContext.unknownScanDetectedAt = null;
 
-    return handleUnknownFileChanges(runtimeContext, verbose, quiet, abortSignal).then(() =>
+    return handleUnknownFileChanges(runtimeContext, abortSignal, fileChangeDetectedAt).then(() =>
         runtimeContext.unknownScanQueued
-            ? processQueuedUnknownFileChanges(runtimeContext, verbose, quiet, abortSignal)
+            ? processQueuedUnknownFileChanges(runtimeContext, abortSignal)
             : Promise.resolve()
     );
 }
 
 function scheduleUnknownFileChanges(
     runtimeContext: RuntimeContext,
-    verbose: boolean,
-    quiet: boolean,
-    abortSignal?: AbortSignal
+    abortSignal?: AbortSignal,
+    fileChangeDetectedAt: number = Date.now()
 ): Promise<void> {
     // Unknown filename events can burst during watcher start-up on some platforms.
     // Ignore them until the initial scan has completed so we avoid expensive
@@ -1608,16 +2012,18 @@ function scheduleUnknownFileChanges(
         return Promise.resolve();
     }
 
+    if (runtimeContext.unknownScanDetectedAt === null || fileChangeDetectedAt < runtimeContext.unknownScanDetectedAt) {
+        runtimeContext.unknownScanDetectedAt = fileChangeDetectedAt;
+    }
+
     if (runtimeContext.unknownScanPromise !== null) {
         runtimeContext.unknownScanQueued = true;
         return runtimeContext.unknownScanPromise;
     }
 
-    const unknownScanPromise = processQueuedUnknownFileChanges(runtimeContext, verbose, quiet, abortSignal).finally(
-        () => {
-            runtimeContext.unknownScanPromise = null;
-        }
-    );
+    const unknownScanPromise = processQueuedUnknownFileChanges(runtimeContext, abortSignal).finally(() => {
+        runtimeContext.unknownScanPromise = null;
+    });
 
     runtimeContext.unknownScanPromise = unknownScanPromise;
     return unknownScanPromise;
@@ -1665,316 +2071,6 @@ async function readFileStats(filePath: string): Promise<Stats | null> {
     }
 }
 
-async function retranspileDependentFiles(
-    runtimeContext: RuntimeContext,
-    filePath: string,
-    dependentFiles: ReadonlyArray<string>,
-    fileChangeDetectedAt: number | undefined,
-    verbose: boolean,
-    quiet: boolean
-): Promise<void> {
-    // Process dependent files concurrently to minimise hot-reload latency while
-    // keeping fan-out bounded to avoid unbounded event-loop pressure on large
-    // dependency graphs.
-    await Core.runInParallelWithLimit(
-        dependentFiles,
-        async (dependentFile) => {
-            try {
-                await retranspileDependentFile(
-                    runtimeContext,
-                    filePath,
-                    dependentFile,
-                    fileChangeDetectedAt,
-                    verbose,
-                    quiet
-                );
-            } catch (error) {
-                const message = getErrorMessage(error, {
-                    fallback: "Unknown file read error"
-                });
-                console.error(`  ↳ Error retranspiling dependent file ${dependentFile}: ${message}`);
-            }
-        },
-        runtimeContext.dependentRetranspileConcurrency
-    );
-}
-
-function areSymbolSetsEqual(left: ReadonlyArray<string>, right: ReadonlyArray<string>): boolean {
-    if (left.length === 0 || right.length === 0) {
-        return left.length === right.length;
-    }
-
-    const leftSet = new Set(left);
-    const rightSet = new Set(right);
-
-    if (leftSet.size !== rightSet.size) {
-        return false;
-    }
-
-    for (const symbol of leftSet) {
-        if (!rightSet.has(symbol)) {
-            return false;
-        }
-    }
-
-    return true;
-}
-
-async function processTranspileResult(
-    runtimeContext: RuntimeContext,
-    filePath: string,
-    result: TranspilationResult,
-    fileChangeDetectedAt: number | undefined,
-    verbose: boolean,
-    quiet: boolean
-): Promise<void> {
-    if (!result.success || !result.patch) {
-        return;
-    }
-
-    const dependencyUpdate = updateDependencyTrackerForTranspileResult(runtimeContext, filePath, result);
-
-    if (verbose && !quiet) {
-        const stats = runtimeContext.dependencyTracker.getStatistics();
-        console.log(`  ↳ Dependency tracker: ${stats.totalSymbols} symbols tracked across ${stats.totalFiles} files`);
-    }
-
-    if (!dependencyUpdate.definitionsChanged) {
-        if (verbose && !quiet && dependencyUpdate.affectedDependents.length > 0) {
-            console.log("  ↳ Symbol definitions unchanged; skipping dependent retranspilation");
-        }
-        return;
-    }
-
-    const dependentFiles = dependencyUpdate.affectedDependents;
-    if (dependentFiles.length === 0) {
-        return;
-    }
-
-    if (!quiet) {
-        console.log(`  ↳ Retranspiling ${dependentFiles.length} dependent file(s)...`);
-    }
-
-    await retranspileDependentFiles(runtimeContext, filePath, dependentFiles, fileChangeDetectedAt, verbose, quiet);
-}
-
-interface DependencyUpdateSummary {
-    definitionsChanged: boolean;
-    affectedDependents: ReadonlyArray<string>;
-}
-
-/**
- * Apply dependency tracker updates and report which dependents should be considered.
- */
-function updateDependencyTrackerForTranspileResult(
-    runtimeContext: RuntimeContext,
-    filePath: string,
-    result: TranspilationResult
-): DependencyUpdateSummary {
-    const previousDefinitions = runtimeContext.dependencyTracker.getFileDefinitions(filePath);
-    const nextDefinitions = result.symbols ?? [];
-    const definitionsChanged = !areSymbolSetsEqual(previousDefinitions, nextDefinitions);
-
-    runtimeContext.dependencyTracker.replaceFileDefines(filePath, nextDefinitions);
-    runtimeContext.dependencyTracker.replaceFileReferences(filePath, result.references ?? []);
-
-    if (!definitionsChanged) {
-        return {
-            definitionsChanged,
-            affectedDependents: []
-        };
-    }
-
-    const changedDefinitions = resolveChangedDefinitions(previousDefinitions, nextDefinitions);
-    const affectedDependents = runtimeContext.dependencyTracker.getFilesReferencingSymbols(
-        changedDefinitions,
-        filePath
-    );
-
-    return {
-        definitionsChanged,
-        affectedDependents
-    };
-}
-
-/**
- * Returns the symbol names whose availability changed between two definition sets.
- * Only files that reference these specific symbols need dependent retranspilation.
- */
-function resolveChangedDefinitions(
-    previousDefinitions: ReadonlyArray<string>,
-    nextDefinitions: ReadonlyArray<string>
-): Array<string> {
-    return mergeDependentFiles(
-        subtractSymbolSets(previousDefinitions, nextDefinitions),
-        subtractSymbolSets(nextDefinitions, previousDefinitions)
-    );
-}
-
-/**
- * Returns symbols present in `left` that are absent from `right`.
- */
-function subtractSymbolSets(left: ReadonlyArray<string>, right: ReadonlyArray<string>): Array<string> {
-    if (left.length === 0) {
-        return [];
-    }
-
-    const rightSet = new Set(right);
-    const difference: Array<string> = [];
-
-    for (const symbol of left) {
-        if (!rightSet.has(symbol)) {
-            difference.push(symbol);
-        }
-    }
-
-    return difference;
-}
-
-/**
- * Combine dependent file lists while removing duplicates.
- */
-function mergeDependentFiles(
-    previousDependents: ReadonlyArray<string>,
-    updatedDependents: ReadonlyArray<string>
-): Array<string> {
-    return [...previousDependents, ...updatedDependents].filter((item, index, arr) => arr.indexOf(item) === index);
-}
-
-async function retranspileDependentFile(
-    runtimeContext: RuntimeContext & ScriptNameRegistrationContext,
-    filePath: string,
-    dependentFile: string,
-    fileChangeDetectedAt: number | undefined,
-    verbose: boolean,
-    quiet: boolean
-): Promise<void> {
-    ensureScriptNameRegistered(dependentFile, runtimeContext.scriptNames);
-
-    const dependentContent = await readFile(dependentFile, "utf8");
-    const dependentLines = countSourceLines(dependentContent);
-
-    if (verbose && !quiet) {
-        console.log(`  ↳ Retranspiling ${path.relative(path.dirname(filePath), dependentFile)}`);
-    }
-
-    const dependentResult = transpileFile(runtimeContext, dependentFile, dependentContent, dependentLines, {
-        verbose: false,
-        quiet,
-        fileChangeDetectedAt
-    });
-
-    registerDependencyTrackerUpdates(runtimeContext, dependentFile, dependentResult);
-}
-
-function registerDependencyTrackerUpdates(
-    runtimeContext: RuntimeContext,
-    dependentFile: string,
-    dependentResult: TranspilationResult
-): void {
-    if (!dependentResult.success) {
-        return;
-    }
-
-    runtimeContext.dependencyTracker.replaceFileDefines(dependentFile, dependentResult.symbols ?? []);
-    runtimeContext.dependencyTracker.replaceFileReferences(dependentFile, dependentResult.references ?? []);
-}
-
-function getScriptNameFromPath(filePath: string): string | null {
-    const segments = getRuntimePathSegments(filePath);
-    return resolveScriptFileNameFromSegments(segments);
-}
-
-function ensureScriptNameRegistered(filePath: string, scriptNames: Set<string>): void {
-    const scriptName = getScriptNameFromPath(filePath);
-    if (scriptName) {
-        scriptNames.add(scriptName);
-    }
-}
-
-function unregisterScriptName(filePath: string, scriptNames: Set<string>): void {
-    const scriptName = getScriptNameFromPath(filePath);
-    if (scriptName) {
-        scriptNames.delete(scriptName);
-    }
-}
-
-function getSymbolIdFromFilePath(filePath: string): string {
-    const fileName = path.basename(filePath, path.extname(filePath));
-    return `gml/script/${fileName}`;
-}
-
-function removeCachedPatchesForFile(
-    runtimeContext: Pick<FileRemovalCleanupContext, "lastSuccessfulPatches" | "sourcePathToPatchIds">,
-    filePath: string
-): number {
-    const symbolId = getSymbolIdFromFilePath(filePath);
-    let removedCount = runtimeContext.lastSuccessfulPatches.delete(symbolId) ? 1 : 0;
-
-    for (const [patchId, cachedPatch] of runtimeContext.lastSuccessfulPatches.entries()) {
-        const metadata = Core.isObjectLike(cachedPatch.metadata) ? cachedPatch.metadata : null;
-        const sourcePath = Core.isNonEmptyString(metadata?.sourcePath) ? metadata.sourcePath : null;
-
-        if (sourcePath !== filePath) {
-            continue;
-        }
-
-        runtimeContext.lastSuccessfulPatches.delete(patchId);
-        removedCount += 1;
-    }
-
-    runtimeContext.sourcePathToPatchIds.delete(filePath);
-
-    return removedCount;
-}
-
-function cleanupRemovedFile(
-    runtimeContext: FileRemovalCleanupContext,
-    filePath: string,
-    verbose: boolean,
-    quiet: boolean
-): void {
-    unregisterScriptName(filePath, runtimeContext.scriptNames);
-    runtimeContext.dependencyTracker.removeFile(filePath);
-    runtimeContext.fileSnapshots.delete(filePath);
-    runtimeContext.fileContentHashes.delete(filePath);
-    runtimeContext.fileContentLengths.delete(filePath);
-    const removedPatchCount = removeCachedPatchesForFile(runtimeContext, filePath);
-
-    const debouncedHandler = runtimeContext.debouncedHandlers.get(filePath);
-    if (debouncedHandler) {
-        debouncedHandler.cancel();
-        runtimeContext.debouncedHandlers.delete(filePath);
-    }
-
-    if (verbose && !quiet) {
-        const patchMessage =
-            removedPatchCount > 0 ? `cleared ${removedPatchCount} cached patch(es)` : "no cached patch found";
-        console.log(`  ↳ Removed dependency tracking (${patchMessage})`);
-    }
-}
-
-function removeDeletedCachedPatchSources(
-    runtimeContext: FileRemovalCleanupContext,
-    verbose: boolean,
-    quiet: boolean
-): void {
-    const deletedSourcePaths = new Set<string>();
-
-    for (const cachedPatch of runtimeContext.lastSuccessfulPatches.values()) {
-        const metadata = Core.isObjectLike(cachedPatch.metadata) ? cachedPatch.metadata : null;
-        const sourcePath = Core.isNonEmptyString(metadata?.sourcePath) ? metadata.sourcePath : null;
-
-        if (sourcePath !== null && !existsSync(sourcePath)) {
-            deletedSourcePaths.add(sourcePath);
-        }
-    }
-
-    for (const sourcePath of deletedSourcePaths) {
-        cleanupRemovedFile(runtimeContext, sourcePath, verbose, quiet);
-    }
-}
-
 async function updateFileSnapshot(runtimeContext: FileSnapshotWriter, filePath: string): Promise<void> {
     try {
         const stats = await stat(filePath);
@@ -1987,26 +2083,35 @@ async function updateFileSnapshot(runtimeContext: FileSnapshotWriter, filePath: 
 /**
  * Return value from the initial file cache build step.
  * Provides both the complete set of known script names (for seeding the semantic oracle)
- * and the per-file content + AST cache (for avoiding re-parsing during initial transpilation).
+ * and the per-file source content + metadata cache used between startup passes.
+ * The cache intentionally excludes ASTs so large projects do not retain every parsed
+ * tree until the watcher is ready.
+ * `secondaryFilePaths` carries paths discovered for an additional extension matcher during the
+ * same tree walk (for example `.yy` room resources) so callers do not need a second full scan.
  */
 interface InitialFileScanResult {
     scriptNames: Set<string>;
     fileDataCache: Map<string, InitialFileData>;
+    macroDefinitionsBySourcePath: TranspilerTypes.MacroDefinitionsBySourcePath;
+    secondaryFilePaths: Array<string>;
 }
 
 interface ScannedDirectoryEntries {
     files: Array<string>;
     directories: Array<string>;
+    secondaryFiles: Array<string>;
 }
 
 function partitionScannedDirectoryEntries(
     currentPath: string,
     entries: Array<Dirent>,
     extensionMatcher: ExtensionMatcher,
-    watchRoot: string
+    watchRoot: string,
+    secondaryExtensionMatcher?: ExtensionMatcher
 ): ScannedDirectoryEntries {
     const files: Array<string> = [];
     const directories: Array<string> = [];
+    const secondaryFiles: Array<string> = [];
 
     for (const entry of entries) {
         const candidatePath = path.join(currentPath, entry.name);
@@ -2015,58 +2120,83 @@ function partitionScannedDirectoryEntries(
                 continue;
             }
             directories.push(candidatePath);
-        } else if (
-            entry.isFile() &&
-            !shouldIgnoreWatchedPath(candidatePath, watchRoot) &&
-            extensionMatcher.matches(entry.name)
-        ) {
-            files.push(candidatePath);
+        } else if (entry.isFile() && !shouldIgnoreWatchedPath(candidatePath, watchRoot)) {
+            if (extensionMatcher.matches(entry.name)) {
+                files.push(candidatePath);
+            } else if (secondaryExtensionMatcher?.matches(entry.name) && isRoomResourcePath(candidatePath)) {
+                secondaryFiles.push(candidatePath);
+            }
         }
     }
 
-    return { files, directories };
+    return { files, directories, secondaryFiles };
+}
+
+function isRoomResourcePath(filePath: string): boolean {
+    return path.normalize(filePath).split(path.sep).includes("rooms");
 }
 
 async function collectScriptNames(
     rootPath: string,
     extensionMatcher: ExtensionMatcher,
-    maxConcurrentDirs: number
+    maxConcurrentDirs: number,
+    secondaryExtensionMatcher?: ExtensionMatcher
 ): Promise<InitialFileScanResult> {
     const scriptNames = new Set<string>();
     const fileDataCache = new Map<string, InitialFileData>();
+    const macroDefinitionsBySourcePath: TranspilerTypes.MacroDefinitionsBySourcePath = new Map();
+    const secondaryFilePaths: Array<string> = [];
 
-    async function scan(currentPath: string): Promise<void> {
-        const entries = await readdir(currentPath, { withFileTypes: true });
-        const { files, directories } = partitionScannedDirectoryEntries(
-            currentPath,
-            entries,
-            extensionMatcher,
-            rootPath
-        );
+    let pendingDirectories: Array<string> = [rootPath];
+    while (pendingDirectories.length > 0) {
+        const currentBatch = pendingDirectories;
+        pendingDirectories = [];
 
-        // Process all files in this directory concurrently for maximum throughput
-        await Core.runInParallel(files, async (filePath) => {
-            await addScriptNamesFromFile(filePath, scriptNames, fileDataCache);
-        });
-
-        // Traverse subdirectories with bounded parallelism to reduce startup latency
-        // while still respecting file descriptor limits on constrained systems.
+        // Each iteration processes one BFS level of the directory tree; the next
+        // level's `pendingDirectories` isn't known until this level's scan finishes,
+        // so the await is a genuine sequential dependency, not an accidental serialization.
+        // eslint-disable-next-line no-await-in-loop -- level-by-level BFS traversal; see comment above
         await Core.runInParallelWithLimit(
-            directories,
-            async (subDirPath) => {
-                await scan(subDirPath);
+            currentBatch,
+            async (currentPath) => {
+                await yieldToEventLoop();
+
+                try {
+                    const entries = await readdir(currentPath, { withFileTypes: true });
+                    const { files, directories, secondaryFiles } = partitionScannedDirectoryEntries(
+                        currentPath,
+                        entries,
+                        extensionMatcher,
+                        rootPath,
+                        secondaryExtensionMatcher
+                    );
+
+                    // Keep lexer and source-directive work globally bounded by
+                    // the same worker limit as directory traversal.
+                    for (const filePath of files) {
+                        // eslint-disable-next-line no-await-in-loop -- intentionally serialized to respect maxConcurrentDirs; see comment above
+                        await addScriptNamesFromFile(
+                            filePath,
+                            scriptNames,
+                            fileDataCache,
+                            macroDefinitionsBySourcePath
+                        );
+                    }
+
+                    // Capture paths discovered for the secondary matcher without
+                    // re-walking the tree during watch startup.
+                    secondaryFilePaths.push(...secondaryFiles);
+                    pendingDirectories.push(...directories);
+                } catch {
+                    // Ignore per-directory read errors; the watcher can still use
+                    // file-name fallback and process later change events.
+                }
             },
-            maxConcurrentDirs
+            Math.min(maxConcurrentDirs, MAX_CONCURRENT_STARTUP_FILES)
         );
     }
 
-    try {
-        await scan(rootPath);
-    } catch {
-        // Fail silently; fallback to empty set
-    }
-
-    return { scriptNames, fileDataCache };
+    return { scriptNames, fileDataCache, macroDefinitionsBySourcePath, secondaryFilePaths };
 }
 
 async function collectWatchedFilePaths(
@@ -2078,6 +2208,7 @@ async function collectWatchedFilePaths(
 
     async function scan(currentPath: string): Promise<void> {
         try {
+            await yieldToEventLoop();
             const entries = await readdir(currentPath, { withFileTypes: true });
             const { files, directories } = partitionScannedDirectoryEntries(
                 currentPath,
@@ -2113,25 +2244,29 @@ async function collectWatchedFilePaths(
 async function addScriptNamesFromFile(
     filePath: string,
     scriptNames: Set<string>,
-    fileDataCache: Map<string, InitialFileData>
+    fileDataCache: Map<string, InitialFileData>,
+    macroDefinitionsBySourcePath: TranspilerTypes.MacroDefinitionsBySourcePath
 ): Promise<void> {
     const beforeSize = scriptNames.size;
 
     try {
-        const content = await readFile(filePath, "utf8");
-        const parser = new Parser.GMLParser(content, {
-            getComments: false,
-            getLocations: true,
-            simplifyLocations: true,
-            attachFunctionDocComments: false
-        });
-        const ast = parser.parse();
-        // Extract both symbols and references from the AST in a single traversal.
-        // This saves a second walk during transpileFile when the cache is reused.
-        const symbols = extractSymbolsFromAst(ast, filePath);
-        const references = extractReferencesFromAst(ast);
-        registerScriptNamesFromSymbols(symbols, scriptNames);
-        fileDataCache.set(filePath, { content, ast, symbols, references });
+        // `readFile` and `stat` are independent I/O operations; pipeline them so
+        // the per-file startup cost tracks the slower of the two instead of the
+        // sum. The pipelined `try` still catches a stat failure alongside the
+        // read failure, preserving the original "ignore parse errors" fallback
+        // behavior used by the directory walk.
+        const [content, stats] = await Promise.all([readFile(filePath, "utf8"), stat(filePath)]);
+        await yieldToEventLoop();
+        for (const functionName of Parser.extractGmlFunctionNames(content)) {
+            scriptNames.add(`gml_Script_${functionName}`);
+        }
+
+        if (sourceCanDeclareMacroMetadata(content)) {
+            macroDefinitionsBySourcePath.set(filePath, Transpiler.extractMacroDefinitionsFromSource(content, filePath));
+        }
+
+        fileDataCache.set(filePath, { content, mtimeMs: stats.mtimeMs, symbols: [], references: [] });
+        await yieldToEventLoop();
     } catch {
         // Ignore parse errors; fallback to file-name based script
     }
@@ -2142,4 +2277,8 @@ async function addScriptNamesFromFile(
             scriptNames.add(scriptName);
         }
     }
+}
+
+function sourceCanDeclareMacroMetadata(content: string): boolean {
+    return content.includes("#macro") || content.includes("#define");
 }

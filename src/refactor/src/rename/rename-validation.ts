@@ -7,28 +7,61 @@ import { Core } from "@gmloop/core";
 
 import {
     type ConflictEntry,
+    ConflictSeverity,
     ConflictType,
     type FileSymbolProvider,
     type KeywordProvider,
     type RenameRequest,
+    type SemanticGapProvider,
     type SymbolOccurrence,
     type SymbolResolver
 } from "../types.js";
 import {
     assertValidIdentifierName,
-    DEFAULT_RESERVED_KEYWORDS,
     extractSymbolName,
     parseSymbolIdParts,
     tryNormalizeIdentifierName
 } from "./index.js";
+import { loadRefactorReservedIdentifierNames } from "./reserved-identifiers.js";
 
 type MaybePromise<T> = Promise<T> | T;
+type RenameConflictContext = {
+    symbolKind: string | null;
+};
+type RenameConflictResolver = Partial<SymbolResolver> & Partial<SemanticGapProvider>;
 
 /**
  * Internal sentinel value to represent global (unscoped) symbol occurrences.
  * Used to group occurrences without a scopeId for batch validation.
  */
 const GLOBAL_SCOPE_KEY = "__global__";
+
+/**
+ * Symbol kinds that reside in the global namespace in GameMaker, making them
+ * potential collision/shadowing targets for variable renames.
+ */
+const GLOBAL_SYMBOL_KINDS = new Set([
+    "script",
+    "scripts",
+    "objects",
+    "sprites",
+    "sounds",
+    "rooms",
+    "paths",
+    "curves",
+    "sequences",
+    "shaders",
+    "fonts",
+    "timelines",
+    "tilesets",
+    "particlesystems",
+    "notes",
+    "extensions",
+    "resource",
+    "macro",
+    "enum",
+    "enum-member"
+]);
 
 function isPromiseLike<T>(value: MaybePromise<T>): value is Promise<T> {
     return typeof (value as { then?: unknown })?.then === "function";
@@ -178,49 +211,26 @@ function checkShadowingConflicts(
 }
 
 /**
- * Builds the complete set of reserved keywords by combining defaults with semantic keywords.
- * @param keywordProvider - Provider for semantic reserved keywords (null if not available)
- * @returns Set of all reserved keywords (lowercase)
- */
-function buildReservedKeywordSet(
-    keywordProvider: Partial<KeywordProvider> | null
-): MaybePromise<ReadonlySet<string> | Set<string>> {
-    if (!Core.hasMethods(keywordProvider, "getReservedKeywords")) {
-        return DEFAULT_RESERVED_KEYWORDS;
-    }
-
-    const semanticReserved = keywordProvider.getReservedKeywords() ?? [];
-    if (!isPromiseLike(semanticReserved)) {
-        return new Set([...DEFAULT_RESERVED_KEYWORDS, ...semanticReserved.map((keyword) => keyword.toLowerCase())]);
-    }
-
-    return Promise.resolve(semanticReserved).then((resolvedKeywords) => {
-        return new Set([
-            ...DEFAULT_RESERVED_KEYWORDS,
-            ...(resolvedKeywords ?? []).map((keyword) => keyword.toLowerCase())
-        ]);
-    });
-}
-
-/**
  * Detect conflicts that would arise from renaming a symbol.
- * Checks for reserved keywords and shadowing conflicts.
+ * Checks for reserved identifiers and shadowing conflicts.
  *
  * @param oldName - Original symbol name
  * @param newName - Proposed new name
  * @param occurrences - All occurrences of the symbol
  * @param resolver - Symbol resolver for scope-aware checks (null if not available)
- * @param keywordProvider - Keyword provider for reserved keyword checks (null if not available)
+ * @param keywordProvider - Keyword provider for reserved identifier checks (null if not available)
  * @returns Array of detected conflicts
  */
 export async function detectRenameConflicts(
     oldName: string,
     newName: string,
     occurrences: Array<SymbolOccurrence>,
-    resolver: Partial<SymbolResolver> | null,
-    keywordProvider: Partial<KeywordProvider> | null
+    resolver: RenameConflictResolver | null,
+    keywordProvider: Partial<KeywordProvider> | null,
+    context?: RenameConflictContext
 ): Promise<Array<ConflictEntry>> {
     const conflicts: Array<ConflictEntry> = [];
+    const resolvedContext = context ?? { symbolKind: null };
 
     let normalizedNewName: string;
     try {
@@ -237,16 +247,49 @@ export async function detectRenameConflicts(
     if (Core.hasMethods(resolver, "lookup")) {
         const shadowConflicts = checkShadowingConflicts(oldName, normalizedNewName, occurrences, resolver);
         conflicts.push(...(isPromiseLike(shadowConflicts) ? await shadowConflicts : shadowConflicts));
+
+        // Check for global shadowing conflicts where renaming a global asset/symbol
+        // would conflict with an existing symbol (e.g. variable) anywhere in the project.
+        if (resolvedContext.symbolKind && GLOBAL_SYMBOL_KINDS.has(resolvedContext.symbolKind)) {
+            const existing = await resolver.lookup(normalizedNewName);
+            if (existing) {
+                conflicts.push({
+                    type: ConflictType.SHADOW,
+                    message: `Renaming global symbol '${oldName}' to '${newName}' would conflict with existing symbol '${existing.name}'`
+                });
+            }
+        }
     }
 
-    // Check if new name conflicts with reserved keywords
-    const reservedKeywords = buildReservedKeywordSet(keywordProvider);
-    const resolvedReservedKeywords = isPromiseLike(reservedKeywords) ? await reservedKeywords : reservedKeywords;
-    if (resolvedReservedKeywords.has(normalizedNewName.toLowerCase())) {
+    // Check if new name conflicts with reserved language identifiers.
+    const resolvedReservedKeywords = await loadRefactorReservedIdentifierNames(
+        resolvedContext.symbolKind === "enum-member" ? "enum-member" : "ordinary-binding",
+        keywordProvider
+    );
+    if (resolvedReservedKeywords.has(normalizedNewName)) {
         conflicts.push({
             type: ConflictType.RESERVED,
-            message: `'${normalizedNewName}' is a reserved keyword and cannot be used as an identifier`
+            message: `'${normalizedNewName}' is a reserved GameMaker identifier and cannot be used as an identifier`
         });
+    }
+
+    if (resolvedReservedKeywords.has(oldName)) {
+        conflicts.push({
+            type: ConflictType.RESERVED,
+            message: `'${oldName}' is a reserved/built-in GameMaker identifier and cannot be renamed`
+        });
+    }
+
+    // Check for unresolved same-name references (semantic gaps).
+    if (Core.hasMethods(resolver, "checkSemanticGaps")) {
+        const gaps = resolver.checkSemanticGaps(oldName, resolvedContext.symbolKind);
+        for (const gap of gaps) {
+            conflicts.push({
+                type: ConflictType.SEMANTIC_GAP,
+                message: gap.message,
+                path: gap.path
+            });
+        }
     }
 
     return conflicts;
@@ -525,7 +568,7 @@ export async function validateCrossFileConsistency(
             errors.push({
                 type: ConflictType.LARGE_RENAME,
                 message: `File '${filePath}' contains ${occurrenceCount} occurrences - verify all references are updated`,
-                severity: "warning",
+                severity: ConflictSeverity.WARNING,
                 path: filePath
             });
         }
@@ -666,11 +709,41 @@ export function detectDuplicateTargetNames(
 
     const duplicates: Array<DuplicateTargetNameEntry> = [];
     for (const [newName, symbolIds] of nameToSymbols) {
-        if (symbolIds.length > 1) {
-            duplicates.push({ newName, symbolIds });
+        const conflictSymbolIds = removeCoupledScriptResourceCallableDuplicates(symbolIds);
+        if (conflictSymbolIds.length > 1) {
+            duplicates.push({ newName, symbolIds: conflictSymbolIds });
         }
     }
     return duplicates;
+}
+
+function removeCoupledScriptResourceCallableDuplicates(symbolIds: ReadonlyArray<string>): Array<string> {
+    const symbolIdSet = new Set(symbolIds);
+    const filtered: Array<string> = [];
+
+    for (const symbolId of symbolIds) {
+        if (symbolId.startsWith("gml/enum-member/") || symbolId.includes("enum-member:")) {
+            continue;
+        }
+
+        if (symbolId.startsWith("gml/script/")) {
+            const scriptName = symbolId.slice("gml/script/".length);
+            if (symbolIdSet.has(`gml/scripts/${scriptName}`)) {
+                continue;
+            }
+        }
+
+        if (symbolId.startsWith("gml/function/")) {
+            const functionName = symbolId.slice("gml/function/".length);
+            if (symbolIdSet.has(`gml/scripts/${functionName}`)) {
+                continue;
+            }
+        }
+
+        filtered.push(symbolId);
+    }
+
+    return filtered;
 }
 
 /**

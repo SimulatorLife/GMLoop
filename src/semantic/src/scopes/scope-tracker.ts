@@ -1,6 +1,5 @@
 import { Core, type MutableGameMakerAstNode } from "@gmloop/core";
 
-import { ROLE_DEF, ROLE_REF } from "../symbols/scip.js";
 import { IdentifierCacheManager } from "./identifier-cache-manager.js";
 import {
     DEFAULT_LOOKUP_CACHE_MAX_ENTRIES,
@@ -25,15 +24,22 @@ import {
     recomputePathLastModified,
     updatePathLastModifiedForScope
 } from "./scope-tracker-index-helpers.js";
+import {
+    exportOccurrencesBySymbolsFromTracker,
+    exportScipOccurrencesFromTracker,
+    type ScipExportView
+} from "./scope-tracker-scip.js";
 import type {
     AllSymbolsSummaryItem,
     ExternalReference,
-    IdentifierOccurrences,
     Occurrence,
-    ScipOccurrence,
     ScopeDependency,
     ScopeDependent,
+    ScopeDependentDepth,
+    ScopeDescendant,
     ScopeDetails,
+    ScopeInvalidationEntry,
+    ScopeInvalidationOptions,
     ScopeMetadata,
     ScopeModificationDetails,
     ScopeModificationMetadata,
@@ -50,12 +56,16 @@ import type {
 
 const DEFAULT_DECLARATION_ROLE: ScopeRole = Object.freeze({ type: "declaration" });
 const DEFAULT_REFERENCE_ROLE: ScopeRole = Object.freeze({ type: "reference" });
-const EMPTY_INVALIDATION_SET: Array<{ scopeId: string; scopeKind: string; reason: string }> = [];
 
 /**
  * Manages lexical and structural scopes, symbol declarations, and references.
+ *
+ * Implements {@link ScipExportView} as a structural contract: the SCIP export
+ * helpers consume the read-only `scopesById` and `symbolToScopesIndex` fields
+ * through this interface, which keeps the serialization layer decoupled from
+ * the tracker's own mutation logic.
  */
-export class ScopeTracker {
+export class ScopeTracker implements ScipExportView {
     private resolveScopeOverrideFromString(scopeOverride: string, currentScope: Scope | null): Scope | null {
         if (isScopeOverrideKeyword(scopeOverride)) {
             return scopeOverride === SCOPE_OVERRIDE_KEYWORD ? (this.getRootScope() ?? currentScope) : currentScope;
@@ -75,9 +85,22 @@ export class ScopeTracker {
     private scopeCounter: number = 0;
     private scopeStack: Scope[];
     private rootScope: Scope | null;
-    private scopesById: Map<string, Scope>;
+    /**
+     * Read-only view consumed by the SCIP export helpers (see
+     * `scope-tracker-scip.ts`). Exposed publicly so the decoupled export
+     * module can serialize scopes without taking a dependency on the
+     * tracker's mutation API. Treat the returned map as immutable.
+     */
+    public readonly scopesById: Map<string, Scope>;
     private scopeChildrenIndex: Map<string, Set<string>>;
-    private symbolToScopesIndex: Map<string, Map<string, ScopeSummary>>;
+    /**
+     * Read-only view consumed by the SCIP export helpers (see
+     * `scope-tracker-scip.ts`). Exposed publicly so the decoupled export
+     * module can locate scopes for a given symbol without taking a
+     * dependency on the tracker's mutation API. Treat the returned map as
+     * immutable.
+     */
+    public readonly symbolToScopesIndex: Map<string, Map<string, ScopeSummary>>;
     private pathToScopesIndex: Map<string, Set<string>>;
     private pathLastModifiedIndex: Map<string, number>;
     private enabled: boolean;
@@ -87,6 +110,17 @@ export class ScopeTracker {
     private lookupCache: Map<string, ScopeSymbolMetadata | null>;
     private lookupCacheDepth: number;
     private lookupCacheMaxEntries: number;
+
+    private createScopeDetails(scope: Scope): ScopeDetails {
+        return {
+            scopeId: scope.id,
+            scopeKind: scope.kind,
+            name: scope.metadata.name,
+            path: scope.metadata.path,
+            start: scope.metadata.start ? Core.cloneLocation(scope.metadata.start) : undefined,
+            end: scope.metadata.end ? Core.cloneLocation(scope.metadata.end) : undefined
+        };
+    }
 
     private collectSymbolOccurrencesForName(
         name: string | null | undefined,
@@ -348,15 +382,6 @@ export class ScopeTracker {
         return this.scopeStack;
     }
 
-    /**
-     * Helper method to get a single scope as an array, avoiding filter allocation.
-     * Returns empty array if scope doesn't exist.
-     */
-    private getSingleScopeArray(scopeId: string): Scope[] {
-        const scope = this.scopesById.get(scopeId);
-        return scope ? [scope] : [];
-    }
-
     private getDescendantScopeIds(scopeId: string): Set<string> {
         const descendants = new Set<string>();
         const children = this.scopeChildrenIndex.get(scopeId);
@@ -608,18 +633,11 @@ export class ScopeTracker {
     public exportOccurrences(
         includeReferences: boolean | { includeReferences?: boolean } = true
     ): ScopeOccurrencesSummary[] {
-        const includeRefs =
-            typeof includeReferences === "boolean" ? includeReferences : Boolean(includeReferences?.includeReferences);
-        const results: ScopeOccurrencesSummary[] = [];
-
-        for (const scope of this.scopesById.values()) {
-            const summary = this.buildScopeOccurrencesSummary(scope, includeRefs);
-            if (summary) {
-                results.push(summary);
-            }
-        }
-
-        return results;
+        // Delegate to the timestamp-filtered variant with the initial `-1` sentinel
+        // (Scope.lastModifiedTimestamp starts at -1 and is only set by markModified),
+        // so we include every scope that has occurrences regardless of when it was
+        // last touched.
+        return this.exportModifiedOccurrences(-1, includeReferences);
     }
 
     /**
@@ -969,6 +987,13 @@ export class ScopeTracker {
                 }
                 current = current.parent;
             }
+
+            const indexedDeclaration = this.resolveUniqueIndexedDeclaration(name);
+            if (indexedDeclaration) {
+                this.identifierCache.write(name, refScopeId, indexedDeclaration);
+                return indexedDeclaration.scopeId;
+            }
+
             this.identifierCache.write(name, refScopeId, null);
             return null;
         }
@@ -982,8 +1007,42 @@ export class ScopeTracker {
             }
         }
 
+        const indexedDeclaration = this.resolveUniqueIndexedDeclaration(name);
+        if (indexedDeclaration) {
+            this.identifierCache.write(name, refScopeId, indexedDeclaration);
+            return indexedDeclaration.scopeId;
+        }
+
         this.identifierCache.write(name, refScopeId, null);
         return null;
+    }
+
+    private resolveUniqueIndexedDeclaration(name: string): ScopeSymbolMetadata | null {
+        const scopeSummaryMap = this.symbolToScopesIndex.get(name);
+        if (!scopeSummaryMap) {
+            return null;
+        }
+
+        let foundDeclaration: ScopeSymbolMetadata | null = null;
+        for (const [scopeId, summary] of scopeSummaryMap) {
+            if (!summary.hasDeclaration) {
+                continue;
+            }
+
+            const scope = this.scopesById.get(scopeId);
+            const declaration = scope?.symbolMetadata.get(name) ?? null;
+            if (!declaration) {
+                continue;
+            }
+
+            if (foundDeclaration) {
+                return null;
+            }
+
+            foundDeclaration = declaration;
+        }
+
+        return foundDeclaration;
     }
 
     /**
@@ -993,6 +1052,15 @@ export class ScopeTracker {
      */
     public countRetainedIdentifierResolutionCacheEntries(): number {
         return this.identifierCache.countRetainedEntries();
+    }
+
+    /**
+     * Counts retained name lookup cache entries for diagnostics and memory regression tests.
+     *
+     * @returns Total number of cached name lookup entries currently retained.
+     */
+    public countRetainedLookupCacheEntries(): number {
+        return this.lookupCache.size;
     }
 
     public resolveIdentifier(name: string | null | undefined, scopeId?: string | null): ScopeSymbolMetadata | null {
@@ -1373,8 +1441,8 @@ export class ScopeTracker {
 
     public getInvalidationSet(
         scopeId: string | null | undefined,
-        { includeDescendants = false }: { includeDescendants?: boolean } = {}
-    ): Array<{ scopeId: string; scopeKind: string; reason: string }> {
+        { includeDescendants = false }: ScopeInvalidationOptions = {}
+    ): ScopeInvalidationEntry[] {
         if (!scopeId) {
             return [];
         }
@@ -1384,14 +1452,10 @@ export class ScopeTracker {
             return [];
         }
 
-        const invalidationSet: Array<{
-            scopeId: string;
-            scopeKind: string;
-            reason: string;
-        }> = [];
+        const invalidationSet: ScopeInvalidationEntry[] = [];
         const seenScopes = new Set<string>();
 
-        const addScope = (scopeIdToAdd: string, scopeKind: string, reason: string): void => {
+        const addScope = (scopeIdToAdd: string, scopeKind: string, reason: ScopeInvalidationEntry["reason"]): void => {
             if (seenScopes.has(scopeIdToAdd)) {
                 return;
             }
@@ -1421,6 +1485,94 @@ export class ScopeTracker {
     }
 
     /**
+     * Computes invalidation sets for known changed scope identifiers in one pass.
+     *
+     * Hot-reload coordinators that already have changed scope ids can use this
+     * method to avoid path normalization and path-index lookups. Duplicate scope
+     * ids are ignored, and transitive dependent/descendant traversals are shared
+     * across the batch to keep reload invalidation work bounded.
+     *
+     * @param scopeIds - Scope identifiers to invalidate from
+     * @param options - Configuration options
+     * @param options.includeDescendants - Whether to include descendant scopes
+     * @returns Map of scope id to its invalidation set
+     */
+    public getBatchInvalidationSetsForScopes(
+        scopeIds: Iterable<string>,
+        { includeDescendants = false }: ScopeInvalidationOptions = {}
+    ): Map<string, ScopeInvalidationEntry[]> {
+        const results = new Map<string, ScopeInvalidationEntry[]>();
+        const transitiveDependentsCache = new Map<string, ScopeDependentDepth[]>();
+        const descendantScopesCache = includeDescendants ? new Map<string, ScopeDescendant[]>() : null;
+
+        for (const scopeId of scopeIds) {
+            if (!scopeId || typeof scopeId !== "string" || scopeId.length === 0 || results.has(scopeId)) {
+                continue;
+            }
+
+            const scope = this.scopesById.get(scopeId);
+            if (!scope) {
+                // Each missing scope gets its own array: the return type is a mutable
+                // ScopeInvalidationEntry[], so sharing one instance across calls would let a
+                // caller that mutates its "empty" result silently corrupt unrelated results.
+                results.set(scopeId, []);
+                continue;
+            }
+
+            const invalidationSet: ScopeInvalidationEntry[] = [
+                {
+                    scopeId: scope.id,
+                    scopeKind: scope.kind,
+                    reason: "self"
+                }
+            ];
+            const seenScopes = new Set<string>([scope.id]);
+
+            let dependents = transitiveDependentsCache.get(scopeId);
+            if (!dependents) {
+                dependents = this.getTransitiveDependents(scopeId);
+                transitiveDependentsCache.set(scopeId, dependents);
+            }
+
+            for (const dep of dependents) {
+                if (seenScopes.has(dep.dependentScopeId)) {
+                    continue;
+                }
+                seenScopes.add(dep.dependentScopeId);
+                invalidationSet.push({
+                    scopeId: dep.dependentScopeId,
+                    scopeKind: dep.dependentScopeKind,
+                    reason: "dependent"
+                });
+            }
+
+            if (includeDescendants) {
+                let descendants = descendantScopesCache?.get(scopeId);
+                if (!descendants) {
+                    descendants = this.getDescendantScopes(scopeId);
+                    descendantScopesCache?.set(scopeId, descendants);
+                }
+
+                for (const desc of descendants) {
+                    if (seenScopes.has(desc.scopeId)) {
+                        continue;
+                    }
+                    seenScopes.add(desc.scopeId);
+                    invalidationSet.push({
+                        scopeId: desc.scopeId,
+                        scopeKind: desc.scopeKind,
+                        reason: "descendant"
+                    });
+                }
+            }
+
+            results.set(scopeId, invalidationSet);
+        }
+
+        return results;
+    }
+
+    /**
      * Computes invalidation sets for multiple file paths in a single pass.
      *
      * This method is optimized for hot-reload scenarios where multiple files
@@ -1435,20 +1587,12 @@ export class ScopeTracker {
      */
     public getBatchInvalidationSets(
         paths: Iterable<string>,
-        { includeDescendants = false }: { includeDescendants?: boolean } = {}
-    ): Map<string, Array<{ scopeId: string; scopeKind: string; reason: string }>> {
-        const results = new Map<string, Array<{ scopeId: string; scopeKind: string; reason: string }>>();
-        const transitiveDependentsCache = new Map<
-            string,
-            Array<{ dependentScopeId: string; dependentScopeKind: string; depth: number }>
-        >();
-        const normalizedPathResultsCache = new Map<
-            string,
-            Array<{ scopeId: string; scopeKind: string; reason: string }>
-        >();
-        const descendantScopesCache = includeDescendants
-            ? new Map<string, Array<{ scopeId: string; scopeKind: string; depth: number }>>()
-            : null;
+        { includeDescendants = false }: ScopeInvalidationOptions = {}
+    ): Map<string, ScopeInvalidationEntry[]> {
+        const results = new Map<string, ScopeInvalidationEntry[]>();
+        const transitiveDependentsCache = new Map<string, ScopeDependentDepth[]>();
+        const normalizedPathResultsCache = new Map<string, ScopeInvalidationEntry[]>();
+        const descendantScopesCache = includeDescendants ? new Map<string, ScopeDescendant[]>() : null;
 
         for (const path of paths) {
             if (!path || typeof path !== "string" || path.length === 0) {
@@ -1468,16 +1612,17 @@ export class ScopeTracker {
 
             const scopeIds = this.pathToScopesIndex.get(trackedPath);
             if (!scopeIds || scopeIds.size === 0) {
-                normalizedPathResultsCache.set(trackedPath, EMPTY_INVALIDATION_SET);
-                results.set(path, EMPTY_INVALIDATION_SET);
+                // Allocate a fresh array per normalized path rather than reusing a shared
+                // "empty" instance: normalizedPathResultsCache intentionally shares one array
+                // across raw paths that normalize to the same trackedPath within this call, but
+                // that array must not also be shared with other trackedPaths or other calls.
+                const emptyInvalidationSet: ScopeInvalidationEntry[] = [];
+                normalizedPathResultsCache.set(trackedPath, emptyInvalidationSet);
+                results.set(path, emptyInvalidationSet);
                 continue;
             }
 
-            const pathInvalidationSet: Array<{
-                scopeId: string;
-                scopeKind: string;
-                reason: string;
-            }> = [];
+            const pathInvalidationSet: ScopeInvalidationEntry[] = [];
             const seenScopes = new Set<string>();
 
             for (const scopeId of scopeIds) {
@@ -1541,18 +1686,12 @@ export class ScopeTracker {
         return results;
     }
 
-    public getDescendantScopes(
-        scopeId: string | null | undefined
-    ): Array<{ scopeId: string; scopeKind: string; depth: number }> {
+    public getDescendantScopes(scopeId: string | null | undefined): ScopeDescendant[] {
         if (!scopeId) {
             return [];
         }
 
-        const descendants: Array<{
-            scopeId: string;
-            scopeKind: string;
-            depth: number;
-        }> = [];
+        const descendants: ScopeDescendant[] = [];
         const children = this.scopeChildrenIndex.get(scopeId);
         if (!children || children.size === 0) {
             return descendants;
@@ -1605,14 +1744,7 @@ export class ScopeTracker {
             return null;
         }
 
-        return {
-            scopeId: scope.id,
-            scopeKind: scope.kind,
-            name: scope.metadata.name,
-            path: scope.metadata.path,
-            start: scope.metadata.start ? Core.cloneLocation(scope.metadata.start) : undefined,
-            end: scope.metadata.end ? Core.cloneLocation(scope.metadata.end) : undefined
-        };
+        return this.createScopeDetails(scope);
     }
 
     public getScopesByPath(path: string | null | undefined): ScopeDetails[] {
@@ -1937,9 +2069,19 @@ export class ScopeTracker {
      * Scopes without a path (e.g., anonymous blocks or synthetic scopes)
      * are silently skipped.
      *
+     * The boundary semantics are strictly greater than
+     * (`lastModified > sinceTimestamp`), matching the sibling
+     * {@link ScopeTracker.getModifiedScopes} and
+     * {@link ScopeTracker.exportModifiedOccurrences} helpers so callers
+     * reading multiple change-detection views in one hot-reload pass see a
+     * consistent set of touched files. Pass `0` to enumerate every path
+     * that has ever been touched (paths with `-1` sentinel timestamps are
+     * never observed because they are never written to the path index).
+     *
      * @param sinceTimestamp - Return paths for scopes with a lastModified
      *                         timestamp strictly greater than this value.
-     *                         Pass 0 to return all paths for any modified scope.
+     *                         Pass `0` to return all paths that have ever
+     *                         been touched after their initial registration.
      * @returns Set of file paths for scopes modified after the timestamp
      */
     public getChangedFilePaths(sinceTimestamp: number): Set<string> {
@@ -1949,7 +2091,7 @@ export class ScopeTracker {
 
         const paths = new Set<string>();
         for (const [trackedPath, lastModified] of this.pathLastModifiedIndex) {
-            if (lastModified >= sinceTimestamp) {
+            if (lastModified > sinceTimestamp) {
                 paths.add(trackedPath);
             }
         }
@@ -2162,50 +2304,6 @@ export class ScopeTracker {
         return cloneDeclarationMetadata(metadata);
     }
 
-    private defaultScipSymbolGenerator(name: string, scopeId: string): string {
-        return `${scopeId}::${name}`;
-    }
-
-    private toScipOccurrence(
-        occurrence: Occurrence,
-        symbolRoles: number,
-        getSymbol: (name: string, scopeId: string) => string | null
-    ): ScipOccurrence | null {
-        const start = occurrence?.start;
-        const end = occurrence?.end;
-
-        if (!start || !end) {
-            return null;
-        }
-
-        const startLine = typeof start.line === "number" ? start.line : null;
-        const startCol = typeof start.column === "number" ? start.column : 0;
-        const endLine = typeof end.line === "number" ? end.line : null;
-        const endCol = typeof end.column === "number" ? end.column : 0;
-
-        if (startLine === null || endLine === null) {
-            return null;
-        }
-
-        const name = occurrence?.name;
-        const occScopeId = occurrence?.scopeId;
-
-        if (!name || !occScopeId) {
-            return null;
-        }
-
-        const symbol = getSymbol(name, occScopeId);
-        if (!symbol) {
-            return null;
-        }
-
-        return {
-            range: [startLine, startCol, endLine, endCol],
-            symbol,
-            symbolRoles
-        };
-    }
-
     public exportScipOccurrences(
         options: {
             scopeId?: string | null;
@@ -2213,61 +2311,7 @@ export class ScopeTracker {
             symbolGenerator?: (name: string, scopeId: string) => string | null;
         } = {}
     ): ScopeScipOccurrences[] {
-        const { scopeId = null, includeReferences = true, symbolGenerator = null } = options;
-
-        const results: ScopeScipOccurrences[] = [];
-        const getSymbol = symbolGenerator ?? this.defaultScipSymbolGenerator.bind(this);
-
-        const scopesToProcess = scopeId ? this.getSingleScopeArray(scopeId) : Array.from(this.scopesById.values());
-
-        for (const scope of scopesToProcess) {
-            const occurrences: ScipOccurrence[] = [];
-
-            for (const entry of scope.occurrences.values()) {
-                this.appendScipDeclarations(entry, occurrences, getSymbol);
-                if (includeReferences) {
-                    this.appendScipReferences(entry, occurrences, getSymbol);
-                }
-            }
-
-            if (occurrences.length > 0) {
-                results.push({
-                    scopeId: scope.id,
-                    scopeKind: scope.kind,
-                    occurrences
-                });
-            }
-        }
-
-        // Sort in place using simple string comparison
-        results.sort((a, b) => (a.scopeId < b.scopeId ? -1 : a.scopeId > b.scopeId ? 1 : 0));
-        return results;
-    }
-
-    private appendScipDeclarations(
-        entry: IdentifierOccurrences,
-        occurrences: Array<ScipOccurrence>,
-        getSymbol: (name: string, scopeId: string) => string | null
-    ): void {
-        for (const declaration of entry.declarations) {
-            const scipOcc = this.toScipOccurrence(declaration, ROLE_DEF, getSymbol);
-            if (scipOcc) {
-                occurrences.push(scipOcc);
-            }
-        }
-    }
-
-    private appendScipReferences(
-        entry: IdentifierOccurrences,
-        occurrences: Array<ScipOccurrence>,
-        getSymbol: (name: string, scopeId: string) => string | null
-    ): void {
-        for (const reference of entry.references) {
-            const scipOcc = this.toScipOccurrence(reference, ROLE_REF, getSymbol);
-            if (scipOcc) {
-                occurrences.push(scipOcc);
-            }
-        }
+        return exportScipOccurrencesFromTracker(this, options);
     }
 
     public exportOccurrencesBySymbols(
@@ -2278,77 +2322,7 @@ export class ScopeTracker {
             symbolGenerator?: (name: string, scopeId: string) => string | null;
         } = {}
     ): ScopeScipOccurrences[] {
-        const { scopeId = null, includeReferences = true, symbolGenerator = null } = options;
-        const symbolSet = new Set(symbolNames);
-
-        if (symbolSet.size === 0) {
-            return [];
-        }
-
-        const results: ScopeScipOccurrences[] = [];
-        const getSymbol = symbolGenerator ?? this.defaultScipSymbolGenerator.bind(this);
-
-        const scopesToProcess = scopeId ? this.getSingleScopeArray(scopeId) : this.collectScopesForSymbols(symbolSet);
-
-        if (scopesToProcess.length === 0) {
-            return [];
-        }
-
-        for (const scope of scopesToProcess) {
-            const occurrences: ScipOccurrence[] = [];
-
-            for (const [name, entry] of scope.occurrences.entries()) {
-                if (!symbolSet.has(name)) {
-                    continue;
-                }
-
-                this.appendScipDeclarations(entry, occurrences, getSymbol);
-                if (includeReferences) {
-                    this.appendScipReferences(entry, occurrences, getSymbol);
-                }
-            }
-
-            if (occurrences.length > 0) {
-                results.push({
-                    scopeId: scope.id,
-                    scopeKind: scope.kind,
-                    occurrences
-                });
-            }
-        }
-
-        // Sort in place using simple string comparison
-        results.sort((a, b) => (a.scopeId < b.scopeId ? -1 : a.scopeId > b.scopeId ? 1 : 0));
-        return results;
-    }
-
-    private collectScopesForSymbols(symbolSet: Set<string>): Scope[] {
-        const scopeIds = new Set<string>();
-
-        for (const symbol of symbolSet) {
-            const scopeSummaryMap = this.symbolToScopesIndex.get(symbol);
-            if (!scopeSummaryMap) {
-                continue;
-            }
-
-            for (const scopeId of scopeSummaryMap.keys()) {
-                scopeIds.add(scopeId);
-            }
-        }
-
-        if (scopeIds.size === 0) {
-            return [];
-        }
-
-        const scopes: Scope[] = [];
-        for (const scopeId of scopeIds) {
-            const scope = this.scopesById.get(scopeId);
-            if (scope) {
-                scopes.push(scope);
-            }
-        }
-
-        return scopes;
+        return exportOccurrencesBySymbolsFromTracker(this, symbolNames, options);
     }
 
     /**
@@ -2375,14 +2349,7 @@ export class ScopeTracker {
                 continue;
             }
 
-            results.set(scopeId, {
-                scopeId: scope.id,
-                scopeKind: scope.kind,
-                name: scope.metadata.name,
-                path: scope.metadata.path,
-                start: scope.metadata.start ? Core.cloneLocation(scope.metadata.start) : undefined,
-                end: scope.metadata.end ? Core.cloneLocation(scope.metadata.end) : undefined
-            });
+            results.set(scopeId, this.createScopeDetails(scope));
         }
 
         return results;

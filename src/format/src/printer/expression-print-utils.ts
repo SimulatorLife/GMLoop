@@ -23,7 +23,6 @@ import { printComment, printDanglingComments, printDanglingCommentsAsGroup } fro
 import { MULTIPLICATIVE_BINARY_OPERATORS, STRING_TYPE } from "./constants.js";
 import { safeGetParentNode, safeGetPathName, safeGetPathValue } from "./path-utils.js";
 import { concat, group, hardline, ifBreak, indent, line, lineSuffixBoundary } from "./prettier-doc-builders.js";
-import { hasBlankLineBetweenLastCommentAndClosingBrace, resolvePrinterSourceMetadata } from "./source-text.js";
 import {
     expressionIsStringLike,
     hasLineBreak,
@@ -100,6 +99,10 @@ export function shouldOmitSyntheticParens(path: any, _options: any): boolean {
 
     const parentKey = safeGetPathName(path);
     const expression = node.expression;
+
+    if (shouldStripRedundantConditionalParentheses(parent, parentKey, expression)) {
+        return true;
+    }
 
     if (shouldStripStandaloneAdditiveParentheses(parent, parentKey, expression)) {
         return true;
@@ -312,10 +315,10 @@ export function printEmptyBlock(path: any, options: any): any {
     const hasPrintableComments = comments.some(Core.isCommentNode);
 
     if (hasPrintableComments) {
-        const sourceMetadata = resolvePrinterSourceMetadata(options);
+        const sourceMetadata = Core.resolvePrinterSourceMetadata(options);
         const shouldAddTrailingBlankLine =
             sourceMetadata.originalText !== null &&
-            hasBlankLineBetweenLastCommentAndClosingBrace(node, sourceMetadata, sourceMetadata.originalText);
+            Core.hasBlankLineBetweenLastCommentAndClosingBrace(node, sourceMetadata, sourceMetadata.originalText);
 
         const trailingDocs = [hardline, "}"];
         if (shouldAddTrailingBlankLine) {
@@ -370,15 +373,68 @@ function shouldFlattenTernaryTest(parentKey: any, expression: any): boolean {
     );
 }
 
-function shouldWrapTernaryExpression(path: any): boolean {
-    const node = safeGetPathValue(path);
-    if (node && node.__skipTernaryParens) {
+function shouldStripRedundantConditionalParentheses(parent: any, parentKey: any, expression: any): boolean {
+    const innermostExpression = Core.unwrapParenthesizedExpression(expression);
+
+    if (!parent || innermostExpression?.type !== "TernaryExpression") {
         return false;
     }
 
-    // Do not wrap ternary expressions in parentheses by default.
-    // The golden fixture tests expect ternary expressions to remain unwrapped
-    // in variable declarations, assignments, and template strings.
+    switch (parent.type) {
+        case "ParenthesizedExpression": {
+            return parentKey === "expression";
+        }
+        case "AssignmentExpression": {
+            return parentKey === "right";
+        }
+        case "VariableDeclarator": {
+            return parentKey === "init";
+        }
+        case "ExpressionStatement": {
+            return parentKey === "expression";
+        }
+        case "ReturnStatement":
+        case "ThrowStatement": {
+            return parentKey === "argument";
+        }
+        default: {
+            return false;
+        }
+    }
+}
+
+function shouldWrapTernaryExpression(path: any): boolean {
+    const node = safeGetPathValue(path);
+    if (node && node.__skipTernaryParens) {
+        // Node-local opt-out: this guard is consulted but no caller in the
+        // current printer ever flips the marker, so it is effectively
+        // dead. It is preserved so future printers (e.g. a future call-
+        // argument layout pass that needs to keep an inner ternary bare
+        // across a reflow) have a non-invasive way to opt out without
+        // re-architecting this decision tree. Treat the flag as a read
+        // input to this guard — the formatter should not mutate node
+        // state from inside a print callback.
+        return false;
+    }
+
+    // Do NOT wrap ternary expressions in parentheses by default. The
+    // formatter is layout-only (see docs/target-state.md §3.2 "Formatter
+    // Boundary & Allowlist", specifically the "Nested ternaries" clause
+    // under §3.2.1) and must never synthesize grouping for readability:
+    // GML's `cond ? a : b` is unambiguous at every precedence level except
+    // inside the true branch of a parent ternary, where the parser already
+    // attaches a `ParenthesizedExpression` so the inner `?` cannot be
+    // misread as a second guard. Re-emitting a synthetic
+    // `cond ? (a ? b : c) : d` here would churn every ternary in every
+    // `.gml` file the formatter touches, fight the golden fixtures pinned
+    // under src/format/test/fixtures/**/expected.gml (and the dedicated
+    // `ternary-parentheses.test.ts` cases), and step on the `optimize-
+    // logical-flow` lint rule that is responsible for nested-ternary
+    // parenthesization. The `__skipTernaryParens` escape hatch above is
+    // the only supported way to override this default; do not return
+    // `true` here without first auditing every call site of
+    // `printTernaryExpressionNode` and the lint rules that depend on
+    // "ternary in true branch is unparenthesized" detection.
     return false;
 }
 
@@ -479,6 +535,14 @@ function binaryExpressionContainsString(node: any): boolean {
 function unwrapParenthesizedExpression(childPath: any, print: any): any {
     const childNode = childPath.getValue();
     if (childNode?.type === "ParenthesizedExpression") {
+        // If the node has comments attached by Prettier's comment-attachment pass,
+        // delegate to print() so Prettier's comment-printing pipeline handles them.
+        // Skipping directly to the inner expression would leave those comments
+        // unprinted, triggering "Comment was not printed" errors.
+        if (Core.isNonEmptyArray(childNode.comments)) {
+            return print();
+        }
+
         return childPath.call((innerPath: any) => unwrapParenthesizedExpression(innerPath, print), "expression");
     }
 

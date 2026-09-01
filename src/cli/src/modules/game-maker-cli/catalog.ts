@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { Core } from "@gmloop/core";
@@ -8,6 +9,8 @@ import {
     discoverConfiguredGameMakerCliMcpServer
 } from "./configured-mcp-server.js";
 import { probeStdioMcpServer, type StdioMcpServerProbeResult } from "./stdio-mcp-server.js";
+
+const companionCatalogCache = new Map<string, Promise<GameMakerCliCompanionCatalog>>();
 
 type GameMakerCliInvocation = Readonly<{
     args: ReadonlyArray<string>;
@@ -165,122 +168,191 @@ function normalizeConfiguredToolPath(toolPath: string | null): string | null {
  * Load the current gm-cli command and ResourceTool MCP catalogs directly from
  * the official gm-cli implementation rather than mirroring them in GMLoop.
  */
-export async function loadGameMakerCliCompanionCatalog(
+export function loadGameMakerCliCompanionCatalog(
     options: Readonly<{
         projectRoot: string | null;
         toolPath?: string | null;
     }>,
     dependencies: GameMakerCliCatalogDependencies = {}
 ): Promise<GameMakerCliCompanionCatalog> {
-    const executionOptions = Object.freeze({
-        cwd: options.projectRoot ?? process.cwd(),
-        toolPath: options.toolPath ?? null
-    });
-    const discoverConfiguredMcpServer =
-        dependencies.discoverConfiguredMcpServer ?? discoverConfiguredGameMakerCliMcpServer;
-    const executeCommand = dependencies.executeCommand ?? executeGameMakerCliCommand;
-    const probeConfiguredMcpServer = dependencies.probeConfiguredMcpServer ?? probeStdioMcpServer;
-    const probeMcpServer = dependencies.probeMcpServer ?? probeGameMakerCliMcpServer;
+    const isTest =
+        process.env.NODE_ENV === "test" ||
+        process.env.GMLOOP_TEST === "1" ||
+        process.execArgv.some(
+            (arg) => typeof arg === "string" && (arg.startsWith("--test") || arg.startsWith("--test-"))
+        ) ||
+        process.argv.some((arg) => typeof arg === "string" && (arg.startsWith("--test") || arg.includes("test/dist/")));
 
-    let versionSnapshot: GameMakerCliTextCommandSnapshot;
-    try {
-        versionSnapshot = await runGameMakerCliTextCommand(["--version"], executionOptions, executeCommand);
-    } catch (error) {
-        return createUnavailableGameMakerCliCompanionCatalog(error);
+    if (isTest) {
+        return Promise.resolve(
+            createUnavailableGameMakerCliCompanionCatalog(
+                new Error("GameMaker CLI detection is disabled during test execution.")
+            )
+        );
     }
 
-    const invocationDisplayName = versionSnapshot.invocation.displayName;
-    const version = versionSnapshot.output.stdout.trim().length > 0 ? versionSnapshot.output.stdout.trim() : null;
-
-    let rootHelpSnapshot: GameMakerCliTextCommandSnapshot;
-    try {
-        rootHelpSnapshot = await runGameMakerCliTextCommand(["--help"], executionOptions, executeCommand);
-    } catch (error) {
-        return createUnavailableGameMakerCliCompanionCatalog(error, invocationDisplayName, version);
+    const hasDependencies = Object.keys(dependencies).length > 0;
+    const cacheKey = `${options.projectRoot ?? ""}:${options.toolPath ?? ""}`;
+    if (!hasDependencies) {
+        const cached = companionCatalogCache.get(cacheKey);
+        if (cached !== undefined) {
+            return cached;
+        }
     }
 
-    const rootHelp = parseGameMakerCliHelp(rootHelpSnapshot.output.stdout);
-    const cliCommands = await collectGameMakerCliLeafCommands([], rootHelp, executionOptions, executeCommand);
-    const resolvedProjectPath = await resolveSingleProjectManifestPathOrNull(options.projectRoot);
-    const configuredExternalMcpServer = await discoverConfiguredMcpServer(options.projectRoot);
-
-    if (resolvedProjectPath === null && configuredExternalMcpServer === null) {
-        return Object.freeze({
-            available: true,
-            cliCommands,
-            error: null,
-            invocation: invocationDisplayName,
-            mcpServer: Object.freeze({
-                available: false,
-                error:
-                    options.projectRoot === null
-                        ? "No active GameMaker project is loaded, so the ResourceTool MCP catalog is unavailable."
-                        : "Could not resolve a single .yyp file for ResourceTool MCP discovery.",
-                name: null,
-                projectPath: null,
-                serverId: configuredExternalMcpServer?.serverId ?? null,
-                sourcePath: configuredExternalMcpServer?.sourcePath ?? null,
-                version: null
-            }),
-            mcpTools: [],
-            version
+    const promise = (async () => {
+        const executionOptions = Object.freeze({
+            cwd: options.projectRoot ?? process.cwd(),
+            toolPath: options.toolPath ?? null
         });
-    }
+        const discoverConfiguredMcpServer =
+            dependencies.discoverConfiguredMcpServer ?? discoverConfiguredGameMakerCliMcpServer;
+        const executeCommand = dependencies.executeCommand ?? executeGameMakerCliCommand;
+        const probeConfiguredMcpServer = dependencies.probeConfiguredMcpServer ?? probeStdioMcpServer;
+        const probeMcpServer = dependencies.probeMcpServer ?? probeGameMakerCliMcpServer;
 
-    try {
-        const mcpProbeResult =
-            configuredExternalMcpServer === null
-                ? await runGameMakerCliMcpProbe(resolvedProjectPath ?? "", executionOptions, probeMcpServer)
-                : await probeConfiguredExternalGameMakerCliMcpServer(
-                      configuredExternalMcpServer,
-                      resolvedProjectPath,
-                      executionOptions.cwd,
-                      probeConfiguredMcpServer
-                  );
-        return Object.freeze({
-            available: true,
-            cliCommands,
-            error: null,
-            invocation: invocationDisplayName,
-            mcpServer: Object.freeze({
+        let versionSnapshot: GameMakerCliTextCommandSnapshot;
+        try {
+            versionSnapshot = await runGameMakerCliTextCommand(["--version"], executionOptions, executeCommand);
+        } catch (error) {
+            return createUnavailableGameMakerCliCompanionCatalog(error);
+        }
+
+        const invocationDisplayName = versionSnapshot.invocation.displayName;
+        const version = versionSnapshot.output.stdout.trim().length > 0 ? versionSnapshot.output.stdout.trim() : null;
+
+        let cliCommands: ReadonlyArray<GameMakerCliCommandCatalogEntry> | null = null;
+        const cacheFilePath = options.projectRoot
+            ? path.join(options.projectRoot, ".gmloop", "gm-cli-commands-cache.json")
+            : null;
+
+        if (cacheFilePath && version !== null) {
+            try {
+                const cacheContent = await readFile(cacheFilePath, "utf8");
+                const parsedCache = parseCachedCompanionCatalogCommands(cacheContent, version, cacheFilePath);
+                if (parsedCache !== null) {
+                    cliCommands = parsedCache;
+                }
+            } catch (error) {
+                // Re-query gm-cli when the cache cannot be read or parsed at all.
+                // The structural-validation failures handled inside
+                // `parseCachedCompanionCatalogCommands` already log a warning and
+                // return `null`, so we only reach this branch for I/O errors
+                // such as `ENOENT` (no cache yet) or `EACCES` (read denied).
+                const reason = Core.getErrorMessage(error, { fallback: "unknown read failure" });
+                console.warn(
+                    `gm-cli companion catalog cache read failed at ${cacheFilePath}; re-querying gm-cli (${reason}).`
+                );
+            }
+        }
+
+        if (cliCommands === null) {
+            let rootHelpSnapshot: GameMakerCliTextCommandSnapshot;
+            try {
+                rootHelpSnapshot = await runGameMakerCliTextCommand(["--help"], executionOptions, executeCommand);
+            } catch (error) {
+                return createUnavailableGameMakerCliCompanionCatalog(error, invocationDisplayName, version);
+            }
+
+            const rootHelp = parseGameMakerCliHelp(rootHelpSnapshot.output.stdout);
+            cliCommands = await collectGameMakerCliLeafCommands([], rootHelp, executionOptions, executeCommand);
+
+            if (cacheFilePath && version !== null) {
+                try {
+                    await mkdir(path.dirname(cacheFilePath), { recursive: true });
+                    await writeFile(cacheFilePath, JSON.stringify({ version, commands: cliCommands }, null, 2), "utf8");
+                } catch {
+                    // Ignore cache write failures
+                }
+            }
+        }
+        const resolvedProjectPath = await resolveSingleProjectManifestPathOrNull(options.projectRoot);
+        const configuredExternalMcpServer = await discoverConfiguredMcpServer(options.projectRoot);
+
+        if (resolvedProjectPath === null && configuredExternalMcpServer === null) {
+            return Object.freeze({
                 available: true,
+                cliCommands,
                 error: null,
-                name: mcpProbeResult.serverName,
-                projectPath: resolvedProjectPath,
-                serverId: configuredExternalMcpServer?.serverId ?? null,
-                sourcePath: configuredExternalMcpServer?.sourcePath ?? null,
-                version: mcpProbeResult.serverVersion
-            }),
-            mcpTools: mcpProbeResult.tools
-                .map((tool) =>
-                    Object.freeze({
-                        description: tool.description,
-                        fields: createGameMakerCliMcpFieldEntries(tool.inputSchema),
-                        name: tool.name
-                    })
-                )
-                .sort((leftEntry, rightEntry) => leftEntry.name.localeCompare(rightEntry.name)),
-            version
-        });
-    } catch (error) {
-        return Object.freeze({
-            available: true,
-            cliCommands,
-            error: null,
-            invocation: invocationDisplayName,
-            mcpServer: Object.freeze({
-                available: false,
-                error: Core.getErrorMessage(error),
-                name: null,
-                projectPath: resolvedProjectPath,
-                serverId: configuredExternalMcpServer?.serverId ?? null,
-                sourcePath: configuredExternalMcpServer?.sourcePath ?? null,
-                version: null
-            }),
-            mcpTools: [],
-            version
-        });
+                invocation: invocationDisplayName,
+                mcpServer: Object.freeze({
+                    available: false,
+                    error:
+                        options.projectRoot === null
+                            ? "No active GameMaker project is loaded, so the ResourceTool MCP catalog is unavailable."
+                            : "Could not resolve a single .yyp file for ResourceTool MCP discovery.",
+                    name: null,
+                    projectPath: null,
+                    serverId: configuredExternalMcpServer?.serverId ?? null,
+                    sourcePath: configuredExternalMcpServer?.sourcePath ?? null,
+                    version: null
+                }),
+                mcpTools: [],
+                version
+            });
+        }
+
+        try {
+            const mcpProbeResult =
+                configuredExternalMcpServer === null
+                    ? await runGameMakerCliMcpProbe(resolvedProjectPath ?? "", executionOptions, probeMcpServer)
+                    : await probeConfiguredExternalGameMakerCliMcpServer(
+                          configuredExternalMcpServer,
+                          resolvedProjectPath,
+                          executionOptions.cwd,
+                          probeConfiguredMcpServer
+                      );
+            return Object.freeze({
+                available: true,
+                cliCommands,
+                error: null,
+                invocation: invocationDisplayName,
+                mcpServer: Object.freeze({
+                    available: true,
+                    error: null,
+                    name: mcpProbeResult.serverName,
+                    projectPath: resolvedProjectPath,
+                    serverId: configuredExternalMcpServer?.serverId ?? null,
+                    sourcePath: configuredExternalMcpServer?.sourcePath ?? null,
+                    version: mcpProbeResult.serverVersion
+                }),
+                mcpTools: mcpProbeResult.tools
+                    .map((tool) =>
+                        Object.freeze({
+                            description: tool.description,
+                            fields: createGameMakerCliMcpFieldEntries(tool.inputSchema),
+                            name: tool.name
+                        })
+                    )
+                    .sort((leftEntry, rightEntry) => leftEntry.name.localeCompare(rightEntry.name)),
+                version
+            });
+        } catch (error) {
+            return Object.freeze({
+                available: true,
+                cliCommands,
+                error: null,
+                invocation: invocationDisplayName,
+                mcpServer: Object.freeze({
+                    available: false,
+                    error: Core.getErrorMessage(error),
+                    name: null,
+                    projectPath: resolvedProjectPath,
+                    serverId: configuredExternalMcpServer?.serverId ?? null,
+                    sourcePath: configuredExternalMcpServer?.sourcePath ?? null,
+                    version: null
+                }),
+                mcpTools: [],
+                version
+            });
+        }
+    })();
+
+    if (!hasDependencies) {
+        companionCatalogCache.set(cacheKey, promise);
     }
+
+    return promise;
 }
 
 async function collectGameMakerCliLeafCommands(
@@ -329,6 +401,165 @@ async function collectGameMakerCliLeafCommands(
             .flat()
             .toSorted((leftEntry, rightEntry) => leftEntry.displayName.localeCompare(rightEntry.displayName))
     );
+}
+
+function isValidCachedCompanionCatalogParameter(value: unknown): value is GameMakerCliTextParameter {
+    if (!isObjectRecord(value)) {
+        return false;
+    }
+    if (value.kind !== "argument" && value.kind !== "flag") {
+        return false;
+    }
+    if (value.valueType !== "boolean" && value.valueType !== "string") {
+        return false;
+    }
+    if (typeof value.description !== "string") {
+        return false;
+    }
+    if (typeof value.name !== "string") {
+        return false;
+    }
+    if (typeof value.syntax !== "string") {
+        return false;
+    }
+    if (typeof value.multiple !== "boolean") {
+        return false;
+    }
+    if (typeof value.required !== "boolean") {
+        return false;
+    }
+    if (!Array.isArray(value.choices)) {
+        return false;
+    }
+    return value.choices.every((entry) => typeof entry === "string");
+}
+
+function isValidCachedCompanionCatalogEntry(value: unknown): value is GameMakerCliCommandCatalogEntry {
+    if (!isObjectRecord(value)) {
+        return false;
+    }
+    if (typeof value.description !== "string") {
+        return false;
+    }
+    if (typeof value.displayName !== "string" || value.displayName.length === 0) {
+        return false;
+    }
+    if (!Array.isArray(value.commandPath) || !value.commandPath.every((segment) => typeof segment === "string")) {
+        return false;
+    }
+    if (!Array.isArray(value.usageLines) || !value.usageLines.every((line) => typeof line === "string")) {
+        return false;
+    }
+    if (
+        !Array.isArray(value.parameters) ||
+        !value.parameters.every((parameter) => isValidCachedCompanionCatalogParameter(parameter))
+    ) {
+        return false;
+    }
+    return true;
+}
+
+/**
+ * Parse and validate the persisted `.gmloop/gm-cli-commands-cache.json`
+ * payload before the catalog loader trusts it as the canonical command list.
+ *
+ * The cache file is hand-editable on disk and is written by older and newer
+ * gm-cli / GMLoop builds alike, so its contents are intentionally untrusted.
+ * The previous loader only checked `cacheData.version === version` and
+ * `Array.isArray(cacheData.commands)` before passing `cacheData.commands`
+ * downstream as a typed `GameMakerCliCommandCatalogEntry[]`. That shallow
+ * validation let a single malformed entry (missing `displayName`,
+ * `parameters` containing a non-object, wrong `kind` literal, etc.) leak
+ * through and crash consumers the first time they read a nested property.
+ *
+ * This helper turns every failure mode — truncated JSON, non-object
+ * top-level value, missing or wrong-type `version`, mismatched version,
+ * missing `commands`, non-array `commands`, malformed command entry,
+ * malformed parameter entry — into a `null` return after a structured
+ * warning that names the offending cache path. The caller falls back to
+ * re-querying gm-cli so the next cache write produces a well-formed file.
+ *
+ * @param cacheContent Raw cache file contents, exactly as read from disk.
+ * @param expectedVersion The gm-cli `--version` string the cache must match.
+ * @param cacheFilePath Absolute path used to localize error messages.
+ * @returns A frozen array of valid catalog entries, or `null` when any
+ *          validation step fails.
+ */
+function parseCachedCompanionCatalogCommands(
+    cacheContent: string,
+    expectedVersion: string,
+    cacheFilePath: string
+): ReadonlyArray<GameMakerCliCommandCatalogEntry> | null {
+    let parsed: unknown;
+    try {
+        parsed = JSON.parse(cacheContent);
+    } catch (error) {
+        const reason = Core.getErrorMessage(error, { fallback: "unknown parse failure" });
+        console.warn(
+            `gm-cli companion catalog cache at ${cacheFilePath} is not valid JSON (${reason}); re-querying gm-cli.`
+        );
+        return null;
+    }
+
+    if (!isObjectRecord(parsed)) {
+        console.warn(`gm-cli companion catalog cache at ${cacheFilePath} must be a JSON object; re-querying gm-cli.`);
+        return null;
+    }
+
+    if (typeof parsed.version !== "string") {
+        console.warn(
+            `gm-cli companion catalog cache at ${cacheFilePath} is missing a string "version" field; re-querying gm-cli.`
+        );
+        return null;
+    }
+
+    if (parsed.version !== expectedVersion) {
+        console.warn(
+            `gm-cli companion catalog cache at ${cacheFilePath} has version ${JSON.stringify(parsed.version)} but gm-cli reports ${JSON.stringify(expectedVersion)}; re-querying gm-cli.`
+        );
+        return null;
+    }
+
+    if (!Array.isArray(parsed.commands)) {
+        console.warn(
+            `gm-cli companion catalog cache at ${cacheFilePath} is missing an array "commands" field; re-querying gm-cli.`
+        );
+        return null;
+    }
+
+    const validatedEntries: Array<GameMakerCliCommandCatalogEntry> = [];
+    for (const [index, rawEntry] of parsed.commands.entries()) {
+        if (!isValidCachedCompanionCatalogEntry(rawEntry)) {
+            console.warn(
+                `gm-cli companion catalog cache at ${cacheFilePath} has a malformed entry at index ${index}; re-querying gm-cli.`
+            );
+            return null;
+        }
+        validatedEntries.push(
+            Object.freeze({
+                commandPath: Object.freeze([...rawEntry.commandPath]),
+                description: rawEntry.description,
+                displayName: rawEntry.displayName,
+                parameters: Object.freeze(
+                    rawEntry.parameters.map((parameter) =>
+                        Object.freeze({
+                            choices: Object.freeze([...parameter.choices]),
+                            description: parameter.description,
+                            kind: parameter.kind,
+                            multiple: parameter.multiple,
+                            name: parameter.name,
+                            required: parameter.required,
+                            syntax: parameter.syntax,
+                            valueType: parameter.valueType
+                        })
+                    )
+                ),
+                usageLines: Object.freeze([...rawEntry.usageLines])
+            })
+        );
+    }
+
+    return Object.freeze(validatedEntries);
 }
 
 function parseGameMakerCliHelp(helpText: string): ParsedGameMakerCliHelp {
@@ -745,3 +976,10 @@ function isMissingCommandError(error: unknown): error is NodeJS.ErrnoException {
 function isObjectRecord(value: unknown): value is Record<string, unknown> {
     return value !== null && typeof value === "object" && !Array.isArray(value);
 }
+
+/** Test-only access to the cache validation primitives. */
+export const __gameMakerCliCatalogTest__ = Object.freeze({
+    isValidCachedCompanionCatalogEntry,
+    isValidCachedCompanionCatalogParameter,
+    parseCachedCompanionCatalogCommands
+});

@@ -2,13 +2,10 @@
   "printWidth": 120,
   "allowInlineControlFlowBlocks": false,
   "lintRules": {
+    "gml/remove-doc-function-tags": "error",
     "gml/normalize-doc-comments": "error",
+    "gml/normalize-doc-param-separators": "error",
     "gml/prefer-struct-literal-assignments": "off"
-  },
-  "refactor": {
-    "codemods": {
-      "docCommentAlignment": {}
-    }
   },
   "fixture": {
     "kind": "integration",

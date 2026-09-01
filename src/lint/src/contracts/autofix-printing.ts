@@ -2,8 +2,9 @@
  * JavaScript string rendering for lint autofix output.
  *
  * PURPOSE: Renders AST nodes back to GML source text for rule-level autofixes.
- * This is an output-only concern — it does NOT perform layout, formatting, or
- * precedence analysis for pretty-printing; those belong in `@gmloop/format`.
+ * This is an output-only concern — it performs only the minimal precedence
+ * preservation needed to keep synthesized autofixes semantically faithful.
+ * Full layout formatting belongs in `@gmloop/format`.
  *
  * ARCHITECTURAL BOUNDARY: This module is intentionally isolated in `src/contracts/`
  * (a directory that holds cross-cutting public APIs for the lint workspace) so
@@ -26,36 +27,41 @@
 
 import { Core, isMemberAccessor } from "@gmloop/core";
 
-function getLogicalPrecedence(operator: string): number {
-    switch (operator) {
-        case "||": {
-            return 1;
-        }
-        case "&&": {
-            return 2;
-        }
-        default: {
-            return Number.POSITIVE_INFINITY;
-        }
-    }
-}
-
-function shouldParenthesizeLogicalChild(parent: any, child: any): boolean {
+function shouldParenthesizeBinaryChild(parent: any, child: any, side: "left" | "right"): boolean {
     if (!child || typeof child !== "object") {
         return false;
     }
 
+    const unwrappedChild = Core.unwrapParenthesizedExpression(child);
     if (
-        (child.type !== "BinaryExpression" && child.type !== "LogicalExpression") ||
-        typeof child.operator !== "string"
+        !unwrappedChild ||
+        (unwrappedChild.type !== "BinaryExpression" && unwrappedChild.type !== "LogicalExpression") ||
+        typeof unwrappedChild.operator !== "string"
     ) {
         return false;
     }
 
     const parentOperator = typeof parent.operator === "string" ? parent.operator : "";
-    const parentPrecedence = getLogicalPrecedence(parentOperator);
-    const childPrecedence = getLogicalPrecedence(child.operator);
-    return childPrecedence < parentPrecedence;
+    const childOperator = unwrappedChild.operator;
+    const parentInfo = Core.getOperatorInfo(parentOperator);
+    const childInfo = Core.getOperatorInfo(childOperator);
+    if (!parentInfo || !childInfo) {
+        return false;
+    }
+
+    if (childInfo.prec < parentInfo.prec) {
+        return true;
+    }
+
+    if (childInfo.prec > parentInfo.prec) {
+        return false;
+    }
+
+    if (side === "left") {
+        return parentInfo.assoc === "right";
+    }
+
+    return parentInfo.assoc === "left";
 }
 
 function shouldParenthesizeUnaryArgument(argument: any): boolean {
@@ -76,13 +82,33 @@ function shouldParenthesizeUnaryArgument(argument: any): boolean {
     }
 }
 
-function shouldParenthesizeTernaryConsequent(consequentNode: unknown): boolean {
-    const unwrappedConsequent = Core.unwrapParenthesizedExpression(consequentNode);
-    if (!Core.isNode(unwrappedConsequent)) {
+function shouldParenthesizeNestedTernaryBranch(branchNode: unknown): boolean {
+    const unwrappedBranch = Core.unwrapParenthesizedExpression(branchNode);
+    if (!Core.isNode(unwrappedBranch)) {
         return false;
     }
 
-    return Core.isConditionalExpressionNode(unwrappedConsequent) || Core.isTernaryExpressionNode(unwrappedConsequent);
+    return Core.isConditionalExpressionNode(unwrappedBranch) || Core.isTernaryExpressionNode(unwrappedBranch);
+}
+
+/**
+ * Renders a binary or logical expression by recursively printing its left and
+ * right children and joining them with the operator. Children whose operator
+ * has weaker precedence than the parent are wrapped in parentheses to keep the
+ * textual representation faithful to the AST structure.
+ *
+ * Extracted so the `BinaryExpression` and `LogicalExpression` cases share an
+ * identical rendering path — the parser produces both node kinds for operators
+ * that share the same precedence/lattice rules, and the printed output is
+ * determined entirely by the operator string and child expressions, not by
+ * the AST node kind.
+ */
+function printBinaryLikeExpression(node: any, sourceText: string): string {
+    const leftPrinted = printExpression(node.left, sourceText);
+    const rightPrinted = printExpression(node.right, sourceText);
+    const left = shouldParenthesizeBinaryChild(node, node.left, "left") ? `(${leftPrinted})` : leftPrinted;
+    const right = shouldParenthesizeBinaryChild(node, node.right, "right") ? `(${rightPrinted})` : rightPrinted;
+    return `${left} ${node.operator} ${right}`;
 }
 
 /**
@@ -120,18 +146,10 @@ export function printExpression(node: any, sourceText: string): string {
             return node.expression ? printExpression(node.expression, sourceText) : "";
         }
         case "BinaryExpression": {
-            const leftPrinted = printExpression(node.left, sourceText);
-            const rightPrinted = printExpression(node.right, sourceText);
-            const left = shouldParenthesizeLogicalChild(node, node.left) ? `(${leftPrinted})` : leftPrinted;
-            const right = shouldParenthesizeLogicalChild(node, node.right) ? `(${rightPrinted})` : rightPrinted;
-            return `${left} ${node.operator} ${right}`;
+            return printBinaryLikeExpression(node, sourceText);
         }
         case "LogicalExpression": {
-            const leftPrinted = printExpression(node.left, sourceText);
-            const rightPrinted = printExpression(node.right, sourceText);
-            const left = shouldParenthesizeLogicalChild(node, node.left) ? `(${leftPrinted})` : leftPrinted;
-            const right = shouldParenthesizeLogicalChild(node, node.right) ? `(${rightPrinted})` : rightPrinted;
-            return `${left} ${node.operator} ${right}`;
+            return printBinaryLikeExpression(node, sourceText);
         }
         case "UnaryExpression": {
             const argumentPrinted = printExpression(node.argument, sourceText);
@@ -169,10 +187,13 @@ export function printExpression(node: any, sourceText: string): string {
         case "ConditionalExpression": {
             const test = printExpression(node.test, sourceText);
             const consequentPrinted = printExpression(node.consequent, sourceText);
-            const alternate = printExpression(node.alternate, sourceText);
-            const consequent = shouldParenthesizeTernaryConsequent(node.consequent)
+            const alternatePrinted = printExpression(node.alternate, sourceText);
+            const consequent = shouldParenthesizeNestedTernaryBranch(node.consequent)
                 ? `(${consequentPrinted})`
                 : consequentPrinted;
+            const alternate = shouldParenthesizeNestedTernaryBranch(node.alternate)
+                ? `(${alternatePrinted})`
+                : alternatePrinted;
             return `${test} ? ${consequent} : ${alternate}`;
         }
         case "AssignmentExpression": {

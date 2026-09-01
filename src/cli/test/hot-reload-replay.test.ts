@@ -37,7 +37,6 @@ void describe("Hot reload replay for late subscribers", () => {
         const statusPort = await findAvailablePort();
 
         const watchPromise = runWatchCommand(testDir, {
-            extensions: [".gml"],
             verbose: false,
             websocketPort,
             websocketHost: "127.0.0.1",
@@ -92,7 +91,6 @@ void describe("Hot reload replay for late subscribers", () => {
         const watchFactory = createMockWatchFactory(listenerCapture);
 
         const watchPromise = runWatchCommand(replayDir, {
-            extensions: [".gml"],
             verbose: false,
             websocketPort,
             websocketHost: "127.0.0.1",
@@ -122,9 +120,23 @@ void describe("Hot reload replay for late subscribers", () => {
                 retryIntervalMs: 25
             });
 
-            await new Promise((resolve) => {
-                setTimeout(resolve, 150);
-            });
+            // The server invokes `removeDeletedCachedPatchSources` synchronously
+            // inside its connection handler before emitting the replay, so any
+            // queued patch for the unlinked file is pruned before it can be
+            // sent. Wait deterministically for the replay to round-trip the
+            // loopback socket: race a one-patch wait against a defensive
+            // deadline so the test resolves the moment the server has had a
+            // chance to deliver (or definitively skip) the replay, instead of
+            // sleeping for an arbitrary wall-clock duration. Without this race
+            // a slow CI runner can leave the deleted patch in `receivedPatches`
+            // for more than the previous 150 ms budget, masking the prune
+            // regression as a false PASS.
+            await Promise.race([
+                websocketClient.waitForPatches({ timeoutMs: 250 }).catch(() => undefined),
+                new Promise<void>((resolve) => {
+                    setTimeout(resolve, 250);
+                })
+            ]);
 
             const replayedDeletedPatch = websocketClient.receivedPatches.find((patch) =>
                 patch.id.includes("deleted_before_connect")
@@ -158,7 +170,6 @@ void describe("Hot reload replay for late subscribers", () => {
         const watchFactory = createMockWatchFactory(listenerCapture);
 
         const watchPromise = runWatchCommand(replayDir, {
-            extensions: [".gml"],
             verbose: false,
             websocketPort,
             websocketHost: "127.0.0.1",

@@ -17,7 +17,6 @@ import { connectToHotReloadWebSocket } from "./test-helpers/websocket-client.js"
 
 async function runQuietVerboseConflictWatchCommand(testDir: string): Promise<void> {
     await runWatchCommand(testDir, {
-        extensions: [".gml"],
         quiet: true,
         verbose: true,
         runtimeServer: false,
@@ -53,7 +52,6 @@ void describe("Watch command quiet mode", () => {
         });
 
         const watchPromise = runWatchCommand(testDir, {
-            extensions: [".gml"],
             quiet: true,
             verbose: false,
             runtimeServer: false,

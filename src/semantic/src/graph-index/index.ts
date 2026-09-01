@@ -6,7 +6,8 @@ export {
     getGraphNode,
     getGraphUsages,
     openGraphIndex,
-    searchGraphIndex
+    searchGraphIndex,
+    vacuumGraphIndex
 } from "./builder.js";
 export { resolveGraphIndexConfig } from "./config.js";
 export {
@@ -18,18 +19,21 @@ export {
 } from "./database.js";
 export {
     cosineSimilarity,
-    createGraphEmbeddingProvider,
     deserializeEmbeddingVector,
     ensureGraphEmbeddingModelAssets,
+    LocalTokenHashEmbeddingProvider,
     serializeEmbeddingVector
 } from "./embeddings.js";
 export { exportGraphVisualizationData } from "./export-visualization-data.js";
 export {
     getGraphDatabaseRuntimeInfo,
     inspectGraphDatabaseIntegrity,
+    isSqliteDuplicateColumnError,
+    isSqliteMissingTableError,
     openExistingGraphDatabase,
     openGraphDatabase,
     optimizeGraphDatabase,
+    runGraphDatabaseImmediateTransaction,
     runGraphDatabaseTransaction
 } from "./sqlite-adapter.js";
 export {

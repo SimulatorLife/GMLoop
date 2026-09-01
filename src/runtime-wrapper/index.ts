@@ -1,13 +1,17 @@
 export type {
     ApplyPatchResult,
+    ClosureCollection,
     ErrorAnalytics,
+    EventCollection,
     GeneralLogger,
+    LiveReloadLogLevel,
     Logger,
     LoggerConfiguration,
     LoggerOptions,
     LogLevel,
     MessageEventLike,
     Patch,
+    PatchDependencyRegistry,
     PatchErrorAnalytics,
     PatchErrorCategory,
     PatchErrorOccurrence,
@@ -20,6 +24,7 @@ export type {
     PatchQueueState,
     PatchStats,
     RegistryLifecycleLogger,
+    ResourceCollection,
     RuntimeFunction,
     RuntimePatchError,
     RuntimeRegistry,
@@ -31,7 +36,9 @@ export type {
     RuntimeWrapperType as RuntimeWrapperApi,
     RuntimeWrapperOptions,
     RuntimeWrapperState,
+    ScriptCollection,
     TrySafeApplyResult,
+    VersionedRegistry,
     WebSocketClientOptions,
     WebSocketClientState,
     WebSocketConnectionLifecycle,
@@ -41,6 +48,7 @@ export type {
     WebSocketLogger,
     WebSocketMessageSender,
     WebSocketMetricsCollector,
-    WebSocketPatchQueueManager
+    WebSocketPatchQueueFlusher,
+    WebSocketPatchQueueMetricsReader
 } from "./src/index.js";
 export { RuntimeWrapper } from "./src/index.js";

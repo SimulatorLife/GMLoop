@@ -7,9 +7,9 @@ The workspace exists to keep UI code separate from domain logic. The long-term s
 - graph-index visualizations
 - AST preview surfaces
 - CLI documentation views
-- MCP tool browsers
+- Auto-Game creation pipeline observability with MCP bridge visibility
 - formatter, lint, and refactor rule explorers
-- project fix workflow launchers
+- project fix, format, refactor/codemod, and lint workflow launchers
 - live-reload observability
 - other cross-workspace dashboards and inspectors
 
@@ -47,6 +47,8 @@ The implemented v1 contract is now:
 - CLI command parsing
 - HTTP server lifecycle
 - MCP tool discovery or execution
+- model selection, agent scheduling, task routing, or retry policy
+- approvals, permissions, agent memory, budgets, queues, or durable workflow state
 - runtime-wrapper patch application
 - hot-reload watch, transpile, or WebSocket server lifecycle
 
@@ -87,9 +89,12 @@ The current graph UI uses a typed bundle-render boundary and a Lit component she
 - graph/docs/config tabs are rendered from live workspace-fed catalogs
 - the Fix tab delegates configured refactor, lint, and format mutation to the CLI host, renders status/log output, and shows elapsed-time progress updates while runs are pending
 - the Live Reload surface renders watcher, WebSocket, patch, latency, error, and optional runtime-wrapper health snapshots from UI-owned DTOs
-- the Docs surface includes `CLI`, `MCP`, and `Rules` subviews for command, tool, and workspace rule catalogs
+- the Docs surface includes `CLI`, `MCP`, `Linting`, `Formatting`, and `Codemods` subviews for command, tool, and workspace rule catalogs
+- the Auto-Game surface renders automation history, AI skill readiness, LLM output snippets, and MCP bridge information to observe external agent activity without executing the pipeline or prompt inputs directly
 - loaded project state is shown in one canonical header location and reflects the active graph/config context
-- graph/docs/config/fix/playground/MCP/live-reload page state, docs subview state, graph view mode, label mode, and search query are shareable through URL query params
+- the Open Project action accepts only a validated GameMaker `.yyp` manifest; project directories and malformed or non-project JSON files are rejected before the active project changes
+- graph/docs/config/fix/playground/auto-game/live-reload page state, docs subview state, graph view mode, label mode, and search query are shareable through URL query params
+- project-wide fix, format, lint, refactor, and semantic-index operations coordinate through `<project>/.gmloop/operation-state.json`; the CLI and MCP-backed CLI paths publish one active operation, while the Graph Index page reads `/api/graph-index/progress` so a UI opened during semantic analysis shows the same phase, parse progress, and output without duplicating work
 
 ## Design Rules
 
@@ -98,7 +103,7 @@ The current graph UI uses a typed bundle-render boundary and a Lit component she
 - UI modules should avoid hidden side effects and should be render-oriented.
 - When a UI needs new data, add a narrow API to the owning workspace rather than copying the logic into `@gmloop/ui`.
 - When a UI needs a new action, the action should be implemented by the owning workspace or orchestration layer and surfaced into the UI as a callback, endpoint, or serialized contract.
-- Keep UI feature code organized by surface or domain, for example `graph/`, `ast/`, `cli-docs/`, `mcp/`, `rules/`.
+- Keep UI feature code organized by surface or domain, for example `graph/`, `ast/`, `cli-docs/`, `auto-game/`, `rules/`.
 - Maintain a canonical top-level surface catalog in code so future UI tabs are discoverable and consistently named.
 
 ## Template Whitespace Rules
@@ -114,9 +119,7 @@ The rule: for inline elements where content is provided via interpolation, keep 
 return html`<div class="output">${content}</div>`;
 
 // ❌ Incorrect — indentation becomes a text node, visible in the rendered output
-return html`<div class="output">
-    ${content}
-</div>`;
+return html`<div class="output">${content}</div>`;
 ```
 
 When a template must be broken across multiple lines (e.g., for readability), extract the element into a private class method or module-level helper that returns the complete `TemplateResult` on a single line. See `GmPlaygroundPanel.#renderOutput` and its test "playground panel output does not have leading whitespace nodes" for a reference implementation.
@@ -174,7 +177,41 @@ That separation is intentional and should be preserved as more UI surfaces are a
 
 `gm-status-chip` is the shared status badge for feature-page health and lifecycle state. Feature pages must select one of the component's supported statuses instead of passing arbitrary label text, so copy and styling remain consistent across surfaces.
 
-Each tab has one top-level page toolbar. That toolbar owns the page title, subtitle, page-level status badge, and any main controls for the current tab. Do not add a second hero/header toolbar inside a page body for the same title or controls. MCP and Live Reload status badges belong in the shared page toolbar title row, Live Reload start/open/stop controls belong in that same toolbar, and Docs subview/search controls belong in the shared toolbar instead of the Docs panel body. Docs subview tabs use the shared `gm-view-selector` tab control so CLI, MCP, Rules, Playground, and Config selectors keep one visual treatment.
+Buttons that start asynchronous host processes use the shared process-button content primitive and one pending-state contract. From invocation until settlement, the initiating button keeps its normal label, adds the shared loading circle, sets `aria-busy="true"`, and becomes natively disabled so the standard disabled cursor and duplicate-submission protection apply. Related controls that could start a conflicting process are disabled for the same interval. New process buttons must extend this shared behavior instead of adding component-specific spinner markup or pending labels.
+
+Each tab has one top-level page toolbar. That toolbar owns the page title, subtitle, page-level status badge, and any main controls for the current tab. Auto-Game and Live Reload status badges belong in the shared page toolbar title row, Live Reload start/open/stop controls belong in that same toolbar, and Docs subview/search controls belong in the shared toolbar instead of the Docs panel body. Docs subview tabs use the shared `gm-view-selector` tab control so CLI, MCP, Linting, Formatting, Codemods, Playground, and Config selectors keep one visual treatment.
+
+## Auto-Game Surface
+
+The Auto-Game surface is a companion interface for pipeline execution. It focuses on observability, listing discovered skills, and managing agent-pack synchronization. It scans only `<loaded-game-project>/.agents/skills`, renders every discovered skill with its name, description, source path, file-availability status, and enable/disable toggle, initializes or updates project resources from the standalone `@gmloop/agent-pack`, and persists only disabled-name exceptions in `gmloop.json`. The project skill list is a native disclosure that is closed by default so the operations dashboard remains compact and keyboard accessible.
+
+This surface may expose MCP/tool readiness, graph and search context,
+validation evidence, fix/refactor actions, live-reload status, and lightweight
+handoffs such as copying a prompt, opening an external agent, or launching a
+configured companion command. It must not become a multi-agent DAG editor,
+model router, arbitrary-framework prompt debugger, workflow engine,
+approval/permission system, memory store, or background task queue. External
+agent coordinators own those concerns; the UI remains vendor-neutral and
+coordinator-neutral.
+
+When the opened project has no recorded agent-pack installation and no skills, the empty state offers **Initialize Auto-Game Agent Pack**. If project skills exist without an installation receipt, it reports **Setup Incomplete** and offers **Complete Auto-Game Setup** because GMLoop cannot infer their package version or safely treat the full pack as current. When the installed version is older than GMLoop's available package version, it offers **Update Auto-Game Agent Pack**. A default-checked **Update Project .gitignore** option controls whether initialization merges GMLoop's generated/cache paths into the project-root ignore file. The same setup area lists detected Codex, Gemini/Antigravity, and Qwen integration targets. Only CLI-configurable detected targets are selectable by default; manual-required or unavailable targets remain visible but disabled with provider-owned setup guidance. The host materializes standard skills and applicable guidance such as `AGENTS.md`, invokes supported provider CLIs for selected MCP setup, preserves project-authored or modified files, reports conflicts and server failures, and returns refreshed project skill state after success.
+
+The AI Skills card also exposes keyboard-native previews for the packaged `AGENTS.md`, `.gitignore`, and every file in the packaged skill directories. These previews always show the read-only package source before synchronization; they do not imply that the resource is installed and do not substitute project-authored or project-modified content.
+
+While initialization or update is pending, its action button is disabled, retains its action label, displays the shared loading circle, and exposes busy state to assistive technology. The `.gitignore` option and skill mutations are disabled until the operation settles so the submitted initialization options cannot change mid-process.
+
+All discovered project skills are included in Auto-Game by default and every skill can be excluded. Discovery is independent of the agent-pack receipt: a project-owned skill already present in `.agents/skills` remains usable when the pack is not initialized, and the UI labels that state separately from pack installation. GMLoop adds no activation, trust, approval, permission, installation, or execution layer; the active AI tool or CLI retains those responsibilities. UI metadata is extracted with the established `gray-matter` package, while Agent Skills conformance validation is delegated to the official `skills-ref` tool or another established standards-compatible validator rather than custom GMLoop parsing or validation logic.
+
+The UI is AI-vendor neutral: its catalog contract contains standard skill metadata, project-relative paths, and agent-pack version/update status, not provider identifiers or client-specific activation state. Packaged skills are driven entirely by the standard directories published by `@gmloop/agent-pack`; adding a skill does not require a UI registration entry or skill-specific rendering logic.
+
+The GMLoop source repository's `.agents/skills` directory is exclusively for agents developing GMLoop. The Auto-Game UI and CLI host never read or modify it.
+
+Observability is driven by host-provided state. Dispatched events for skill configuration and initialization are routed to host callbacks:
+
+- `onInitializeAutoGameAgentPack`
+- `onSetAutoGameSkillEnabled`
+
+`onInitializeAutoGameAgentPack` receives `{ agentTargets: readonly ("codex" | "gemini" | "qwen")[], includeGitIgnore: boolean, includeVSCode: boolean }`, matching the selected provider CLI targets and initialization checkboxes.
 
 ## Live Reload Surface
 
@@ -190,14 +227,15 @@ Hosts provide live-reload startup data through `GraphVisualizationRenderOptions.
 
 `@gmloop/ui` does not invoke native dialogs or perform local filesystem selection itself. The host workspace provides that behavior and passes loaded-target metadata into the renderer.
 
-The shipped `graph visualize` bundle and development web entry both mount the same Lit shell. That single path owns graph/docs/config/fix/playground/MCP/live-reload rendering and must preserve the same user-facing navigation contract in export and serve modes.
+The shipped `graph visualize` bundle and development web entry both mount the same Lit shell. That single path owns graph/docs/config/fix/playground/auto-game/live-reload rendering and must preserve the same user-facing navigation contract in export and serve modes.
 
 Current graph serve-mode host actions are:
 
 - `POST /api/reindex`: force-regenerate the current graph index
-- `POST /api/open`: switch the active UI project globally, optionally using a caller-supplied `path`
-- `POST /api/fix`: run the opened project's configured fix workflow in write mode and return log lines for the Fix tab
-- `GET /api/fix/progress`: return the latest in-flight fix workflow log lines so the Fix tab can live-update while work is running
+- `POST /api/open`: switch the active UI project globally using a validated `.yyp` path; an omitted path opens the native `.yyp` file picker. The endpoint acknowledges the selected target immediately, while semantic indexing and dependent artifact refresh continue in the background and publish scoped loading/progress state.
+- `POST /api/fix`: run the requested `fix`, `format`, `refactor`, or `lint` project workflow in write mode and return log lines for the Fix tab
+- `GET /api/fix/progress`: return the graph host's local workflow or the shared project `.gmloop/operation-state.json` progress/output for an external CLI or MCP-backed `fix`, `format`, `refactor`, or `lint` operation so the Fix tab stays synchronized across UI hot-reloads and refreshes
+- `GET /api/graph-index/progress`: return the shared semantic-index phase, GML parse progress, output, and completion status for the Graph Index page; this remains readable when the UI attaches after CLI/MCP analysis has started
 - `POST /api/live-reload/start`: build and start the configured live-reload pipeline, then return the latest live-reload model
 
 The host serves the bundle entry document and static asset files, while `@gmloop/ui` remains responsible for typed rendering contracts and client presentation behavior.
@@ -212,7 +250,7 @@ The canonical current and planned top-level UI surfaces are tracked in code thro
 - `docs`: implemented
 - `fix`: implemented
 - `live-reload`: implemented
-- `mcp`: implemented
+- `auto-game`: implemented
 - `playground`: implemented
 - `rules`: planned
 
@@ -223,7 +261,7 @@ New top-level UI additions should:
 3. Consume data only from the owning functional workspace or orchestration layer.
 4. Avoid recreating parser, semantic, lint, refactor, CLI, or MCP logic inside `@gmloop/ui`.
 
-----
+---
 
 ## References
 
@@ -235,10 +273,32 @@ New top-level UI additions should:
 - [MDN: Safe area env()](https://developer.mozilla.org/en-US/docs/Web/CSS/env)
 - [APCA Contrast](https://apcacontrast.com/)
 
-----
+---
 
 ## TODO
-- **FEAT**: Add syntax highlighting to the `Playground` code (both `gml` and `js`)
-- **BUG**: Selecting *any* format option in the `Playground` tab/page for the format settings seems to enable the whole/default format settings too, not *just* that one control. Also not sure if the select-options are actually hooked up to live-update the playground's output view?
-- **FEAT**: For the playground tab/page, user should be able to select *any* of the 'golden' fixture .gml files to preview/test. Or, maybe this is only true if np project is opened in the UI. If a GameMaker project *is* opened in the UI, then the user could be able to select on of the .gml files from that project and test applying rules to those instead.
-- **FEAT**: The `Config` tab/page in the UI should allow for building/modifying a `gmloop.json` config file and then have an option to download it. If a project is opened and there is no `gmloop.json` present in it, users on the `Config` tab/page should be able to generate one which will then be added/included into their project's root directory. We can have a default/recommended `gmloop.json` with the recommended values & naming conventions. Users can, of course, then edit/modify that config the same way as a loaded one from then on.
+
+- [ ] **BUG**: Selecting _any_ format option in the `Playground` tab/page for the format settings seems to enable the whole/default format settings too, not _just_ that one control. Also not sure if the select-options are actually hooked up to live-update the playground's output view?
+- [x] **FEAT**: For the playground tab/page, user should be able to select _any_ of the 'golden' fixture .gml files to preview/test. Or, maybe this is only true if np project is opened in the UI. If a GameMaker project _is_ opened in the UI, then the user could be able to select on of the .gml files from that project and test applying rules to those instead.
+- [x] **FEAT**: For all raw-JSON displayed in the UI, add a "copy to clipboard" button (single, reusable component) that copies the raw JSON string to the clipboard for easy external use.
+- [ ] **FEAT**: For _all_ raw-JSON displayed in the UI, allow for collapsing/expanding nested objects and arrays for easier readability.
+- [x] **BUG**: On the "Docs" page/tab, the search bar and its subtitle "Search current docs view" are misaligned from the toolbar's subtabs-component (CLI, MCP, etc.). The search bar should be visually aligned vertically with that subtab component. _(Resolved: `.toolbar-docs-controls` now lays the subtabs and search out side-by-side with `flex-direction: row`, so the search input visually top-aligns with the subtab component. See the "docs toolbar lays docs subtabs and search controls out side-by-side instead of stacking" test in `src/ui/test/ui-structure-render.test.ts`.)_
+- [x]**BUG**: On the "Docs" page/tab, when typing in the search bar, it does not allow certain characters like "r" to be typed (maybe those that are also used as hotkeys for the UI?). The search bar should allow all characters to be typed, and hotkeys should not interfere with typing in the search bar.
+- [x] **BUG**: In the UI's navigation, instead of disabling the "Graph Index" menu-item/option tab/page when the opened project does not have a graph index, it should still be selectable since the user can generate it on that tab/page. _(Resolved: the shell-level navigation listener and the toolbar navigation emitter now route every top-level page request through the same reducer path, so the Graph Index tab is selectable even without a graph index loaded; the graph panel renders its existing empty state to explain how to load or rebuild a graph.)_
+- [x] **BUG**: When the GMLoop UI is served locally w/ live-reloading, when the UI code is changed and hot-reloads and the "Apply Fixes" fix-workflow is in-progress (on the "Fix" page/tab), the progress/state is reset/discarded when the UI hot-reloads. The fix workflow progress/state should be preserved across UI hot-reloads, so if the user is in the middle of a long-running fix workflow and makes a change to the UI code, they won't lose their place in the fix workflow and can continue to monitor its progress without interruption. Its possible it is still running in the background and the UI just loses the connection to it, so maybe we just need to re-establish the connection to the in-flight workflow after hot-reload instead of losing all progress/state.
+- [x] **FEAT**: In the UI's "Fix" page/tab (also probably the CLI output since they should be the same), it is unclear if/when GMLoop is rebuilding/updating the semantic-index. It just shows `[1/3 Refactor Codemods]... [namingConvention] running...` for a long time but we want some more visibility into when the semantic index is being updated, since that is a critical part of the process and can take a long time for larger projects. We should add some explicit log/status messages to indicate when the semantic index is being created/rebuilt/updated, and ideally also show progress updates for that step if possible (e.g. "Updating semantic index... [n%]").
+- [x] **FEAT**: In the UI's "Fix" page/tab we should have a way/button to stop/cancel an in-flight fix workflow, in case the user accidentally starts a fix workflow or realizes they need to change their fix configuration before starting the workflow
+- [x] **BUG**: On the UI's "Docs" page, "CLI" tab, some of the commands include `--path` even though that option does not seem to be supported by the CLI for that command. Ex. The page includes the command:
+    ```
+    generate-feather-metadata
+    Generate feather-metadata.json from the GameMaker manual.
+    gmloop generate-feather-metadata --path /Users/henrykirk/GMLoop/vendor/3DSpider
+    ```
+    But if copied and run in the terminal, it fails with error: `error: unknown option '--path'`.
+- [x] **BUG**: The expand/collapse toggle-symbol-arrow on the "Config" page does not change direction when the config section is expanded/collapsed. It should point down when expanded and point right when collapsed (currently fixed in down position). We should also just have one reusable collapse-panel component shared across the UI for all collapsible sections, instead of having each section implement its own expand/collapse behavior.
+- [ ] **BUG**: The nodes in the UI's graph-index visualization are _extremely_ close together/overlapping making it impossible to read for large projects. We need some minimum spacing between nodes (Poisson disk sampling or something?). And/or way to 'collapse' certain node types into their parent node when zoomed out, and then expand them when zoomed in - like how Prezi works?
+- [ ] **BUG**: The UI can show status "Live Reload: Scanning" on the "Live Reload" page/tab with subtitle "Uptime 0m 00s with scan in progress." in the header/toolbar and at the same time show "Scan complete\nUptime: 2m 02s" in the page's body. The header and body should be consistent and show the same status.
+- [ ] **BUG**: "Copy" button icons in the Ui are not centered in the buttons
+- [ ] **BUG**: In the UI,on the "Playground" page, enabling formatting rules does not seem to do anything (at least at first? maybe not until the semanit index has been built? but the Playground uses its own standalone GML snippets so that should not be the case; should be independt/usable even when the semantic index is loading/building).
+- [x] **BUG**: In the UI on the "Docs" page, the toolbar is extremely tall and takes up a lot of vertical space; all the controls seem to be stacked instead of using the horizontal space. _(Resolved: `.toolbar-docs-controls` now uses `flex-direction: row` with `flex-wrap: wrap` and `align-items: flex-start`, so the docs subtabs and the search input share a single row on wide viewports and the toolbar no longer reserves full extra rows for each control. See the "docs toolbar lays docs subtabs and search controls out side-by-side instead of stacking" test in `src/ui/test/ui-structure-render.test.ts`.)_
+- [ ] **BUG**: In the UI's "Graph Index" page, the "JSON" toggle button shows nothing. Can the semantic graph still be represented as JSON? Is so, we should show it there in the UI. If not, we should remove the "JSON" toggle button from the UI.
+- [ ] **BUG**: In the UI's "Graph Index" page, the main/project node is all the way to the left of the graph, with all other nodes positioned to its right, but should be centered in the graph.

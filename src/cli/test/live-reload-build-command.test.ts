@@ -8,6 +8,7 @@ import { Core } from "@gmloop/core";
 
 import { runCliTestCommand } from "../src/cli.js";
 import {
+    __test__ as gameMakerBuildTest,
     buildGameMakerHtml5Output,
     type GameMakerHtml5BuildConfig,
     resolveLiveReloadProjectBuildSettings
@@ -28,6 +29,16 @@ type GameMakerBuildConfigOverrides = Readonly<{
     userFolder?: GameMakerHtml5BuildConfig["userFolder"];
 }>;
 
+const HTML5_LICENSE_XML = `<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0">
+<dict>
+    <key>Features</key>
+    <array>
+        <string>HTML5.build_module</string>
+    </array>
+</dict>
+</plist>`;
+
 function createGameMakerBuildConfig(overrides: GameMakerBuildConfigOverrides = {}): GameMakerHtml5BuildConfig {
     return Object.freeze({
         backend: "auto",
@@ -46,7 +57,7 @@ function createGameMakerBuildConfig(overrides: GameMakerBuildConfigOverrides = {
 }
 
 async function createTempDirectory(prefix: string): Promise<string> {
-    return await fs.mkdtemp(path.join(os.tmpdir(), prefix));
+    return fs.mkdtemp(path.join(os.tmpdir(), prefix));
 }
 
 async function createIgorProjectFixtures(
@@ -58,6 +69,40 @@ async function createIgorProjectFixtures(
     await fs.writeFile(runtimeIgorPath, "", "utf8");
     await fs.writeFile(licenseFile, "license", "utf8");
     await fs.writeFile(projectPath, JSON.stringify({ name: "Project" }), "utf8");
+}
+
+async function createIgorIconCopyFailureResult(
+    outputRoot: string,
+    includeHtml5GameDirectory: boolean
+): Promise<Readonly<{ exitCode: 1; stderr: ""; stdout: string }>> {
+    await fs.mkdir(outputRoot, { recursive: true });
+    if (includeHtml5GameDirectory) {
+        await fs.mkdir(path.join(outputRoot, "html5game"), { recursive: true });
+    }
+    await fs.writeFile(path.join(outputRoot, "index.html"), "<html></html>", "utf8");
+    await fs.writeFile(path.join(outputRoot, "favicon.ico"), "icon", "utf8");
+
+    return Object.freeze({
+        exitCode: 1,
+        stderr: "",
+        stdout: [
+            "DoIcon",
+            "Igor complete.",
+            `System.IO.IOException: The process cannot access the file '${path.join(
+                outputRoot,
+                "favicon.ico"
+            )}' because it is being used by another process.`,
+            "   at Igor.Utils.CopyDirectory(String sourceDir, String targetDir, String ignore)",
+            "   at Igor.HTML5Builder.Package()",
+            "   at Igor.HTML5Builder.folder()",
+            "Igor complete."
+        ].join("\n")
+    });
+}
+
+async function writeHtml5LicenseFixture(licenseFile: string): Promise<void> {
+    await fs.mkdir(path.dirname(licenseFile), { recursive: true });
+    await fs.writeFile(licenseFile, HTML5_LICENSE_XML, "utf8");
 }
 
 function restoreProcessEnvironmentValue(name: "APPDATA" | "HOME" | "USERPROFILE", value: string | undefined): void {
@@ -219,6 +264,162 @@ void test("buildGameMakerHtml5Output prefers gm-cli in auto mode when HTML5 pack
     }
 });
 
+void test("default GameMaker runtime discovery prefers a project-local gmcache runtime", async () => {
+    const projectRoot = await createTempDirectory("cli-live-reload-local-runtime-");
+    const runtimeRoot = path.join(projectRoot, ".gmcache", "runtimes-gms2", "runtime-2026.0.0.23");
+
+    try {
+        await fs.mkdir(path.join(runtimeRoot, "bin", "igor", "osx", "arm64"), { recursive: true });
+        await fs.mkdir(path.join(runtimeRoot, "html5"), { recursive: true });
+        await fs.writeFile(path.join(runtimeRoot, "bin", "igor", "osx", "arm64", "Igor"), "igor", "utf8");
+        await fs.writeFile(path.join(runtimeRoot, "html5", "scripts.html5.zip"), "runner", "utf8");
+
+        assert.equal(await gameMakerBuildTest.resolveDefaultGameMakerRuntimeRoot(projectRoot), runtimeRoot);
+    } finally {
+        await fs.rm(projectRoot, { force: true, recursive: true });
+    }
+});
+
+void test("Igor discovery prefers the matching runtime tool before the project tool cache", async () => {
+    const projectRoot = await createTempDirectory("cli-live-reload-local-igor-");
+    const runtimeRoot = path.join(projectRoot, "runtime-2026.0.0.23");
+    const runtimeIgorPath = path.join(runtimeRoot, "bin", "igor", "osx", "x64", "Igor");
+    const projectIgorPath = path.join(projectRoot, ".gmcache", "igor", "osx", "x64", "Igor");
+
+    try {
+        await fs.mkdir(path.dirname(runtimeIgorPath), { recursive: true });
+        await fs.mkdir(path.dirname(projectIgorPath), { recursive: true });
+        await fs.writeFile(runtimeIgorPath, "runtime", "utf8");
+        await fs.writeFile(projectIgorPath, "project", "utf8");
+
+        assert.equal(
+            await gameMakerBuildTest.resolveIgorExecutablePathFromRuntimeRoot(runtimeRoot, projectRoot),
+            runtimeIgorPath
+        );
+    } finally {
+        await fs.rm(projectRoot, { force: true, recursive: true });
+    }
+});
+
+void test("Igor identity discovery uses a project-local HTML5 license when no user license is available", async () => {
+    const projectRoot = await createTempDirectory("cli-live-reload-local-license-");
+    const homeDirectory = await createTempDirectory("cli-live-reload-local-license-home-");
+    const projectPath = path.join(projectRoot, "Project.yyp");
+    const licenseFile = path.join(projectRoot, ".gmcache", "license", "licence.plist");
+    const previousHome = process.env.HOME;
+
+    try {
+        process.env.HOME = homeDirectory;
+        await writeHtml5LicenseFixture(licenseFile);
+
+        const identity = await gameMakerBuildTest.resolveIgorIdentityPaths(
+            createGameMakerBuildConfig({ projectPath }),
+            projectRoot
+        );
+
+        assert.deepEqual(identity, { licenseFile, userFolder: null });
+    } finally {
+        restoreProcessEnvironmentValue("HOME", previousHome);
+        await fs.rm(projectRoot, { force: true, recursive: true });
+        await fs.rm(homeDirectory, { force: true, recursive: true });
+    }
+});
+
+void test("Igor identity discovery skips a project cache license without HTML5 build entitlement", async () => {
+    const projectRoot = await createTempDirectory("cli-live-reload-license-entitlement-");
+    const homeDirectory = await createTempDirectory("cli-live-reload-license-entitlement-home-");
+    const projectPath = path.join(projectRoot, "Project.yyp");
+    const projectLicenseFile = path.join(projectRoot, ".gmcache", "license", "licence.plist");
+    const userLicenseFile = path.join(
+        homeDirectory,
+        "Library",
+        "Application Support",
+        "GameMakerStudio2",
+        "account",
+        "licence.plist"
+    );
+    const previousHome = process.env.HOME;
+
+    try {
+        process.env.HOME = homeDirectory;
+        await fs.mkdir(path.dirname(projectLicenseFile), { recursive: true });
+        await fs.writeFile(
+            projectLicenseFile,
+            '<plist version="1.0"><dict><key>components</key><string>Mac;Mac.build_module</string></dict></plist>',
+            "utf8"
+        );
+        await writeHtml5LicenseFixture(userLicenseFile);
+
+        const identity = await gameMakerBuildTest.resolveIgorIdentityPaths(
+            createGameMakerBuildConfig({ projectPath }),
+            projectRoot
+        );
+
+        assert.deepEqual(identity, {
+            licenseFile: userLicenseFile,
+            userFolder: path.dirname(userLicenseFile)
+        });
+    } finally {
+        restoreProcessEnvironmentValue("HOME", previousHome);
+        await fs.rm(projectRoot, { force: true, recursive: true });
+        await fs.rm(homeDirectory, { force: true, recursive: true });
+    }
+});
+
+void test("Rosetta is selected only for x64 Igor on arm64 macOS", () => {
+    assert.equal(
+        gameMakerBuildTest.shouldUseRosettaForIgor("/tmp/runtime/bin/igor/osx/x64/Igor", "darwin", "arm64"),
+        true
+    );
+    assert.equal(
+        gameMakerBuildTest.shouldUseRosettaForIgor("/tmp/runtime/bin/igor/osx/arm64/Igor", "darwin", "arm64"),
+        false
+    );
+    assert.equal(
+        gameMakerBuildTest.shouldUseRosettaForIgor("/tmp/runtime/bin/igor/osx/x64/Igor", "linux", "arm64"),
+        false
+    );
+    assert.equal(
+        gameMakerBuildTest.shouldUseRosettaForIgor("/tmp/runtime/bin/igor/osx/x64/Igor", "darwin", "x64"),
+        false
+    );
+});
+
+void test("gm-cli receives its documented cache-dir option spelling", async () => {
+    const projectRoot = await createTempDirectory("cli-live-reload-cache-dir-");
+    const outputRoot = path.join(projectRoot, "build", "html5");
+    const projectPath = path.join(projectRoot, "Project.yyp");
+    const cacheDir = path.join(projectRoot, ".gmcache");
+
+    try {
+        await fs.writeFile(projectPath, JSON.stringify({ name: "Project" }), "utf8");
+        const executedArgs: Array<string> = [];
+
+        await buildGameMakerHtml5Output({
+            buildConfig: createGameMakerBuildConfig({
+                backend: "gm-cli",
+                cacheDir,
+                outputRoot,
+                projectPath
+            }),
+            cwd: projectRoot,
+            executeProcess: async (_command, args) => {
+                executedArgs.push(...args);
+                await fs.writeFile(path.join(outputRoot, "index.html"), "<html></html>", "utf8");
+                return Object.freeze({ exitCode: 0, stderr: "", stdout: "gm-cli ok" });
+            }
+        });
+
+        assert.ok(executedArgs.includes(`--cache-dir=${cacheDir}`));
+        assert.equal(
+            executedArgs.some((arg) => arg.startsWith("--cacheDir=")),
+            false
+        );
+    } finally {
+        await fs.rm(projectRoot, { force: true, recursive: true });
+    }
+});
+
 void test("buildGameMakerHtml5Output fails when the selected backend does not produce index.html", async () => {
     const projectRoot = await createTempDirectory("cli-live-reload-build-missing-index-");
     const outputRoot = path.join(projectRoot, "build", "html5");
@@ -275,28 +476,7 @@ void test("buildGameMakerHtml5Output accepts Igor icon-copy failures after HTML5
                 runtimeRoot
             }),
             cwd: projectRoot,
-            executeProcess: async () => {
-                await fs.mkdir(outputRoot, { recursive: true });
-                await fs.mkdir(path.join(outputRoot, "html5game"), { recursive: true });
-                await fs.writeFile(path.join(outputRoot, "index.html"), "<html></html>", "utf8");
-                await fs.writeFile(path.join(outputRoot, "favicon.ico"), "icon", "utf8");
-                return Object.freeze({
-                    exitCode: 1,
-                    stderr: "",
-                    stdout: [
-                        "DoIcon",
-                        "Igor complete.",
-                        `System.IO.IOException: The process cannot access the file '${path.join(
-                            outputRoot,
-                            "favicon.ico"
-                        )}' because it is being used by another process.`,
-                        "   at Igor.Utils.CopyDirectory(String sourceDir, String targetDir, String ignore)",
-                        "   at Igor.HTML5Builder.Package()",
-                        "   at Igor.HTML5Builder.folder()",
-                        "Igor complete."
-                    ].join("\n")
-                });
-            }
+            executeProcess: () => createIgorIconCopyFailureResult(outputRoot, true)
         });
 
         assert.equal(result.backend, "igor");
@@ -444,27 +624,7 @@ void test("buildGameMakerHtml5Output rejects Igor icon-copy failures when html5g
                         runtimeRoot
                     }),
                     cwd: projectRoot,
-                    executeProcess: async () => {
-                        await fs.mkdir(outputRoot, { recursive: true });
-                        await fs.writeFile(path.join(outputRoot, "index.html"), "<html></html>", "utf8");
-                        await fs.writeFile(path.join(outputRoot, "favicon.ico"), "icon", "utf8");
-                        return Object.freeze({
-                            exitCode: 1,
-                            stderr: "",
-                            stdout: [
-                                "DoIcon",
-                                "Igor complete.",
-                                `System.IO.IOException: The process cannot access the file '${path.join(
-                                    outputRoot,
-                                    "favicon.ico"
-                                )}' because it is being used by another process.`,
-                                "   at Igor.Utils.CopyDirectory(String sourceDir, String targetDir, String ignore)",
-                                "   at Igor.HTML5Builder.Package()",
-                                "   at Igor.HTML5Builder.folder()",
-                                "Igor complete."
-                            ].join("\n")
-                        });
-                    }
+                    executeProcess: () => createIgorIconCopyFailureResult(outputRoot, false)
                 }),
             /Igor failed/u
         );
@@ -554,6 +714,7 @@ void test("startLiveReloadDevSession builds before preparing live reload when bu
                         outputRoot,
                         ".gml-hot-reload",
                         "runtime-wrapper",
+                        "src",
                         "browser",
                         "index.js"
                     ),
@@ -616,7 +777,7 @@ void test("startLiveReloadDevSession uses configured temp-root fallback when no 
             prepareCalls.push(options.gmTempRoot);
             return Object.freeze({
                 assets: {
-                    bootstrapEntryPath: "/tmp/project/output/.gml-hot-reload/runtime-wrapper/browser/index.js",
+                    bootstrapEntryPath: "/tmp/project/output/.gml-hot-reload/runtime-wrapper/src/browser/index.js",
                     copiedAssets: true,
                     manifestPath: "/tmp/project/output/.gml-hot-reload/runtime-wrapper-assets.manifest.json",
                     targetRoot: "/tmp/project/output/.gml-hot-reload"
@@ -699,6 +860,7 @@ void test("startLiveReloadDevSession auto-builds HTML5 output when autodetection
                             options.html5OutputRoot ?? projectRoot,
                             ".gml-hot-reload",
                             "runtime-wrapper",
+                            "src",
                             "browser",
                             "index.js"
                         ),

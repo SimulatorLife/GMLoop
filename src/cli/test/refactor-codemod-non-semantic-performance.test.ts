@@ -3,7 +3,7 @@ import { rm } from "node:fs/promises";
 import { performance } from "node:perf_hooks";
 import test from "node:test";
 
-import { runCliTestCommand } from "../src/cli.js";
+import { __test__, runCliTestCommand } from "../src/cli.js";
 import {
     createSyntheticRefactorProject,
     writeScriptResource
@@ -39,7 +39,7 @@ void test("refactor codemod --write non-semantic codemods stay under runtime thr
 
         const startTime = performance.now();
         const result = await runCliTestCommand({
-            argv: ["refactor", "codemod", "--write", "--verbose"],
+            argv: ["refactor", "codemod", "--write"],
             cwd: projectRoot
         });
         const durationMs = performance.now() - startTime;
@@ -47,7 +47,11 @@ void test("refactor codemod --write non-semantic codemods stay under runtime thr
         assert.equal(result.exitCode, 0);
         assert.match(result.stdout, /\[globalvarToGlobal\] changed/);
         assert.match(result.stdout, /\[loopLengthHoisting\] changed/);
-        assert.doesNotMatch(result.stdout, /DEBUG: Starting buildProjectIndex/);
+        assert.equal(
+            __test__.consumeLastRefactorSemanticBridge(),
+            null,
+            "Expected no semantic bridge construction when no semantic-index-dependent codemods run"
+        );
         assert.ok(
             durationMs <= PERFORMANCE_THRESHOLD_MS,
             `Expected non-semantic refactor codemod --write runtime under ${PERFORMANCE_THRESHOLD_MS}ms, received ${durationMs.toFixed(2)}ms`

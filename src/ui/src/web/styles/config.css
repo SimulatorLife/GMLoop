@@ -4,45 +4,20 @@
   gap: var(--gm-space-lg);
 }
 
-.config-editor-layout {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(300px, 380px);
-  gap: var(--gm-space-lg);
-  align-items: start;
-}
-
+.config-editor-layout,
 .config-editor-layout--raw {
-  grid-template-columns: minmax(0, 1fr) minmax(280px, 340px);
-}
-
-.config-builder-main {
   display: flex;
   flex-direction: column;
   gap: var(--gm-space-lg);
-  min-width: 0;
 }
 
 .config-builder-section,
-.config-save-panel,
 .config-tool-metadata {
   padding: var(--gm-space-lg);
   border: 1px solid var(--gm-border);
   border-radius: var(--gm-radius-md);
   background: var(--gm-surface-elevated);
   box-shadow: var(--gm-shadow);
-}
-
-.config-save-panel {
-  position: sticky;
-  top: var(--gm-space-lg);
-  display: flex;
-  flex-direction: column;
-  gap: var(--gm-space-md);
-}
-
-.config-save-panel-header {
-  display: flex;
-  justify-content: flex-start;
 }
 
 .config-section-heading,
@@ -54,6 +29,17 @@
   margin-bottom: var(--gm-space-md);
 }
 
+.config-section-heading-text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gm-space-xs);
+  min-width: 0;
+}
+
+.config-raw-copy-button {
+  flex-shrink: 0;
+}
+
 .config-section-heading h3 {
   margin: 0;
   color: var(--gm-text);
@@ -63,7 +49,7 @@
 .config-section-heading p,
 .config-tool-group p,
 .config-tool-details p {
-  margin: 4px 0 0;
+  margin: var(--gm-space-xs) 0 0;
   color: var(--gm-text-secondary);
   font-size: var(--gm-text-sm);
   line-height: var(--gm-leading-normal);
@@ -108,7 +94,7 @@
 .config-field small,
 .config-toggle-label small {
   display: block;
-  margin-top: 3px;
+  margin-top: var(--gm-space-xs);
   color: var(--gm-text-secondary);
   font-size: var(--gm-text-xs);
   line-height: var(--gm-leading-normal);
@@ -135,15 +121,15 @@
 .config-inline-field select,
 .config-filter-field input,
 .config-filter-field select {
-  min-height: 38px;
-  padding: 8px 10px;
+  min-height: var(--gm-height-md);
+  padding: var(--gm-space-sm) var(--gm-space-sm);
 }
 
 .config-field input[type="checkbox"],
 .config-toggle-label input[type="checkbox"] {
-  width: 18px;
-  height: 18px;
-  min-height: 18px;
+  width: var(--gm-icon-md);
+  height: var(--gm-icon-md);
+  min-height: var(--gm-icon-md);
 }
 
 .config-filter-row {
@@ -159,7 +145,7 @@
 .config-json-field span {
   color: var(--gm-text-subdued);
   font-size: var(--gm-text-xs);
-  font-weight: 800;
+  font-weight: var(--gm-weight-extrabold);
   text-transform: uppercase;
 }
 
@@ -182,7 +168,7 @@
 .config-rule-table-header {
   color: var(--gm-text-subdued);
   font-size: var(--gm-text-xs);
-  font-weight: 800;
+  font-weight: var(--gm-weight-extrabold);
   text-transform: uppercase;
 }
 
@@ -209,16 +195,16 @@
 
 .config-rule-description {
   display: block;
-  margin-top: 3px;
+  margin-top: var(--gm-space-xs);
   color: var(--gm-text-secondary);
   font-size: var(--gm-text-sm);
   line-height: var(--gm-leading-normal);
 }
 
 .config-rule-fixable-badge .gm-badge {
-  padding: 2px 6px;
-  font-size: 10px;
-  line-height: 1;
+  padding: var(--gm-space-2xs) var(--gm-space-xs);
+  font-size: var(--gm-text-xs);
+  line-height: var(--gm-leading-none);
 }
 
 .config-badge-row {
@@ -226,7 +212,7 @@
   gap: var(--gm-space-sm);
   flex-wrap: wrap;
   align-items: center;
-  margin-top: 7px;
+  margin-top: var(--gm-space-sm);
 }
 
 .config-rule-level-selector {
@@ -234,8 +220,8 @@
 }
 
 .config-rule-level-selector > .config-rule-level-error[aria-pressed="true"] {
-  background: var(--gm-severity-error-bg);
-  color: var(--gm-severity-error-text);
+  background: var(--gm-error-surface);
+  color: var(--gm-error-text);
 }
 
 .config-rule-level-selector > .config-rule-level-warn[aria-pressed="true"] {
@@ -244,8 +230,7 @@
 }
 
 .config-inline-json,
-.config-code-block,
-.config-json-preview {
+.config-code-block {
   margin: var(--gm-space-sm) 0 0;
   padding: var(--gm-space-sm);
   border: 1px solid var(--gm-border-subtle);
@@ -259,18 +244,14 @@
   white-space: pre-wrap;
 }
 
-.config-json-preview {
-  max-height: 540px;
-}
-
-.config-codemod-row summary,
+.config-builder-section .gm-collapsible__summary,
+.config-codemod-row .gm-collapsible__summary,
 .config-tool-group summary,
 .config-tool-details summary {
   display: flex;
   gap: var(--gm-space-md);
   align-items: center;
   justify-content: space-between;
-  cursor: pointer;
 }
 
 .config-toggle-label {
@@ -336,7 +317,7 @@
 }
 
 .config-setup-banner p {
-  margin: 4px 0 0;
+  margin: var(--gm-space-xs) 0 0;
   color: var(--gm-text-secondary);
   font-size: var(--gm-text-sm);
 }
@@ -377,16 +358,6 @@
   font-size: var(--gm-text-sm);
 }
 
-@media (max-width: 1080px) {
-  .config-editor-layout,
-  .config-editor-layout--raw {
-    grid-template-columns: 1fr;
-  }
-
-  .config-save-panel {
-    position: static;
-  }
-}
 
 @media (max-width: 760px) {
   .config-filter-row,
@@ -407,3 +378,22 @@
     width: 100%;
   }
 }
+
+.config-builder-section .gm-collapsible__summary {
+  justify-content: flex-start;
+}
+
+.config-builder-section .gm-collapsible__summary > .config-section-heading,
+.config-builder-section .gm-collapsible__summary > .config-section-heading--split {
+  margin-bottom: 0;
+  flex-grow: 1;
+}
+
+.config-builder-section .gm-collapsible[open] .gm-collapsible__summary {
+  margin-bottom: var(--gm-space-md);
+}
+
+.config-builder-section .gm-collapsible__summary:focus-visible {
+  border-radius: var(--gm-radius-sm);
+}
+

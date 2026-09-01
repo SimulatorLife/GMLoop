@@ -9,7 +9,9 @@ import {
     filterGraphIndexResultsByKind,
     resolveCommandProjectContext,
     resolveExistingGmloopConfigPath,
-    resolveExplicitWorkflowTargetPath
+    resolveExplicitWorkflowTargetPath,
+    resolveGameMakerCliActiveTargetPath,
+    resolveWorkflowTargetPath
 } from "../src/workflow/project-root.js";
 
 /**
@@ -131,6 +133,78 @@ void describe("discoverProjectRoot", () => {
         });
 
         assert.equal(discoveredProjectRoot, projectRoot);
+    });
+
+    void it("uses the shared active project state before cwd discovery", async () => {
+        const projectRoot = await state.createTempDirectory();
+        const statePath = path.join(await state.createTempDirectory(), "active-project.json");
+        const projectPath = path.join(projectRoot, "MyGame.yyp");
+        await writeFile(projectPath, JSON.stringify({ name: "MyGame" }), "utf8");
+        await writeFile(statePath, `${JSON.stringify({ projectPath })}\n`, "utf8");
+
+        const discoveredProjectRoot = await discoverProjectRoot({
+            env: { GMLOOP_GM_CLI_PROJECT_STATE_PATH: statePath }
+        });
+
+        assert.equal(discoveredProjectRoot, projectRoot);
+    });
+
+    void it("uses activeFilePath for file targets while retaining projectPath for project targets", async () => {
+        const projectRoot = await state.createTempDirectory();
+        const environmentProjectRoot = await state.createTempDirectory();
+        const statePath = path.join(await state.createTempDirectory(), "active-project.json");
+        const projectPath = path.join(projectRoot, "MyGame.yyp");
+        const environmentProjectPath = path.join(environmentProjectRoot, "EnvironmentGame.yyp");
+        const activeFilePath = path.join(projectRoot, "scripts", "demo.gml");
+        await mkdir(path.dirname(activeFilePath), { recursive: true });
+        await writeFile(projectPath, JSON.stringify({ name: "MyGame" }), "utf8");
+        await writeFile(environmentProjectPath, JSON.stringify({ name: "EnvironmentGame" }), "utf8");
+        await writeFile(activeFilePath, "function demo() { return 1; }\n", "utf8");
+        await writeFile(statePath, `${JSON.stringify({ activeFilePath, projectPath })}\n`, "utf8");
+
+        const env = {
+            GMLOOP_GM_CLI_PROJECT_PATH: environmentProjectPath,
+            GMLOOP_GM_CLI_PROJECT_STATE_PATH: statePath
+        };
+        const stateOnlyEnv = { GMLOOP_GM_CLI_PROJECT_STATE_PATH: statePath };
+        assert.equal(await resolveGameMakerCliActiveTargetPath({ env: stateOnlyEnv, scope: "file" }), activeFilePath);
+        assert.equal(
+            await resolveWorkflowTargetPath({ env: stateOnlyEnv, fallbackPath: ".", scope: "file" }),
+            activeFilePath
+        );
+        assert.equal(
+            await resolveWorkflowTargetPath({ env: stateOnlyEnv, fallbackPath: ".", scope: "project" }),
+            projectPath
+        );
+        assert.equal(
+            await resolveWorkflowTargetPath({ env, fallbackPath: ".", scope: "project" }),
+            environmentProjectPath
+        );
+        assert.equal(
+            await resolveWorkflowTargetPath({
+                env,
+                explicitPath: activeFilePath,
+                fallbackPath: ".",
+                scope: "file"
+            }),
+            activeFilePath
+        );
+    });
+
+    void it("fails clearly when the active project state points to a missing target", async () => {
+        const statePath = path.join(await state.createTempDirectory(), "active-project.json");
+        await writeFile(
+            statePath,
+            `${JSON.stringify({ projectPath: path.join(path.dirname(statePath), "missing", "MyGame.yyp") })}\n`,
+            "utf8"
+        );
+
+        await assert.rejects(
+            discoverProjectRoot({
+                env: { GMLOOP_GM_CLI_PROJECT_STATE_PATH: statePath }
+            }),
+            /GameMaker project target path does not exist/u
+        );
     });
 });
 

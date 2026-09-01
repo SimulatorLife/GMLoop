@@ -1,11 +1,16 @@
+import { Core } from "@gmloop/core";
+
 import {
     type GraphDatabase,
+    isSqliteDuplicateColumnError,
+    isSqliteMissingTableError,
     openExistingGraphDatabase,
     openGraphDatabase,
     runGraphDatabaseTransaction
 } from "./sqlite-adapter.js";
 
-export const GRAPH_INDEX_SCHEMA_VERSION = 2;
+/** The canonical normalized SCIP semantic-store schema. */
+export const GRAPH_INDEX_SCHEMA_VERSION = 11;
 
 const TABLE_RESET_STATEMENTS = Object.freeze([
     "DELETE FROM index_state",
@@ -129,6 +134,358 @@ function createGraphIndexSchemaV2(database: GraphDatabase): void {
     `);
 }
 
+function _createSemanticIndexSchemaV3(database: GraphDatabase): void {
+    database.exec(`
+        CREATE TABLE IF NOT EXISTS semantic_state (
+            project_root TEXT PRIMARY KEY,
+            generation INTEGER NOT NULL,
+            tier TEXT NOT NULL CHECK (tier IN ('definitions', 'full')),
+            source_signature TEXT NOT NULL DEFAULT '',
+            updated_at TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS semantic_records (
+            project_root TEXT NOT NULL,
+            record_kind TEXT NOT NULL,
+            record_key TEXT NOT NULL,
+            file_path TEXT,
+            content_hash TEXT,
+            payload TEXT NOT NULL,
+            generation INTEGER NOT NULL,
+            PRIMARY KEY (project_root, record_kind, record_key),
+            FOREIGN KEY (project_root) REFERENCES semantic_state(project_root) ON DELETE CASCADE
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_semantic_records_file
+            ON semantic_records(project_root, file_path);
+        CREATE INDEX IF NOT EXISTS idx_semantic_records_generation
+            ON semantic_records(project_root, generation);
+
+        CREATE TABLE IF NOT EXISTS semantic_dependencies (
+            project_root TEXT NOT NULL,
+            source_file TEXT NOT NULL,
+            downstream_file TEXT NOT NULL,
+            PRIMARY KEY (project_root, source_file, downstream_file),
+            FOREIGN KEY (project_root) REFERENCES semantic_state(project_root) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_semantic_dependencies_downstream
+            ON semantic_dependencies(project_root, downstream_file);
+    `);
+}
+
+function createSemanticIndexSchemaV4(database: GraphDatabase): void {
+    database.exec(`
+        CREATE TABLE IF NOT EXISTS semantic_projects (
+            project_root TEXT PRIMARY KEY,
+            head_generation INTEGER NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS semantic_slots (
+            project_root TEXT NOT NULL,
+            tier TEXT NOT NULL CHECK (tier IN ('definitions', 'full')),
+            generation INTEGER NOT NULL,
+            source_revision TEXT NOT NULL,
+            base_generation INTEGER,
+            updated_at TEXT NOT NULL,
+            PRIMARY KEY (project_root, tier),
+            FOREIGN KEY (project_root) REFERENCES semantic_projects(project_root) ON DELETE CASCADE
+        );
+        CREATE TABLE IF NOT EXISTS semantic_slot_records (
+            project_root TEXT NOT NULL,
+            tier TEXT NOT NULL,
+            record_kind TEXT NOT NULL,
+            record_key TEXT NOT NULL,
+            file_path TEXT,
+            content_hash TEXT,
+            payload TEXT NOT NULL,
+            updated_generation INTEGER NOT NULL,
+            PRIMARY KEY (project_root, tier, record_kind, record_key),
+            FOREIGN KEY (project_root, tier) REFERENCES semantic_slots(project_root, tier) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_semantic_slot_records_file
+            ON semantic_slot_records(project_root, tier, file_path);
+        CREATE TABLE IF NOT EXISTS semantic_slot_dependencies (
+            project_root TEXT NOT NULL,
+            tier TEXT NOT NULL,
+            source_file TEXT NOT NULL,
+            downstream_file TEXT NOT NULL,
+            dependency_kind TEXT NOT NULL,
+            symbol_id TEXT,
+            updated_generation INTEGER NOT NULL,
+            PRIMARY KEY (project_root, tier, source_file, downstream_file, dependency_kind, symbol_id),
+            FOREIGN KEY (project_root, tier) REFERENCES semantic_slots(project_root, tier) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_semantic_slot_dependencies_source
+            ON semantic_slot_dependencies(project_root, tier, source_file);
+        CREATE TABLE IF NOT EXISTS semantic_navigation_projection (
+            project_root TEXT NOT NULL,
+            tier TEXT NOT NULL,
+            generation INTEGER NOT NULL,
+            payload TEXT NOT NULL,
+            PRIMARY KEY (project_root, tier),
+            FOREIGN KEY (project_root, tier) REFERENCES semantic_slots(project_root, tier) ON DELETE CASCADE
+        );
+    `);
+}
+
+function createSemanticIndexSchemaV5(database: GraphDatabase): void {
+    createSemanticIndexSchemaV4(database);
+    database.exec(`
+        CREATE TABLE IF NOT EXISTS semantic_files (
+            project_root TEXT NOT NULL,
+            tier TEXT NOT NULL,
+            relative_path TEXT NOT NULL,
+            file_kind TEXT NOT NULL CHECK (file_kind IN ('gml', 'projectManifest', 'resourceMetadata')),
+            content_hash TEXT NOT NULL,
+            size_bytes INTEGER NOT NULL,
+            mtime_ms INTEGER,
+            source_origin TEXT NOT NULL CHECK (source_origin IN ('disk', 'openBuffer')),
+            source_version INTEGER,
+            updated_generation INTEGER NOT NULL,
+            PRIMARY KEY (project_root, tier, relative_path),
+            FOREIGN KEY (project_root, tier) REFERENCES semantic_slots(project_root, tier) ON DELETE CASCADE
+        );
+        CREATE TABLE IF NOT EXISTS semantic_analyzed_files (
+            project_root TEXT NOT NULL, tier TEXT NOT NULL, file_path TEXT NOT NULL,
+            updated_generation INTEGER NOT NULL,
+            PRIMARY KEY (project_root, tier, file_path),
+            FOREIGN KEY (project_root, tier) REFERENCES semantic_slots(project_root, tier) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_semantic_files_generation
+            ON semantic_files(project_root, tier, updated_generation);
+        CREATE TABLE IF NOT EXISTS semantic_generation_history (
+            project_root TEXT NOT NULL,
+            generation INTEGER NOT NULL,
+            tier TEXT NOT NULL CHECK (tier IN ('definitions', 'full')),
+            source_revision TEXT NOT NULL,
+            reason TEXT NOT NULL,
+            affected_file_count INTEGER NOT NULL,
+            published_at TEXT NOT NULL,
+            result TEXT NOT NULL CHECK (result IN ('published', 'recovered')),
+            PRIMARY KEY (project_root, generation),
+            FOREIGN KEY (project_root) REFERENCES semantic_projects(project_root) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_semantic_generation_history_project
+            ON semantic_generation_history(project_root, generation DESC);
+        CREATE TABLE IF NOT EXISTS semantic_unresolved_references (
+            project_root TEXT NOT NULL,
+            tier TEXT NOT NULL,
+            identifier_name TEXT NOT NULL,
+            owner_file TEXT NOT NULL,
+            updated_generation INTEGER NOT NULL,
+            PRIMARY KEY (project_root, tier, identifier_name, owner_file),
+            FOREIGN KEY (project_root, tier) REFERENCES semantic_slots(project_root, tier) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_semantic_unresolved_references_name
+            ON semantic_unresolved_references(project_root, tier, identifier_name);
+    `);
+}
+
+function createSemanticIndexSchema(database: GraphDatabase): void {
+    database.exec(`
+        CREATE TABLE IF NOT EXISTS semantic_projects (
+            project_root TEXT PRIMARY KEY,
+            head_generation INTEGER NOT NULL,
+            semantic_format_version INTEGER NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS semantic_slots (
+            project_root TEXT NOT NULL,
+            tier TEXT NOT NULL CHECK (tier IN ('definitions', 'full')),
+            generation INTEGER NOT NULL,
+            source_revision TEXT NOT NULL,
+            base_generation INTEGER,
+            analyzed_file_count INTEGER NOT NULL,
+            analyzed_resource_count INTEGER NOT NULL,
+            coverage_status TEXT NOT NULL CHECK (coverage_status IN ('complete', 'partial')),
+            relationship_status TEXT NOT NULL CHECK (relationship_status IN ('complete', 'partial')),
+            updated_at TEXT NOT NULL,
+            PRIMARY KEY (project_root, tier),
+            FOREIGN KEY (project_root) REFERENCES semantic_projects(project_root) ON DELETE CASCADE
+        );
+        CREATE TABLE IF NOT EXISTS semantic_files (
+            project_root TEXT NOT NULL, tier TEXT NOT NULL, relative_path TEXT NOT NULL,
+            file_kind TEXT NOT NULL, content_hash TEXT NOT NULL, size_bytes INTEGER NOT NULL, mtime_ms INTEGER,
+            source_origin TEXT NOT NULL, source_version INTEGER, updated_generation INTEGER NOT NULL,
+            PRIMARY KEY (project_root, tier, relative_path),
+            FOREIGN KEY (project_root, tier) REFERENCES semantic_slots(project_root, tier) ON DELETE CASCADE
+        );
+        CREATE TABLE IF NOT EXISTS semantic_analyzed_files (
+            project_root TEXT NOT NULL, tier TEXT NOT NULL, file_path TEXT NOT NULL,
+            updated_generation INTEGER NOT NULL,
+            PRIMARY KEY (project_root, tier, file_path),
+            FOREIGN KEY (project_root, tier) REFERENCES semantic_slots(project_root, tier) ON DELETE CASCADE
+        );
+        CREATE TABLE IF NOT EXISTS semantic_symbols (
+            project_root TEXT NOT NULL, tier TEXT NOT NULL, symbol_id TEXT NOT NULL,
+            kind TEXT NOT NULL, name TEXT NOT NULL, display_name TEXT NOT NULL, defining_file_path TEXT,
+            normalized_display_name TEXT NOT NULL, scope_id TEXT, documentation_json TEXT NOT NULL,
+            updated_generation INTEGER NOT NULL,
+            PRIMARY KEY (project_root, tier, symbol_id),
+            FOREIGN KEY (project_root, tier) REFERENCES semantic_slots(project_root, tier) ON DELETE CASCADE
+        );
+        CREATE TABLE IF NOT EXISTS semantic_symbol_search_ngrams (
+            project_root TEXT NOT NULL, tier TEXT NOT NULL, symbol_id TEXT NOT NULL, search_ngram TEXT NOT NULL,
+            PRIMARY KEY (project_root, tier, symbol_id, search_ngram),
+            FOREIGN KEY (project_root, tier, symbol_id)
+                REFERENCES semantic_symbols(project_root, tier, symbol_id) ON DELETE CASCADE
+        );
+        CREATE TABLE IF NOT EXISTS semantic_occurrences (
+            project_root TEXT NOT NULL, tier TEXT NOT NULL, symbol_id TEXT NOT NULL, file_path TEXT NOT NULL,
+            role TEXT NOT NULL CHECK (role IN ('definition', 'reference')), start_offset INTEGER NOT NULL,
+            end_offset INTEGER NOT NULL, scope_id TEXT, resolution_json TEXT NOT NULL, updated_generation INTEGER NOT NULL,
+            PRIMARY KEY (project_root, tier, symbol_id, file_path, role, start_offset, end_offset),
+            FOREIGN KEY (project_root, tier, symbol_id) REFERENCES semantic_symbols(project_root, tier, symbol_id) ON DELETE CASCADE
+        );
+        CREATE TABLE IF NOT EXISTS semantic_scopes (
+            project_root TEXT NOT NULL, tier TEXT NOT NULL, scope_id TEXT NOT NULL, kind TEXT NOT NULL,
+            name TEXT NOT NULL, display_name TEXT NOT NULL, resource_path TEXT, updated_generation INTEGER NOT NULL,
+            PRIMARY KEY (project_root, tier, scope_id),
+            FOREIGN KEY (project_root, tier) REFERENCES semantic_slots(project_root, tier) ON DELETE CASCADE
+        );
+        CREATE TABLE IF NOT EXISTS semantic_scope_files (
+            project_root TEXT NOT NULL, tier TEXT NOT NULL, scope_id TEXT NOT NULL, file_path TEXT NOT NULL,
+            updated_generation INTEGER NOT NULL,
+            PRIMARY KEY (project_root, tier, scope_id, file_path),
+            FOREIGN KEY (project_root, tier, scope_id) REFERENCES semantic_scopes(project_root, tier, scope_id) ON DELETE CASCADE
+        );
+        CREATE TABLE IF NOT EXISTS semantic_resources (
+            project_root TEXT NOT NULL, tier TEXT NOT NULL, resource_path TEXT NOT NULL, name TEXT NOT NULL,
+            resource_type TEXT NOT NULL, updated_generation INTEGER NOT NULL,
+            PRIMARY KEY (project_root, tier, resource_path),
+            FOREIGN KEY (project_root, tier) REFERENCES semantic_slots(project_root, tier) ON DELETE CASCADE
+        );
+        CREATE TABLE IF NOT EXISTS semantic_relationships (
+            project_root TEXT NOT NULL, tier TEXT NOT NULL, relationship_id TEXT NOT NULL, owner_file_path TEXT NOT NULL,
+            relationship_kind TEXT NOT NULL, payload_json TEXT NOT NULL, updated_generation INTEGER NOT NULL,
+            PRIMARY KEY (project_root, tier, relationship_id),
+            FOREIGN KEY (project_root, tier) REFERENCES semantic_slots(project_root, tier) ON DELETE CASCADE
+        );
+        CREATE TABLE IF NOT EXISTS semantic_dependencies (
+            project_root TEXT NOT NULL, tier TEXT NOT NULL, owner_file_path TEXT NOT NULL, dependent_file_path TEXT NOT NULL,
+            dependency_kind TEXT NOT NULL, symbol_id TEXT, updated_generation INTEGER NOT NULL,
+            PRIMARY KEY (project_root, tier, owner_file_path, dependent_file_path, dependency_kind, symbol_id),
+            FOREIGN KEY (project_root, tier) REFERENCES semantic_slots(project_root, tier) ON DELETE CASCADE
+        );
+        CREATE TABLE IF NOT EXISTS semantic_unresolved_references (
+            project_root TEXT NOT NULL, tier TEXT NOT NULL, name TEXT NOT NULL, file_path TEXT NOT NULL,
+            start_offset INTEGER NOT NULL, end_offset INTEGER NOT NULL, resolution_json TEXT NOT NULL,
+            updated_generation INTEGER NOT NULL,
+            PRIMARY KEY (project_root, tier, name, file_path, start_offset, end_offset),
+            FOREIGN KEY (project_root, tier) REFERENCES semantic_slots(project_root, tier) ON DELETE CASCADE
+        );
+        CREATE TABLE IF NOT EXISTS semantic_navigation_projection (
+            project_root TEXT NOT NULL, tier TEXT NOT NULL, generation INTEGER NOT NULL, payload TEXT NOT NULL,
+            PRIMARY KEY (project_root, tier),
+            FOREIGN KEY (project_root, tier) REFERENCES semantic_slots(project_root, tier) ON DELETE CASCADE
+        );
+        CREATE TABLE IF NOT EXISTS semantic_generation_history (
+            project_root TEXT NOT NULL, generation INTEGER NOT NULL, tier TEXT NOT NULL, source_revision TEXT NOT NULL,
+            reason TEXT NOT NULL, affected_file_count INTEGER NOT NULL, published_at TEXT NOT NULL, result TEXT NOT NULL,
+            PRIMARY KEY (project_root, generation),
+            FOREIGN KEY (project_root) REFERENCES semantic_projects(project_root) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_semantic_files_manifest ON semantic_files(project_root, tier, relative_path);
+        CREATE INDEX IF NOT EXISTS idx_semantic_analyzed_files_path ON semantic_analyzed_files(project_root, tier, file_path);
+        CREATE INDEX IF NOT EXISTS idx_semantic_symbols_name ON semantic_symbols(project_root, tier, name);
+        CREATE INDEX IF NOT EXISTS idx_semantic_symbols_search_order
+            ON semantic_symbols(project_root, tier, normalized_display_name, symbol_id);
+        CREATE INDEX IF NOT EXISTS idx_semantic_symbol_search_ngram
+            ON semantic_symbol_search_ngrams(project_root, tier, search_ngram, symbol_id);
+        CREATE INDEX IF NOT EXISTS idx_semantic_resources_name
+            ON semantic_resources(project_root, tier, name, resource_path);
+        CREATE INDEX IF NOT EXISTS idx_semantic_symbols_owner ON semantic_symbols(project_root, tier, defining_file_path);
+        CREATE INDEX IF NOT EXISTS idx_semantic_scopes_resource
+            ON semantic_scopes(project_root, tier, resource_path, scope_id);
+        CREATE INDEX IF NOT EXISTS idx_semantic_scope_files_path
+            ON semantic_scope_files(project_root, tier, file_path);
+        CREATE INDEX IF NOT EXISTS idx_semantic_occurrences_file ON semantic_occurrences(project_root, tier, file_path);
+        CREATE INDEX IF NOT EXISTS idx_semantic_occurrences_position
+            ON semantic_occurrences(project_root, tier, file_path, start_offset, end_offset);
+        CREATE INDEX IF NOT EXISTS idx_semantic_occurrences_symbol
+            ON semantic_occurrences(project_root, tier, symbol_id, role, file_path, start_offset);
+        CREATE INDEX IF NOT EXISTS idx_semantic_occurrences_invalid
+            ON semantic_occurrences(project_root, tier) WHERE end_offset < start_offset;
+        CREATE INDEX IF NOT EXISTS idx_semantic_occurrences_uncertain
+            ON semantic_occurrences(project_root, tier)
+            WHERE json_extract(resolution_json, '$.kind') <> 'exact';
+        CREATE INDEX IF NOT EXISTS idx_semantic_relationships_kind
+            ON semantic_relationships(project_root, tier, relationship_kind);
+        CREATE INDEX IF NOT EXISTS idx_semantic_relationships_member_symbol
+            ON semantic_relationships(
+                project_root,
+                tier,
+                relationship_kind,
+                json_extract(payload_json, '$.memberSymbolId')
+            );
+        CREATE INDEX IF NOT EXISTS idx_semantic_relationships_enum_symbol
+            ON semantic_relationships(
+                project_root,
+                tier,
+                relationship_kind,
+                json_extract(payload_json, '$.enumSymbolId')
+            );
+        CREATE INDEX IF NOT EXISTS idx_semantic_dependencies_owner ON semantic_dependencies(project_root, tier, owner_file_path);
+        CREATE INDEX IF NOT EXISTS idx_semantic_unresolved_name ON semantic_unresolved_references(project_root, tier, name);
+        CREATE INDEX IF NOT EXISTS idx_semantic_history_project ON semantic_generation_history(project_root, generation DESC);
+    `);
+}
+
+function _migrateSemanticIndexSchemaV3ToV4(database: GraphDatabase): void {
+    runGraphDatabaseTransaction(database, () => {
+        database.exec("ALTER TABLE semantic_state RENAME TO semantic_state_v3");
+        database.exec("ALTER TABLE semantic_records RENAME TO semantic_records_v3");
+        database.exec("ALTER TABLE semantic_dependencies RENAME TO semantic_dependencies_v3");
+        createSemanticIndexSchemaV4(database);
+        database.exec(`
+            INSERT INTO semantic_projects(project_root, head_generation, updated_at)
+            SELECT project_root, generation, updated_at FROM semantic_state_v3;
+            INSERT INTO semantic_slots(project_root, tier, generation, source_revision, base_generation, updated_at)
+            SELECT project_root, tier, generation, source_signature, NULL, updated_at FROM semantic_state_v3;
+            INSERT INTO semantic_slot_records(project_root, tier, record_kind, record_key, file_path, content_hash, payload, updated_generation)
+            SELECT records.project_root, state.tier, records.record_kind, records.record_key, records.file_path, records.content_hash, records.payload, records.generation
+            FROM semantic_records_v3 records JOIN semantic_state_v3 state ON state.project_root = records.project_root;
+            INSERT INTO semantic_slot_dependencies(project_root, tier, source_file, downstream_file, dependency_kind, symbol_id, updated_generation)
+            SELECT dependencies.project_root, state.tier, dependencies.source_file, dependencies.downstream_file, 'script-call', NULL, state.generation
+            FROM semantic_dependencies_v3 dependencies JOIN semantic_state_v3 state ON state.project_root = dependencies.project_root;
+        `);
+        database.exec("DROP TABLE semantic_dependencies_v3");
+        database.exec("DROP TABLE semantic_records_v3");
+        database.exec("DROP TABLE semantic_state_v3");
+    });
+}
+
+function _migrateSemanticIndexSchemaV4ToV5(database: GraphDatabase): void {
+    runGraphDatabaseTransaction(database, () => {
+        createSemanticIndexSchemaV5(database);
+        database.exec(`
+            INSERT OR IGNORE INTO semantic_files(
+                project_root, tier, relative_path, file_kind, content_hash, size_bytes, mtime_ms,
+                source_origin, source_version, updated_generation
+            )
+            SELECT
+                project_root, tier, file_path, 'gml', content_hash, 0, NULL, 'disk', NULL, updated_generation
+            FROM semantic_slot_records
+            WHERE record_kind = 'files' AND file_path IS NOT NULL AND content_hash IS NOT NULL;
+        `);
+    });
+}
+
+function _ensureSemanticStateSignatureColumn(database: GraphDatabase): void {
+    try {
+        database.exec("ALTER TABLE semantic_state ADD COLUMN source_signature TEXT NOT NULL DEFAULT ''");
+    } catch (error) {
+        // The ALTER TABLE only fails when the column already exists on the
+        // current database. Any other failure (corruption, locked database,
+        // I/O fault, ...) indicates a real problem and must surface so the
+        // surrounding migration can be diagnosed rather than silently
+        // swallowed by an empty `catch {}`.
+        if (!isSqliteDuplicateColumnError(error, "source_signature")) {
+            throw Core.toContextualError("Failed to ensure semantic_state.source_signature column", error);
+        }
+    }
+}
+
 function writeGraphIndexSchemaVersion(database: GraphDatabase): void {
     database
         .prepare("INSERT OR REPLACE INTO schema_meta(key, value) VALUES ('schema_version', ?)")
@@ -138,10 +495,51 @@ function writeGraphIndexSchemaVersion(database: GraphDatabase): void {
 function createGraphIndexSchema(database: GraphDatabase): void {
     createSchemaMetaTable(database);
     createGraphIndexSchemaV2(database);
+    createSemanticIndexSchema(database);
     writeGraphIndexSchemaVersion(database);
 }
 
-function migrateGraphIndexSchemaV1ToV2(database: GraphDatabase): void {
+const DERIVED_SEMANTIC_TABLES = Object.freeze([
+    "semantic_navigation_projection",
+    "semantic_unresolved_references",
+    "semantic_dependencies",
+    "semantic_relationships",
+    "semantic_scope_files",
+    "semantic_occurrences",
+    "semantic_symbol_search_ngrams",
+    "semantic_symbols",
+    "semantic_scopes",
+    "semantic_resources",
+    "semantic_files",
+    "semantic_analyzed_files",
+    "semantic_generation_history",
+    "semantic_slot_dependencies",
+    "semantic_slot_records",
+    "semantic_slots",
+    "semantic_records",
+    "semantic_state",
+    "semantic_projects",
+    "node_fts",
+    "embeddings",
+    "aliases",
+    "edges",
+    "nodes",
+    "files",
+    "index_state",
+    "graphs"
+]);
+
+/** Drop derived cache facts before recreating the current schema. */
+function resetDerivedDatabaseForCurrentSchema(database: GraphDatabase): void {
+    runGraphDatabaseTransaction(database, () => {
+        for (const tableName of DERIVED_SEMANTIC_TABLES) {
+            database.exec(`DROP TABLE IF EXISTS ${tableName}`);
+        }
+        createGraphIndexSchema(database);
+    });
+}
+
+function _migrateGraphIndexSchemaV1ToV2(database: GraphDatabase): void {
     runGraphDatabaseTransaction(database, () => {
         for (const tableName of LEGACY_TABLE_NAMES) {
             if (tableExists(database, tableName)) {
@@ -226,24 +624,14 @@ function migrateGraphIndexSchemaV1ToV2(database: GraphDatabase): void {
 function ensureGraphIndexSchema(database: GraphDatabase): void {
     createSchemaMetaTable(database);
     const schemaVersion = readGraphIndexSchemaVersion(database);
-    if (schemaVersion === null) {
+    if (schemaVersion === GRAPH_INDEX_SCHEMA_VERSION) {
         createGraphIndexSchema(database);
         return;
     }
 
-    if (schemaVersion === 1) {
-        migrateGraphIndexSchemaV1ToV2(database);
-        return;
-    }
-
-    if (schemaVersion !== GRAPH_INDEX_SCHEMA_VERSION) {
-        throw new Error(
-            `Graph database schema ${String(schemaVersion)} is incompatible with expected schema ${String(GRAPH_INDEX_SCHEMA_VERSION)}.`
-        );
-    }
-
-    createGraphIndexSchemaV2(database);
-    writeGraphIndexSchemaVersion(database);
+    // Graph and semantic cache rows are derived facts. A hard reset avoids any
+    // old-reader or dual-write path and guarantees the current schema starts with no slots.
+    resetDerivedDatabaseForCurrentSchema(database);
 }
 
 /**
@@ -266,16 +654,40 @@ export function openExistingGraphIndexDatabase(databasePath: string): GraphDatab
 }
 
 /**
+ * Open a query-only connection to an existing current-schema graph database.
+ *
+ * Unlike the writer opener, this path never creates or resets derived data.
+ * Snapshot leases begin a WAL read transaction on the returned connection.
+ */
+export function openGraphIndexSnapshotDatabase(databasePath: string): GraphDatabase {
+    const database = openExistingGraphDatabase(databasePath);
+    if (readGraphIndexSchemaVersion(database) !== GRAPH_INDEX_SCHEMA_VERSION) {
+        database.close();
+        throw new Error(`Graph index schema at ${databasePath} is not current.`);
+    }
+    database.exec("PRAGMA query_only = ON;");
+    return database;
+}
+
+/**
  * Read the schema version stored in a graph-index database.
  */
 export function readGraphIndexSchemaVersion(database: GraphDatabase): number | null {
     try {
         const row = database.prepare("SELECT value FROM schema_meta WHERE key = 'schema_version'").get() as
-            | { value: string }
-            | undefined;
+            { value: string } | undefined;
         const parsedVersion = Number.parseInt(row?.value ?? "", 10);
         return Number.isFinite(parsedVersion) ? parsedVersion : null;
-    } catch {
+    } catch (error) {
+        // A missing schema_meta table indicates the database has not been
+        // initialised yet, which is reported as `null` so callers can treat
+        // the database as fresh. Any other failure (corruption, I/O fault,
+        // unexpected SQL error) is wrapped with context and re-thrown so
+        // the failure is not silently swallowed by the previous empty
+        // `catch {}` block.
+        if (!isSqliteMissingTableError(error, "schema_meta")) {
+            throw Core.toContextualError("Failed to read graph index schema version", error);
+        }
         return null;
     }
 }

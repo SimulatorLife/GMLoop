@@ -1,6 +1,6 @@
 /**
  * Validation utilities for refactoring operations.
- * This module provides identifier validation and reserved keyword checking.
+ * This module provides identifier validation helpers.
  */
 
 import { Core } from "@gmloop/core";
@@ -126,12 +126,3 @@ export function parseSymbolIdParts(
 
     return { segments, symbolKind, symbolName };
 }
-
-/**
- * Default set of GML reserved keywords.
- * These are keywords that cannot be used as identifiers.
- * Frozen to prevent accidental modification and ensure immutability.
- */
-export const DEFAULT_RESERVED_KEYWORDS: ReadonlySet<string> = Object.freeze(
-    Core.loadReservedIdentifierNames({ disallowedTypes: [] })
-);

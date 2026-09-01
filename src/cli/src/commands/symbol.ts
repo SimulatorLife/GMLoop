@@ -15,6 +15,57 @@ type SymbolCommandSharedOptions = Readonly<{
     toolsetRoot?: string;
 }>;
 
+type SymbolInspectOptions = SymbolCommandSharedOptions &
+    Readonly<{
+        kind?: "auto" | "resource" | "script" | "room" | "object" | "symbol";
+        include?: string;
+    }>;
+
+const RESOURCE_KINDS = new Set([
+    "sprite",
+    "sound",
+    "room",
+    "object",
+    "script",
+    "tileset",
+    "font",
+    "sequence",
+    "anim_curve",
+    "timeline",
+    "shader",
+    "particle_system",
+    "extension",
+    "data_file",
+    "note",
+    "path"
+]);
+
+function isResourceKind(kind: string): boolean {
+    return RESOURCE_KINDS.has(kind);
+}
+
+function matchesKind(nodeKind: string, filterKind: string): boolean {
+    if (!filterKind || filterKind === "auto") {
+        return true;
+    }
+    if (filterKind === "script") {
+        return nodeKind === "script";
+    }
+    if (filterKind === "room") {
+        return nodeKind === "room";
+    }
+    if (filterKind === "object") {
+        return nodeKind === "object";
+    }
+    if (filterKind === "resource") {
+        return isResourceKind(nodeKind);
+    }
+    if (filterKind === "symbol") {
+        return !isResourceKind(nodeKind);
+    }
+    return false;
+}
+
 function printSymbolResult(result: unknown, asJson: boolean): void {
     if (asJson) {
         console.log(JSON.stringify(result, null, 2));
@@ -23,33 +74,135 @@ function printSymbolResult(result: unknown, asJson: boolean): void {
     console.log(typeof result === "string" ? result : JSON.stringify(result, null, 2));
 }
 
-async function runSymbolInspectAction(identifierOrNodeId: string, options: SymbolCommandSharedOptions): Promise<void> {
+async function runSymbolInspectAction(identifierOrNodeId: string, options: SymbolInspectOptions): Promise<void> {
     const context = await ensureProjectGraphIndex(options);
     const query = identifierOrNodeId;
-    const nodeId = query.includes("::")
-        ? query
-        : (Semantic.searchGraphIndex({
-              databasePath: options.databasePath,
-              limit: 1,
-              projectConfig: context.projectConfig,
-              projectRoot: context.projectRoot,
-              query,
-              toolsetRoot: options.toolsetRoot
-          }).results[0]?.id ?? null);
-    if (!nodeId) {
-        throw new Error(`Could not resolve symbol '${identifierOrNodeId}'.`);
-    }
-    const node = Semantic.getGraphNode({
+    const requestedKind = options.kind ?? "auto";
+
+    let resolvedNode = null;
+
+    // 1. Try direct lookup first (if it's a valid ID)
+    const directNode = Semantic.getGraphNode({
         databasePath: options.databasePath,
-        nodeId,
+        nodeId: query,
         projectConfig: context.projectConfig,
         projectRoot: context.projectRoot,
         toolsetRoot: options.toolsetRoot
     });
-    if (!node) {
-        throw new Error(`Graph node '${nodeId}' was not found.`);
+
+    if (directNode && matchesKind(directNode.kind, requestedKind)) {
+        resolvedNode = directNode;
     }
-    printSymbolResult(node, options.json === true);
+
+    // 2. Fallback to graph search if direct lookup didn't yield a matching node
+    if (!resolvedNode) {
+        const searchResult = Semantic.searchGraphIndex({
+            databasePath: options.databasePath,
+            limit: 100,
+            projectConfig: context.projectConfig,
+            projectRoot: context.projectRoot,
+            query,
+            toolsetRoot: options.toolsetRoot
+        });
+
+        let candidates = searchResult.results.filter((entry) => matchesKind(entry.kind, requestedKind));
+
+        if (candidates.length > 0) {
+            // Narrow by exact case-sensitive name match
+            const exactMatches = candidates.filter((c) => c.name === query);
+            if (exactMatches.length > 0) {
+                candidates = exactMatches;
+            } else {
+                // Narrow by exact case-insensitive name match
+                const caseInsensitiveMatches = candidates.filter((c) => c.name.toLowerCase() === query.toLowerCase());
+                if (caseInsensitiveMatches.length > 0) {
+                    candidates = caseInsensitiveMatches;
+                }
+            }
+
+            if (candidates.length === 1) {
+                const candidateId = candidates[0].id;
+                resolvedNode = Semantic.getGraphNode({
+                    databasePath: options.databasePath,
+                    nodeId: candidateId,
+                    projectConfig: context.projectConfig,
+                    projectRoot: context.projectRoot,
+                    toolsetRoot: options.toolsetRoot
+                });
+            } else if (candidates.length > 1) {
+                const payload = {
+                    command: "symbol inspect",
+                    ok: false,
+                    error: `Ambiguous symbol '${query}'. Multiple candidates found.`,
+                    code: "ambiguous",
+                    candidates: candidates.map((c) => ({ id: c.id, name: c.name, kind: c.kind }))
+                };
+                printSymbolResult(payload, true);
+                process.exit(1);
+            }
+        }
+    }
+
+    if (!resolvedNode) {
+        const payload = {
+            command: "symbol inspect",
+            ok: false,
+            error: `Symbol '${query}' not found.`,
+            code: "unresolved"
+        };
+        printSymbolResult(payload, true);
+        process.exit(1);
+    }
+
+    const includeOption = options.include ?? "node";
+    const includes = new Set(includeOption.split(",").map((s) => s.trim().toLowerCase()));
+
+    const payload: Record<string, unknown> = {
+        resolvedId: resolvedNode.id,
+        resolvedKind: resolvedNode.kind
+    };
+
+    if (includes.has("node")) {
+        payload.node = resolvedNode;
+    }
+    if (includes.has("context")) {
+        payload.context = Semantic.getGraphContext({
+            databasePath: options.databasePath,
+            depth: options.depth,
+            nodeId: resolvedNode.id,
+            projectConfig: context.projectConfig,
+            projectRoot: context.projectRoot,
+            toolsetRoot: options.toolsetRoot
+        });
+    }
+    if (includes.has("neighbors")) {
+        payload.neighbors = Semantic.getGraphNeighbors({
+            databasePath: options.databasePath,
+            depth: options.depth,
+            nodeId: resolvedNode.id,
+            projectConfig: context.projectConfig,
+            projectRoot: context.projectRoot,
+            toolsetRoot: options.toolsetRoot
+        });
+    }
+    if (includes.has("usages") || includes.has("dependents")) {
+        const usages = Semantic.getGraphUsages({
+            databasePath: options.databasePath,
+            depth: options.depth,
+            nodeId: resolvedNode.id,
+            projectConfig: context.projectConfig,
+            projectRoot: context.projectRoot,
+            toolsetRoot: options.toolsetRoot
+        });
+        if (includes.has("usages")) {
+            payload.usages = usages;
+        }
+        if (includes.has("dependents")) {
+            payload.dependents = usages;
+        }
+    }
+
+    printSymbolResult({ command: "symbol inspect", ok: true, payload }, true);
 }
 
 export function createSymbolCommand(): Command {
@@ -70,70 +223,17 @@ export function createSymbolCommand(): Command {
         applyStandardCommandOptions(new Command("inspect"))
             .description("Inspect one symbol by identifier or graph node id.")
             .argument("<identifierOrId>", "Identifier name or graph node id.")
+            .option("--kind <kind>", "Filter by kind: auto, resource, script, room, object, symbol.", "auto")
+            .option(
+                "--include <items>",
+                "Comma-separated items to include: node, context, neighbors, usages, dependents.",
+                "node"
+            )
     );
     inspect.action(async function symbolInspectAction(identifierOrNodeId: string) {
-        await runSymbolInspectAction(identifierOrNodeId, this.opts<SymbolCommandSharedOptions>());
-    });
-
-    const context = addShared(
-        applyStandardCommandOptions(new Command("context"))
-            .description("Show symbol context bundle.")
-            .argument("<nodeId>", "Graph node id.")
-    );
-    context.action(async function symbolContextAction(nodeId: string) {
-        const options = this.opts<SymbolCommandSharedOptions>();
-        const resolved = await ensureProjectGraphIndex(options);
-        const payload = Semantic.getGraphContext({
-            databasePath: options.databasePath,
-            depth: options.depth,
-            nodeId,
-            projectConfig: resolved.projectConfig,
-            projectRoot: resolved.projectRoot,
-            toolsetRoot: options.toolsetRoot
-        });
-        printSymbolResult(payload, options.json === true);
-    });
-
-    const neighbors = addShared(
-        applyStandardCommandOptions(new Command("neighbors"))
-            .description("Show symbol neighbors.")
-            .argument("<nodeId>", "Graph node id.")
-    );
-    neighbors.action(async function symbolNeighborsAction(nodeId: string) {
-        const options = this.opts<SymbolCommandSharedOptions>();
-        const resolved = await ensureProjectGraphIndex(options);
-        const payload = Semantic.getGraphNeighbors({
-            databasePath: options.databasePath,
-            depth: options.depth,
-            nodeId,
-            projectConfig: resolved.projectConfig,
-            projectRoot: resolved.projectRoot,
-            toolsetRoot: options.toolsetRoot
-        });
-        printSymbolResult(payload, options.json === true);
-    });
-
-    const usages = addShared(
-        applyStandardCommandOptions(new Command("usages"))
-            .description("Show symbol usages.")
-            .argument("<nodeId>", "Graph node id.")
-    );
-    usages.action(async function symbolUsagesAction(nodeId: string) {
-        const options = this.opts<SymbolCommandSharedOptions>();
-        const resolved = await ensureProjectGraphIndex(options);
-        const payload = Semantic.getGraphUsages({
-            databasePath: options.databasePath,
-            nodeId,
-            projectConfig: resolved.projectConfig,
-            projectRoot: resolved.projectRoot,
-            toolsetRoot: options.toolsetRoot
-        });
-        printSymbolResult(payload, options.json === true);
+        await runSymbolInspectAction(identifierOrNodeId, this.opts<SymbolInspectOptions>());
     });
 
     command.addCommand(inspect);
-    command.addCommand(context);
-    command.addCommand(neighbors);
-    command.addCommand(usages);
     return command;
 }

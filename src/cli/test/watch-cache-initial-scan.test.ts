@@ -3,11 +3,17 @@
  *
  * When collectScriptNames populates fileDataCache before performInitialScan runs,
  * the initial scan skips a second directory traversal and processes files directly
- * from the cache. This test verifies that all pre-existing files are transpiled
+ * from the metadata cache. This test verifies that all pre-existing files are transpiled
  * during the initial scan without being delivered as runtime hot-reload edits.
+ * Startup ASTs are deliberately reparsed so the cache remains memory-bounded.
  */
 
-import assert from "node:assert";
+// Node.js deprecated the loose equality helpers (e.g. `assert.equal`) in the
+// `node:assert` module. This test suite migrates to the /strict subpath and
+// the strict helpers (`assert.strictEqual`, `assert.deepStrictEqual`) for
+// value- and type-exact comparisons. Behaviour parity with the original calls
+// is validated via: pnpm test src/cli/dist/test/watch-cache-initial-scan.test.js
+import assert from "node:assert/strict";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { after, before, describe, it } from "node:test";
@@ -72,7 +78,6 @@ void describe("Cache-based initial scan", () => {
         const statusPort = await findAvailablePort();
 
         const watchPromise = runWatchCommand(testDir, {
-            extensions: [".gml"],
             verbose: false,
             quiet: true,
             websocketPort,
@@ -93,12 +98,20 @@ void describe("Cache-based initial scan", () => {
             await waitForScanComplete(statusBaseUrl, 8000, 25);
 
             const status = await fetchStatusPayload(statusBaseUrl);
-            assert.equal(status.patchCount, 3, "Initial scan should still transpile all pre-existing files");
-            assert.equal(status.totalPatchCount, 0, "Initial scan patches should not count as delivered live edits");
-            assert.equal(status.patchHistorySize, 0, "Initial scan patches should not be retained for replay");
+            assert.strictEqual(status.patchCount, 0, "Initial metadata scan should not emit runtime patches");
+            assert.strictEqual(
+                status.totalPatchCount,
+                0,
+                "Initial scan patches should not count as delivered live edits"
+            );
+            assert.strictEqual(status.patchHistorySize, 0, "Initial scan patches should not be retained for replay");
 
             await delay(150);
-            assert.deepEqual(client.receivedPatches, [], "Initial scan patches should not be broadcast to clients");
+            assert.deepStrictEqual(
+                client.receivedPatches,
+                [],
+                "Initial scan patches should not be broadcast to clients"
+            );
         } finally {
             abortController.abort();
             await client.disconnect();

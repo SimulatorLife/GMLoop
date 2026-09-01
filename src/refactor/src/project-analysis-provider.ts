@@ -3,7 +3,14 @@ import path from "node:path";
 import { Core } from "@gmloop/core";
 
 import * as SymbolQueries from "./symbol-queries.js";
-import type { PartialSemanticAnalyzer, RefactorProjectAnalysisProvider, RenamePlanSummary } from "./types.js";
+import type {
+    FeatherRenamePlanner,
+    GlobalVarRewriteAssessor,
+    IdentifierOccupancyChecker,
+    LoopHoistIdentifierResolver,
+    RefactorProjectAnalysisContext,
+    RefactorProjectAnalysisProvider
+} from "./types.js";
 
 type FeatherRenamePlanEntry = {
     identifierName: string;
@@ -13,23 +20,34 @@ type FeatherRenamePlanEntry = {
     skipReason?: string;
 };
 
-type PrepareRenamePlan = (
-    request: { symbolId: string; newName: string },
-    options: { validateHotReload: boolean }
-) => Promise<RenamePlanSummary>;
+type PrepareRenamePlan = RefactorProjectAnalysisContext["prepareRenamePlan"];
 
-type RefactorProjectAnalysisContext = {
-    semantic: PartialSemanticAnalyzer | null;
-    prepareRenamePlan: PrepareRenamePlan;
-};
+/**
+ * Default number of `_N` suffixed fallback names tried when the preferred
+ * Feather rename target collides with an existing identifier.
+ *
+ * This is the opinionated default for the built-in project analysis
+ * provider: it comfortably covers the collision counts seen in real Feather
+ * fixups (a handful of siblings sharing a base name) without letting a
+ * pathological batch of collisions spin through an unbounded search. The
+ * cap is intentionally not exposed as end-user configuration (CLI flag or
+ * env var) — the only anticipated consumers are internal callers, such as
+ * tests exercising retry-exhaustion behavior, that need to override it via
+ * {@link enumerateRenameCandidates}'s `maxAttempts` parameter without
+ * waiting through the full default search space.
+ */
+export const DEFAULT_MAX_RENAME_CANDIDATE_ATTEMPTS = 32;
 
-function enumerateRenameCandidates(preferredName: string): ReadonlyArray<string> {
+function enumerateRenameCandidates(
+    preferredName: string,
+    maxAttempts: number = DEFAULT_MAX_RENAME_CANDIDATE_ATTEMPTS
+): ReadonlyArray<string> {
     if (!Core.isNonEmptyString(preferredName)) {
         return ["__featherFix_reserved"];
     }
 
     const candidates = [preferredName];
-    for (let index = 1; index <= 32; index += 1) {
+    for (let index = 1; index <= maxAttempts; index += 1) {
         candidates.push(`${preferredName}_${index}`);
     }
 
@@ -138,11 +156,13 @@ async function planSingleFeatherRename(parameters: {
 }
 
 /**
- * Default project analysis provider for RefactorEngine overlap checks.
- * This is a stateless, immutable singleton — all methods receive their
- * context as parameters, so a single shared instance is always safe.
+ * Default identifier-occupancy checker for the default project analysis
+ * provider. Exposed independently so consumers that only need overlap
+ * queries (for example, lint rules checking name collisions) can depend
+ * on the narrow role interface without pulling in Feather, globalvar, or
+ * loop-hoist collaborators.
  */
-export const DEFAULT_PROJECT_ANALYSIS_PROVIDER: RefactorProjectAnalysisProvider = Object.freeze({
+const DEFAULT_IDENTIFIER_OCCUPANCY_CHECKER: IdentifierOccupancyChecker = Object.freeze({
     async isIdentifierOccupied(identifierName: string, context: RefactorProjectAnalysisContext): Promise<boolean> {
         if (!context.semantic) {
             return false;
@@ -177,7 +197,16 @@ export const DEFAULT_PROJECT_ANALYSIS_PROVIDER: RefactorProjectAnalysisProvider 
         }
 
         return files;
-    },
+    }
+});
+
+/**
+ * Default Feather rename planner for the default project analysis
+ * provider. Splitting this from the identifier-occupancy checker keeps
+ * the Feather-only collaborators (rename plan retries, file-path
+ * scoping) out of the overlap-query code path.
+ */
+const DEFAULT_FEATHER_RENAME_PLANNER: FeatherRenamePlanner = Object.freeze({
     async planFeatherRenames(
         requests: ReadonlyArray<{ identifierName: string; preferredReplacementName: string }>,
         filePath: string | null,
@@ -200,7 +229,14 @@ export const DEFAULT_PROJECT_ANALYSIS_PROVIDER: RefactorProjectAnalysisProvider 
         });
 
         return plannedEntries;
-    },
+    }
+});
+
+/**
+ * Default globalvar-to-global rewrite assessor. The decision is a local
+ * structural check, so this role interface owns no shared state.
+ */
+const DEFAULT_GLOBAL_VAR_REWRITE_ASSESSOR: GlobalVarRewriteAssessor = Object.freeze({
     assessGlobalVarRewrite(
         filePath: string | null,
         hasInitializer: boolean
@@ -215,7 +251,14 @@ export const DEFAULT_PROJECT_ANALYSIS_PROVIDER: RefactorProjectAnalysisProvider 
             initializerMode: hasInitializer ? "existing" : "undefined",
             mode: "project-aware"
         };
-    },
+    }
+});
+
+/**
+ * Default loop-hoist identifier resolver. Like the globalvar assessor
+ * this is a pure mapping that requires no shared state.
+ */
+const DEFAULT_LOOP_HOIST_IDENTIFIER_RESOLVER: LoopHoistIdentifierResolver = Object.freeze({
     resolveLoopHoistIdentifier(preferredName: string): {
         identifierName: string;
         mode: "project-aware";
@@ -225,4 +268,21 @@ export const DEFAULT_PROJECT_ANALYSIS_PROVIDER: RefactorProjectAnalysisProvider 
             mode: "project-aware"
         };
     }
+});
+
+/**
+ * Default project analysis provider for RefactorEngine overlap checks.
+ *
+ * The composite delegates each role to the matching default
+ * implementation above, so the four role interfaces can evolve (and be
+ * tested) independently while the composite stays a stable seam for
+ * {@link RefactorEngine}. This is a stateless, immutable singleton —
+ * all methods receive their context as parameters, so a single shared
+ * instance is always safe.
+ */
+export const DEFAULT_PROJECT_ANALYSIS_PROVIDER: RefactorProjectAnalysisProvider = Object.freeze({
+    ...DEFAULT_IDENTIFIER_OCCUPANCY_CHECKER,
+    ...DEFAULT_FEATHER_RENAME_PLANNER,
+    ...DEFAULT_GLOBAL_VAR_REWRITE_ASSESSOR,
+    ...DEFAULT_LOOP_HOIST_IDENTIFIER_RESOLVER
 });

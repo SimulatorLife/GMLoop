@@ -2,8 +2,9 @@ import assert from "node:assert/strict";
 import { beforeEach, describe, it } from "node:test";
 
 import { __test__ } from "../src/cli.js";
-import { setDefaultMaxFormattingCacheEntries } from "../src/runtime-options/format-memory-cache.js";
-import { DEFAULT_MAX_FORMATTING_CACHE_ENTRIES } from "../src/runtime-options/format-memory-constants.js";
+import { trimFormattingCache } from "../src/modules/formatting/cache.js";
+import { DEFAULT_MAX_FORMATTING_CACHE_ENTRIES } from "../src/modules/formatting/format-memory-constants.js";
+import { setDefaultMaxFormattingCacheEntries } from "../src/modules/formatting/format-memory-options.js";
 
 const {
     clearFormattingCacheForTests,
@@ -65,5 +66,27 @@ void describe("formatting cache", () => {
         assert.equal(stats.maxEntries, 2);
         assert.equal(stats.size, 2);
         assert.deepEqual(getFormattingCacheKeysForTests(), ["key-2", "key-3"]);
+    });
+
+    void it("treats a cache entry cap of 0 as disabling the limit, not clearing every insert", () => {
+        setDefaultMaxFormattingCacheEntries(0);
+
+        setFormattingCacheEntryForTests("key-1", "formatted-1");
+        setFormattingCacheEntryForTests("key-2", "formatted-2");
+
+        const stats = getFormattingCacheStatsForTests();
+        assert.equal(stats.maxEntries, 0);
+        assert.equal(stats.size, 2);
+        assert.deepEqual(getFormattingCacheKeysForTests(), ["key-1", "key-2"]);
+    });
+
+    void it("applies an explicit negative trim limit by clearing the cache", () => {
+        setFormattingCacheEntryForTests("key-1", "formatted-1");
+        setFormattingCacheEntryForTests("key-2", "formatted-2");
+
+        trimFormattingCache(-1);
+
+        assert.equal(getFormattingCacheStatsForTests().size, 0);
+        assert.deepEqual(getFormattingCacheKeysForTests(), []);
     });
 });

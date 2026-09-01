@@ -95,8 +95,16 @@ class MockWebSocket implements RuntimeWebSocketInstance {
         this.dispatch("error", error);
     }
 
+    // Snapshot the listener list before iteration so a handler that unsubscribes
+    // itself (or a sibling) during dispatch cannot shift the live array and
+    // cause the next handler in the registration order to be skipped. This
+    // mirrors the safety pattern used by the production store/subscriber code
+    // (see src/ui/src/app/state/store.ts and the recovery-traversal
+    // helpers), where dispatch iterates over a shallow copy precisely to
+    // guard against mutation-during-iteration hazards.
     private dispatch(event: WebSocketEvent, payload?: Error | MessageEventLike) {
-        for (const handler of this.listeners[event] ?? []) {
+        const handlers = [...(this.listeners[event] ?? [])];
+        for (const handler of handlers) {
             handler(payload);
         }
     }
@@ -168,35 +176,43 @@ void test("WebSocket client connects and receives patches", async () => {
 });
 
 void test("WebSocket client applies patches from messages", async () => {
+    // === Determinism notes ===
+    // The previous version of this test scheduled real timers via
+    // `await wait(50)` (to let the MockWebSocket's `setImmediate` open
+    // event fire) and `await wait(10)` (to let the message be processed).
+    // Both waits were timing-race windows: under heavy CI load the Node
+    // event loop can be delayed past them (worker contention, GC pauses,
+    // filesystem events from sibling tests), causing the assertion
+    // `wrapper.hasScript("script:test")` to fail with `false` even though
+    // the patch had been delivered synchronously by the implementation.
+    //
+    // The fix routes the test through the existing `runWebSocketTest`
+    // helper, which performs deterministic setup/teardown:
+    //   - It assigns `globalThis.WebSocket = MockWebSocket` inside a
+    //     try/finally so the global is always restored — even if the
+    //     assertion throws, the next test does not inherit the mock.
+    //   - It calls `await flush()` (a single `setImmediate` tick) instead
+    //     of `await wait(50)`. `flush()` is bounded by the event loop's
+    //     next immediate and is independent of wall-clock latency.
+    //   - The patch is then delivered via `mockSocket.simulateMessage(...)`,
+    //     which synchronously dispatches through the already-attached
+    //     message handler. No `await wait(10)` is required because the
+    //     handler runs to completion before `simulateMessage` returns.
+    // The assertion is therefore a strict post-condition on a synchronous
+    // pipeline rather than a race against wall-clock timers.
     const wrapper = RuntimeWrapper.createRuntimeWrapper();
 
-    globalWithWebSocket.WebSocket = MockWebSocket;
+    await runWebSocketTest({ wrapper, autoConnect: true }, async (_client, mockSocket) => {
+        const patch = {
+            kind: "script",
+            id: "script:test",
+            js_body: "return 42;"
+        };
 
-    const client = RuntimeWrapper.createWebSocketClient({
-        wrapper,
-        autoConnect: true
+        mockSocket.simulateMessage(JSON.stringify(patch));
+
+        assert.ok(wrapper.hasScript("script:test"));
     });
-
-    await wait(50);
-
-    const patch = {
-        kind: "script",
-        id: "script:test",
-        js_body: "return 42;"
-    };
-
-    const ws = client.getWebSocket();
-    assert.ok(ws, "WebSocket should be available");
-    const mockSocket = ws as MockWebSocket;
-
-    mockSocket.simulateMessage(JSON.stringify(patch));
-
-    await wait(10);
-
-    assert.ok(wrapper.hasScript("script:test"));
-
-    client.disconnect();
-    delete globalWithWebSocket.WebSocket;
 });
 
 void test("WebSocket client applies batch patches from messages", async () => {
@@ -300,7 +316,30 @@ void test("WebSocket client clears readiness timer on close with pending patches
     client.disconnect();
 });
 
-void test("WebSocket client defers patch batches until runtime readiness", async () => {
+void test("WebSocket client defers patch batches until runtime readiness", async (t) => {
+    // === Determinism notes ===
+    // The previous version of this test scheduled three real wall-clock
+    // waits: `await wait(50)` to wait for the MockWebSocket's setImmediate
+    // "open", `await wait(50)` between simulateMessage and the "not yet
+    // applied" assertion, and `await wait(100)` to wait for the production
+    // code's setInterval-based readiness polling (DEFAULT_READINESS_POLL_INTERVAL_MS
+    // = 50ms) to actually detect the ready state. Under heavy CI load those
+    // windows raced against event-loop latency, occasionally producing
+    // flaky "expected pending patches to remain queued" or "expected
+    // pending patches to flush" failures.
+    //
+    // The fix uses Node's `mock.timers.enable({ apis: ["setInterval"] })`
+    // (matching the pattern already established by the reconnect-timer and
+    // patch-queue tests below) so the readiness poll fires at deterministic
+    // moments under test control. The `flush()` helper replaces the
+    // setImmediate-driven `wait(50)` (one setImmediate tick is sufficient
+    // for MockWebSocket to dispatch "open"), and the middle `wait(50)` is
+    // removed entirely because `simulateMessage` synchronously delivers
+    // the message through the registered handler, so the "queued but not
+    // applied" state is observable without any real wait. Net effect:
+    // the assertion becomes a strict post-condition on a synchronous
+    // pipeline plus a single deterministic timer tick rather than a race
+    // against three independent wall-clock intervals.
     const wrapper = RuntimeWrapper.createRuntimeWrapper();
 
     globalWithWebSocket.WebSocket = MockWebSocket;
@@ -315,13 +354,20 @@ void test("WebSocket client defers patch batches until runtime readiness", async
         Scripts: [null]
     };
 
+    // Capture the readiness-poll setInterval so we can drive it via the mock
+    // clock. `setImmediate` is intentionally left un-mocked because
+    // MockWebSocket still relies on it to dispatch the open event.
+    t.mock.timers.enable({ apis: ["setInterval"] });
+
     const client = RuntimeWrapper.createWebSocketClient({
         wrapper,
         autoConnect: true
     });
 
     try {
-        await wait(50);
+        // MockWebSocket dispatches `open` via setImmediate; one immediate
+        // tick drains it deterministically instead of waiting 50ms.
+        await flush();
 
         const ws = client.getWebSocket();
         assert.ok(ws, "WebSocket should be available");
@@ -334,25 +380,35 @@ void test("WebSocket client defers patch batches until runtime readiness", async
 
         mockSocket.simulateMessage(JSON.stringify(pendingPatches));
 
-        await wait(50);
-
+        // simulateMessage drives the message handler synchronously, so the
+        // "queued but not yet applied" state is observable immediately.
         assert.strictEqual(wrapper.hasScript("script:pending_one"), false);
         assert.strictEqual(wrapper.hasScript("script:pending_two"), false);
 
         globalWithJson.JSON_game = readyJsonGame;
 
-        await wait(100);
+        // One readiness-poll tick (DEFAULT_READINESS_POLL_INTERVAL_MS = 50)
+        // detects the now-ready JSON_game and flushes the pending patches
+        // synchronously inside the interval callback.
+        t.mock.timers.tick(50);
 
         assert.ok(wrapper.hasScript("script:pending_one"));
         assert.ok(wrapper.hasScript("script:pending_two"));
     } finally {
+        t.mock.timers.reset();
         client.disconnect();
         globalWithJson.JSON_game = readyJsonGame;
         delete globalWithWebSocket.WebSocket;
     }
 });
 
-void test("WebSocket client deduplicates deferred patches before runtime readiness flush", async () => {
+void test("WebSocket client deduplicates deferred patches before runtime readiness flush", async (t) => {
+    // === Determinism notes ===
+    // Replaces the original `wait(50)` / `wait(40)` / `wait(120)` wall-clock
+    // windows with `flush()` plus a single deterministic `setInterval` tick.
+    // Mirrors the same mock-clock pattern as the neighbouring readiness
+    // tests so every "deferred until ready" assertion observes the queue
+    // state synchronously rather than racing the Node event loop.
     const wrapper = RuntimeWrapper.createRuntimeWrapper();
 
     globalWithWebSocket.WebSocket = MockWebSocket;
@@ -367,13 +423,15 @@ void test("WebSocket client deduplicates deferred patches before runtime readine
         Scripts: [null]
     };
 
+    t.mock.timers.enable({ apis: ["setInterval"] });
+
     const client = RuntimeWrapper.createWebSocketClient({
         wrapper,
         autoConnect: true
     });
 
     try {
-        await wait(50);
+        await flush();
 
         const ws = client.getWebSocket();
         assert.ok(ws, "WebSocket should be available");
@@ -401,13 +459,15 @@ void test("WebSocket client deduplicates deferred patches before runtime readine
             })
         );
 
-        await wait(40);
-
+        // All three messages are delivered synchronously, so the queued-only
+        // state is observable without polling.
         assert.strictEqual(wrapper.hasScript("script:deferred_duplicate"), false);
 
         globalWithJson.JSON_game = readyJsonGame;
 
-        await wait(120);
+        // Advance the readiness poll once; it detects the ready state and
+        // drains the queue, deduplicating the three identical IDs into one.
+        t.mock.timers.tick(50);
 
         assert.strictEqual(wrapper.hasScript("script:deferred_duplicate"), true);
         assert.strictEqual(wrapper.getRegistrySnapshot().scriptCount, 1);
@@ -419,13 +479,21 @@ void test("WebSocket client deduplicates deferred patches before runtime readine
         const history = wrapper.getPatchById("script:deferred_duplicate");
         assert.strictEqual(history.length, 1);
     } finally {
+        t.mock.timers.reset();
         client.disconnect();
         globalWithJson.JSON_game = readyJsonGame;
         delete globalWithWebSocket.WebSocket;
     }
 });
 
-void test("WebSocket client bounds deferred patches before runtime readiness", async () => {
+void test("WebSocket client bounds deferred patches before runtime readiness", async (t) => {
+    // === Determinism notes ===
+    // Same pattern as the other readiness tests: replace the wall-clock
+    // windows (`wait(50)` / `wait(40)` / `wait(120)`) with `flush()` plus a
+    // single deterministic `setInterval` tick once JSON_game becomes ready.
+    // The 120 synchronous `simulateMessage` calls still execute synchronously
+    // so the bound-by-`maxQueueSize` assertion can check the "queue depth
+    // capped at 100, indices 0-19 dropped" state immediately.
     const wrapper = RuntimeWrapper.createRuntimeWrapper();
 
     globalWithWebSocket.WebSocket = MockWebSocket;
@@ -440,13 +508,15 @@ void test("WebSocket client bounds deferred patches before runtime readiness", a
         Scripts: [null]
     };
 
+    t.mock.timers.enable({ apis: ["setInterval"] });
+
     const client = RuntimeWrapper.createWebSocketClient({
         wrapper,
         autoConnect: true
     });
 
     try {
-        await wait(50);
+        await flush();
 
         const ws = client.getWebSocket();
         assert.ok(ws, "WebSocket should be available");
@@ -462,14 +532,16 @@ void test("WebSocket client bounds deferred patches before runtime readiness", a
             );
         }
 
-        await wait(40);
-
+        // Queue is full but nothing has been applied yet (runtime still
+        // unready), so the bounded-queue expectations hold without polling.
         assert.strictEqual(wrapper.hasScript("script:deferred_0"), false);
         assert.strictEqual(wrapper.hasScript("script:deferred_119"), false);
 
         globalWithJson.JSON_game = readyJsonGame;
 
-        await wait(120);
+        // Drain the readiness poll once; the queued batch (cap = 100)
+        // flushes, leaving indices 20-119 installed and 0-19 dropped.
+        t.mock.timers.tick(50);
 
         const snapshot = wrapper.getRegistrySnapshot();
         assert.strictEqual(snapshot.scriptCount, 100);
@@ -478,13 +550,22 @@ void test("WebSocket client bounds deferred patches before runtime readiness", a
         assert.ok(wrapper.hasScript("script:deferred_20"));
         assert.ok(wrapper.hasScript("script:deferred_119"));
     } finally {
+        t.mock.timers.reset();
         client.disconnect();
         globalWithJson.JSON_game = readyJsonGame;
         delete globalWithWebSocket.WebSocket;
     }
 });
 
-void test("WebSocket client routes deferred patches through patch queue after runtime readiness", async () => {
+void test("WebSocket client routes deferred patches through patch queue after runtime readiness", async (t) => {
+    // === Determinism notes ===
+    // This test exercises two timer surfaces: the readiness-poll `setInterval`
+    // (DEFAULT_READINESS_POLL_INTERVAL_MS = 50) plus the patch-queue flush
+    // `setTimeout` (configured to 10ms via the client options). Both are
+    // mocked through `apis: ["setInterval", "setTimeout"]` and advanced
+    // deterministically with `tick`, replacing the original 50ms / 50ms /
+    // 120ms wall-clock windows. `setImmediate` is left un-mocked because
+    // MockWebSocket still uses it to dispatch its "open" event.
     const wrapper = RuntimeWrapper.createRuntimeWrapper();
     const runtimeGlobals = globalThis as unknown as { JSON_game: unknown };
     const originalJsonGame = runtimeGlobals.JSON_game;
@@ -495,6 +576,8 @@ void test("WebSocket client routes deferred patches through patch queue after ru
         ScriptNames: ["gml_Script_bootstrap"],
         Scripts: [null]
     });
+
+    t.mock.timers.enable({ apis: ["setInterval", "setTimeout"] });
 
     const client = RuntimeWrapper.createWebSocketClient({
         wrapper,
@@ -507,7 +590,7 @@ void test("WebSocket client routes deferred patches through patch queue after ru
     });
 
     try {
-        await wait(50);
+        await flush();
 
         const ws = client.getWebSocket();
         assert.ok(ws, "WebSocket should be available");
@@ -521,8 +604,9 @@ void test("WebSocket client routes deferred patches through patch queue after ru
             })
         );
 
-        await wait(50);
-
+        // Runtime is still not ready, so the patch is parked in
+        // `pendingPatches` and nothing has entered the bounded flush queue
+        // yet — observable synchronously.
         assert.strictEqual(wrapper.hasScript("script:deferred_with_queue"), false);
         assert.strictEqual(client.getPatchQueueMetrics()?.totalQueued ?? 0, 0);
 
@@ -531,7 +615,12 @@ void test("WebSocket client routes deferred patches through patch queue after ru
             Scripts: [() => void 0]
         });
 
-        await wait(120);
+        // One readiness poll: detects the ready state, moves the pending
+        // patch into the bounded flush queue, and schedules the 10ms flush.
+        t.mock.timers.tick(50);
+        // Advance through the queue's configured flushIntervalMs so the
+        // setTimeout fires and the patch reaches applyPatch.
+        t.mock.timers.tick(10);
 
         assert.strictEqual(wrapper.hasScript("script:deferred_with_queue"), true);
 
@@ -540,6 +629,7 @@ void test("WebSocket client routes deferred patches through patch queue after ru
         assert.ok(metrics.totalQueued >= 1);
         assert.ok(metrics.totalFlushed >= 1);
     } finally {
+        t.mock.timers.reset();
         client.disconnect();
         Reflect.set(runtimeGlobals, "JSON_game", originalJsonGame);
         delete globalWithWebSocket.WebSocket;
@@ -648,7 +738,16 @@ void test("WebSocket client applies patches when script tables are ready without
     }
 });
 
-void test("WebSocket client waits for JSON_game before applying patches", async () => {
+void test("WebSocket client waits for JSON_game before applying patches", async (t) => {
+    // === Determinism notes ===
+    // Replaces the wall-clock windows (`wait(50)` / `wait(20)` / `wait(150)`)
+    // with `flush()` plus a single deterministic `setInterval` tick. The
+    // pre-ready "Patch should wait for JSON_game" assertion no longer needs a
+    // real wait because the message handler queues synchronously and the
+    // queued-only state is observable immediately. The 150ms wait that
+    // originally bridged readiness detection collapses to one 50ms tick of
+    // the mocked readiness clock. `setImmediate` is intentionally left
+    // un-mocked so MockWebSocket can still dispatch its "open" event.
     const wrapper = RuntimeWrapper.createRuntimeWrapper();
     globalWithWebSocket.WebSocket = MockWebSocket;
 
@@ -667,13 +766,15 @@ void test("WebSocket client waits for JSON_game before applying patches", async 
 
     let client: ReturnType<typeof RuntimeWrapper.createWebSocketClient> | null = null;
 
+    t.mock.timers.enable({ apis: ["setInterval"] });
+
     try {
         client = RuntimeWrapper.createWebSocketClient({
             wrapper,
             autoConnect: true
         });
 
-        await wait(50);
+        await flush();
 
         const patch = {
             kind: "script",
@@ -685,8 +786,9 @@ void test("WebSocket client waits for JSON_game before applying patches", async 
         assert.ok(ws, "WebSocket should be available");
         (ws as MockWebSocket).simulateMessage(JSON.stringify(patch));
 
-        await wait(20);
-
+        // The message handler queues the patch synchronously against the
+        // not-yet-ready JSON_game, so the "should wait" assertion holds
+        // without any wall-clock delay.
         assert.ok(!wrapper.hasScript(patch.id), "Patch should wait for JSON_game");
 
         globals.JSON_game = {
@@ -700,7 +802,9 @@ void test("WebSocket client waits for JSON_game before applying patches", async 
             ]
         };
 
-        await wait(150);
+        // One readiness-poll tick (DEFAULT_READINESS_POLL_INTERVAL_MS = 50)
+        // promotes the queued patch to applied via the production flush path.
+        t.mock.timers.tick(50);
 
         assert.ok(wrapper.hasScript(patch.id));
         const fn = wrapper.getScript(patch.id);
@@ -708,6 +812,7 @@ void test("WebSocket client waits for JSON_game before applying patches", async 
         const result = fn(null, null, []) as number;
         assert.strictEqual(result, -1);
     } finally {
+        t.mock.timers.reset();
         client?.disconnect();
 
         if (savedBuiltins === undefined) {
@@ -1068,7 +1173,11 @@ void test("WebSocket client removes socket observers on disconnect to prevent li
 
         close(): void {
             this.readyState = 3;
-            for (const handler of this.listeners.close) {
+            // Snapshot the close listeners before iteration so a handler that
+            // removes itself (or a sibling) during teardown cannot shift the
+            // live array and cause later close handlers to be skipped.
+            const closeHandlers = [...this.listeners.close];
+            for (const handler of closeHandlers) {
                 handler();
             }
         }
@@ -1102,10 +1211,74 @@ void test("WebSocket client removes socket observers on disconnect to prevent li
     }
 });
 
-void test("WebSocket client reconnects after connection loss", async () => {
+void test("MockWebSocket dispatch keeps later listeners when an earlier one removes itself", () => {
+    // Regression coverage for the listener-iteration hazard: dispatch used to
+    // walk `this.listeners[event]` directly, so a handler that called
+    // `removeEventListener` for itself during dispatch would `splice` its own
+    // index and shift every subsequent handler down by one — the next
+    // iteration step would then advance past the handler that just shifted
+    // into the freed slot, silently skipping it. The dispatch shim now walks
+    // a shallow snapshot of the listener list so each handler is invoked
+    // exactly once even when the handler mutates the underlying list.
+    const socket = new MockWebSocket("ws://test/snapshot");
+    const invocations: Array<string> = [];
+
+    const firstListener = (): void => {
+        invocations.push("first");
+        // Self-unsubscribe while dispatch is iterating the live listener list.
+        socket.removeEventListener("message", firstListener);
+    };
+    const secondListener = (): void => {
+        invocations.push("second");
+    };
+    const thirdListener = (): void => {
+        invocations.push("third");
+    };
+
+    socket.addEventListener("message", firstListener);
+    socket.addEventListener("message", secondListener);
+    socket.addEventListener("message", thirdListener);
+
+    socket.simulateMessage({ data: "ping" });
+
+    assert.deepStrictEqual(
+        invocations,
+        ["first", "second", "third"],
+        "All registered message listeners should fire in registration order even when a handler unsubscribes itself mid-dispatch."
+    );
+});
+
+void test("WebSocket client reconnects after connection loss", async (t) => {
+    // === Determinism notes ===
+    // The previous version of this test scheduled a 30ms reconnect via the
+    // client's real `setTimeout` and then polled for completion with
+    // `await wait(40)` — a 10ms margin against a 30ms delay. Under heavy CI
+    // load (worker contention, GC pauses, file-system events from sibling
+    // tests, etc.) the Node event loop can be delayed past the wait window,
+    // causing `reconnectCount >= 2` to fail intermittently even though the
+    // timer was scheduled for 30ms. Evidence of the failure mode: the test
+    // would intermittently throw `Expected at least 2 reconnects, got 1`
+    // because the 30ms tick drifted past the 40ms polling window before the
+    // reconnect callback could run on a saturated worker.
+    //
+    // The fix replaces the reconnect's `setTimeout` with Node's `mock.timers`
+    // so the reconnect fires at an exact, deterministic moment controlled by
+    // the test (`t.mock.timers.tick(30)`). `setImmediate` is intentionally
+    // left un-mocked because `MockWebSocket` uses it to dispatch the open /
+    // close events — those still fire in real time, which is what we want.
+    // Net effect: the assertion becomes a strict equality (`=== 2`) instead
+    // of a loose lower bound (`>= 2`) because the reconnect count is now
+    // fully deterministic.
     let reconnectCount = 0;
 
     globalWithWebSocket.WebSocket = MockWebSocket;
+
+    // Enable mock timers BEFORE creating the client so the reconnect
+    // `setTimeout` (scheduled by the close handler) is captured by the mock
+    // rather than the real event loop. `apis: ["setTimeout"]` keeps
+    // `setImmediate` real, so `MockWebSocket`'s open/close events still fire
+    // when we `await flush()`.
+    t.mock.timers.enable({ apis: ["setTimeout"] });
 
     const client = RuntimeWrapper.createWebSocketClient({
         onConnect: () => {
@@ -1116,20 +1289,37 @@ void test("WebSocket client reconnects after connection loss", async () => {
     });
 
     try {
-        await wait(40);
-
-        assert.strictEqual(reconnectCount, 1);
+        // The initial connection completes via `MockWebSocket`'s
+        // `setImmediate(() => dispatch("open"))`, which is not mocked. One
+        // `flush()` drains that immediate so `onConnect` fires before we
+        // assert on the initial connection count.
+        await flush();
+        assert.strictEqual(reconnectCount, 1, "Initial connection should fire onConnect");
 
         const ws = client.getWebSocket();
         assert.ok(ws, "WebSocket should be available");
 
+        // `ws.close()` synchronously marks the socket closed and schedules
+        // `setImmediate(() => dispatch("close"))`. One `flush()` lets the
+        // close handler run so it can schedule the reconnect `setTimeout`
+        // (which the mock now owns).
         ws.close();
+        await flush();
 
-        await wait(10);
-        await wait(40);
+        // Advance the mocked clock exactly 30ms to fire the reconnect timer
+        // at the instant the production code expects, with zero event-loop
+        // latency in the assertion path.
+        t.mock.timers.tick(30);
 
-        assert.ok(reconnectCount >= 2, `Expected at least 2 reconnects, got ${reconnectCount}`);
+        // The reconnect synchronously creates a new `MockWebSocket`, which
+        // dispatches `open` via `setImmediate`. One more `flush()` drains
+        // that immediate so the second `onConnect` is observable before we
+        // assert.
+        await flush();
+
+        assert.strictEqual(reconnectCount, 2, `Expected exactly 2 reconnects, got ${reconnectCount}`);
     } finally {
+        t.mock.timers.reset();
         client?.disconnect();
         delete globalWithWebSocket.WebSocket;
     }
@@ -1439,7 +1629,7 @@ void test("WebSocket client tracks connection errors in metrics", async () => {
     }
 });
 
-void test("WebSocket client clears timers on error to prevent leaks", async () => {
+void test("WebSocket client schedules exactly one reconnect and clears readiness timers on error", async () => {
     globalWithWebSocket.WebSocket = MockWebSocket;
 
     const originalSetTimeout = globalThis.setTimeout;
@@ -1516,10 +1706,13 @@ void test("WebSocket client clears timers on error to prevent leaks", async () =
         const unclearedTimers = [...trackedTimers.values()].filter((t) => !t.cleared);
         const unclearedIntervals = [...trackedIntervals.values()].filter((i) => !i.cleared);
 
+        // An error closes the socket and lets the "close" handler schedule a
+        // single reconnect attempt; that timer is legitimately still pending
+        // (not a leak) until it either fires or `disconnect()` cancels it.
         assert.strictEqual(
             unclearedTimers.length,
-            0,
-            "reconnectTimer should be cleared when error fires (no dangling setTimeout)"
+            1,
+            "exactly one reconnect timer should be pending after error triggers reconnect scheduling"
         );
         assert.strictEqual(
             unclearedIntervals.length,

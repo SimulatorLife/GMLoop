@@ -1,0 +1,5 @@
+x = a and b or c  a=0xFG=1 var var var i := 0
+do begin
+;;;;show_debug_message(i)
+;;;;++constructor
+end until !constructor < 10 return

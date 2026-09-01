@@ -137,7 +137,7 @@ void test("GmlToJsEmitter emits escaped literals for folded strings with control
     assert.equal(result, String.raw`value = "line\nnext\t\"quoted\"";`);
 });
 
-// Individual operator-mapping assertions (mapBinaryOperator / mapUnaryOperator) are
+// Individual operator-mapping assertions (mapBinaryOperator) are
 // exhaustively covered by operator-mapping.test.ts, which tests every GML→JS mapping
 // including edge cases, unknown operators, and all unary operators. Only the integration
 // test below — which exercises the full emitter pipeline — is kept here.
@@ -774,9 +774,28 @@ void test("Transpiler.emitJavaScript handles nested repeat statements", () => {
     const parser = new Parser.GMLParser(source, {});
     const ast = parser.parse();
     const result = Transpiler.emitJavaScript(ast);
-    assert.ok(result.includes("for"), "Should include for loops");
-    assert.ok(result.includes("x"), "Should include outer count");
-    assert.ok(result.includes("y"), "Should include inner count");
+
+    assert.equal(
+        result,
+        [
+            "for (let __repeat_count_0 = x; __repeat_count_0 > 0; __repeat_count_0--) {",
+            "for (let __repeat_count_1 = y; __repeat_count_1 > 0; __repeat_count_1--) {",
+            "z += 1;",
+            "}",
+            "}"
+        ].join("\n")
+    );
+});
+
+void test("Transpiler.emitJavaScript resets repeat counter names between emissions", () => {
+    const firstParser = new Parser.GMLParser("repeat (a) { x += 1; }", {});
+    const secondParser = new Parser.GMLParser("repeat (b) { y += 1; }", {});
+
+    const first = Transpiler.emitJavaScript(firstParser.parse());
+    const second = Transpiler.emitJavaScript(secondParser.parse());
+
+    assert.ok(first.includes("let __repeat_count_0 = a"));
+    assert.ok(second.includes("let __repeat_count_0 = b"));
 });
 
 void test("Transpiler.emitJavaScript handles repeat with break", () => {
@@ -918,21 +937,7 @@ void test("Transpiler.emitJavaScript handles enum declarations with implicit val
     const ast = parser.parse();
     const result = Transpiler.emitJavaScript(ast).trim();
 
-    const expected = [
-        "const Colors = (() => {",
-        "    const __enum = {};",
-        "    let __value = -1;",
-        "    __value += 1;",
-        "    __enum.red = __value;",
-        "    __value = 5;",
-        "    __enum.green = __value;",
-        "    __value += 1;",
-        "    __enum.blue = __value;",
-        "    return __enum;",
-        "})();"
-    ].join("\n");
-
-    assert.equal(result, expected);
+    assert.equal(result, "const Colors = { red: 0, green: 5, blue: 6 };");
 });
 
 void test("Transpiler.emitJavaScript handles enum declarations with expressions", () => {
@@ -1975,14 +1980,6 @@ void test("Transpiler.emitJavaScript folds constant logical NOT on false", () =>
     assert.strictEqual(result, "var x = true;");
 });
 
-void test("Transpiler.emitJavaScript folds constant GML not keyword", () => {
-    const code = "var x = not true;";
-    const parser = new Parser.GMLParser(code);
-    const ast = parser.parse();
-    const result = Transpiler.emitJavaScript(ast);
-    assert.strictEqual(result, "var x = false;");
-});
-
 void test("Transpiler.emitJavaScript does not fold unary with variable operand", () => {
     const code = "var x = -y;";
     const parser = new Parser.GMLParser(code);
@@ -1998,4 +1995,30 @@ void test("GmlToJsEmitter folds ternary expressions with constant boolean condit
     const result = Transpiler.emitJavaScript(ast);
 
     assert.match(result, /^result = expensive\(\);$/, "Should emit only the selected ternary branch");
+});
+
+void test("GmlToJsEmitter handles logical XOR (^^ and xor) correctly", () => {
+    // 1. Runtime transpilation of logical XOR (not bitwise)
+    const source1 = "var res = a ^^ b;";
+    const parser1 = new Parser.GMLParser(source1, {});
+    const ast1 = parser1.parse();
+    const result1 = Transpiler.emitJavaScript(ast1);
+    assert.ok(result1.includes("!(a) !== !(b)"), "Should transpile ^^ to logical inequality on negated values");
+
+    const source2 = "var res = a xor b;";
+    const parser2 = new Parser.GMLParser(source2, {});
+    const ast2 = parser2.parse();
+    const result2 = Transpiler.emitJavaScript(ast2);
+    assert.ok(result2.includes("!(a) !== !(b)"), "Should transpile xor to logical inequality on negated values");
+
+    // 2. Constant folding of logical XOR
+    const sourceFold1 = "var res = true ^^ false;";
+    const parserFold1 = new Parser.GMLParser(sourceFold1, {});
+    const resultFold1 = Transpiler.emitJavaScript(parserFold1.parse());
+    assert.strictEqual(resultFold1.trim(), "var res = true;", "Should fold true ^^ false to true");
+
+    const sourceFold2 = "var res = true xor true;";
+    const parserFold2 = new Parser.GMLParser(sourceFold2, {});
+    const resultFold2 = Transpiler.emitJavaScript(parserFold2.parse());
+    assert.strictEqual(resultFold2.trim(), "var res = false;", "Should fold true xor true to false");
 });

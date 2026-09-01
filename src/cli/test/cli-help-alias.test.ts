@@ -220,3 +220,22 @@ void describe("FORMAT_ACTION constant", () => {
         assert.strictEqual(FORMAT_ACTION, "format");
     });
 });
+
+void describe("isHelpRequest canonical location", () => {
+    void it("matches the format command's helper so target-path help aliases reuse the canonical implementation", () => {
+        // Regression: previously the format command imported `isHelpRequest` from
+        // `target-path-resolution.ts` where it was duplicated verbatim. Both
+        // implementations are now consolidated into
+        // `cli-argument-normalization.ts` so a single function governs every
+        // help-flags-as-path branch in the CLI.
+        assert.strictEqual(typeof isHelpRequest, "function");
+        assert.strictEqual(isHelpRequest("--help"), true);
+        assert.strictEqual(isHelpRequest("-h"), true);
+        assert.strictEqual(isHelpRequest("help"), true);
+        assert.strictEqual(isHelpRequest("  --Help  "), true);
+        assert.strictEqual(isHelpRequest("--write"), false);
+        assert.strictEqual(isHelpRequest(""), false);
+        assert.strictEqual(isHelpRequest(null), false);
+        assert.strictEqual(isHelpRequest(undefined), false);
+    });
+});

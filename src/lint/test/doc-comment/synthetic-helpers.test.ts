@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { getArgumentIndexFromReferenceNode, resolveParameterName } from "../../src/doc-comment/index.js";
+import {
+    getArgumentIndexFromReferenceNode,
+    getIdentifierFromParameterNode,
+    resolveParameterName
+} from "../../src/doc-comment/index.js";
 
 void describe("getArgumentIndexFromReferenceNode", () => {
     void it("returns the index for argumentN identifiers", () => {
@@ -122,5 +126,75 @@ void describe("resolveParameterName", () => {
 
     void it("returns undefined for array input", () => {
         assert.strictEqual(resolveParameterName([]), undefined);
+    });
+});
+
+void describe("getIdentifierFromParameterNode", () => {
+    void it("returns the Identifier node when given an Identifier parameter", () => {
+        const param = { type: "Identifier", name: "foo" };
+        assert.strictEqual(getIdentifierFromParameterNode(param), param);
+    });
+
+    void it("returns the inner Identifier for DefaultParameter with Identifier left", () => {
+        const innerIdentifier = { type: "Identifier", name: "bar" };
+        assert.strictEqual(
+            getIdentifierFromParameterNode({
+                type: "DefaultParameter",
+                left: innerIdentifier,
+                right: { type: "Literal", value: "0" }
+            }),
+            innerIdentifier
+        );
+    });
+
+    void it("returns the inner Identifier for AssignmentPattern with Identifier left", () => {
+        const innerIdentifier = { type: "Identifier", name: "baz" };
+        assert.strictEqual(
+            getIdentifierFromParameterNode({
+                type: "AssignmentPattern",
+                left: innerIdentifier,
+                right: { type: "Literal", value: "undefined" }
+            }),
+            innerIdentifier
+        );
+    });
+
+    void it("returns the nested id record when the identifier is nested under left.id", () => {
+        const innerId = { name: "qux" };
+        assert.strictEqual(
+            getIdentifierFromParameterNode({
+                type: "DefaultParameter",
+                left: { id: innerId },
+                right: null
+            }),
+            innerId
+        );
+    });
+
+    void it("returns null for unknown node types", () => {
+        assert.strictEqual(getIdentifierFromParameterNode({ type: "RestElement", name: "args" }), null);
+    });
+
+    void it("returns null for null input", () => {
+        assert.strictEqual(getIdentifierFromParameterNode(null), null);
+    });
+
+    void it("returns null for undefined input", () => {
+        assert.strictEqual(getIdentifierFromParameterNode(undefined), null);
+    });
+
+    void it("returns null for non-object input", () => {
+        assert.strictEqual(getIdentifierFromParameterNode("not-an-object"), null);
+    });
+
+    void it("returns null when DefaultParameter has no usable left", () => {
+        assert.strictEqual(getIdentifierFromParameterNode({ type: "DefaultParameter", left: null, right: null }), null);
+    });
+
+    void it("returns null when DefaultParameter left has no Identifier or id", () => {
+        assert.strictEqual(
+            getIdentifierFromParameterNode({ type: "DefaultParameter", left: { type: "Pattern" }, right: null }),
+            null
+        );
     });
 });

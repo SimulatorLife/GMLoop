@@ -39,6 +39,7 @@ export const DEFAULT_PROJECT_EXCLUDES: Required<ProjectExcludeRules> = Object.fr
         ".gradle",
         ".idea",
         ".vscode",
+        "cache",
         "dist",
         "node_modules",
         "reports",

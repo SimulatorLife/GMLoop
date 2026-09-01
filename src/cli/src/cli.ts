@@ -25,31 +25,23 @@ import {
     normalizeCommandLineArguments,
     resolveDefaultAction
 } from "./cli-core/cli-argument-normalization.js";
-import { type CliCatalogEntry, createCliCommandCatalog } from "./cli-core/command-catalog.js";
+import { createCliCommandCatalogRuntime, registerCliCommandCatalogRuntime } from "./cli-core/cli-catalog-runtime.js";
 import { createCliCommandManager } from "./cli-core/command-manager.js";
 import { applyStandardCommandOptions } from "./cli-core/command-standard-options.js";
 import { handleCliError } from "./cli-core/errors.js";
-import { createMcpToolCatalogEntries, type McpToolCatalogEntry } from "./cli-core/mcp-tool-catalog.js";
+import {
+    isCliEntrypointModule,
+    isNodeTestRunnerProcess,
+    shouldAutoRunCliProcess
+} from "./cli-core/main-module-runner.js";
 import { resolveCliVersion } from "./cli-core/version.js";
 import { __formatTest__ } from "./commands/format.js";
+import { __refactorTest__ } from "./commands/refactor.js";
 import { __runtimeTestHelpers__ as __runtimeTest__, parseRuntimeValue } from "./commands/runtime.js";
-import { isCliRunSkipped, SKIP_CLI_RUN_ENV_VAR } from "./shared/skip-cli-run.js";
+import { SKIP_CLI_RUN_ENV_VAR } from "./shared/skip-cli-run.js";
 
 function normalizeWriteChunk(chunk: string | Uint8Array, encoding?: BufferEncoding): string {
     return typeof chunk === "string" ? chunk : Buffer.from(chunk).toString(encoding);
-}
-
-function isNodeTestRunnerProcess(execArguments: ReadonlyArray<string> = process.execArgv): boolean {
-    return execArguments.some(
-        (argument) => argument === "--test" || argument.startsWith("--test=") || argument.startsWith("--test-")
-    );
-}
-
-function shouldAutoRunCliProcess(
-    env: NodeJS.ProcessEnv = process.env,
-    execArguments: ReadonlyArray<string> = process.execArgv
-): boolean {
-    return !isCliRunSkipped(env) && !isNodeTestRunnerProcess(execArguments);
 }
 
 const program = applyStandardCommandOptions(new Command())
@@ -269,19 +261,18 @@ export function runCliTestCommand(options: RunCliTestCommandOptions = {}) {
     return runCliCommandCapture(options);
 }
 
-export function getCliCommandCatalog(): ReadonlyArray<CliCatalogEntry> {
-    return Object.freeze(createCliCommandCatalog(program));
-}
+const cliCommandCatalogRuntime = createCliCommandCatalogRuntime(program);
+registerCliCommandCatalogRuntime(cliCommandCatalogRuntime);
 
-export function getMcpToolCatalogEntries(): ReadonlyArray<McpToolCatalogEntry> {
-    return createMcpToolCatalogEntries(getCliCommandCatalog());
-}
+export { getCliCommandCatalog, getMcpToolCatalogEntries } from "./cli-core/cli-catalog-runtime.js";
 
 export const __test__ = Object.freeze({
     ...__formatTest__,
+    ...__refactorTest__,
     ...__runtimeTest__,
-    getMcpToolCatalogEntries,
-    getCliCommandCatalog,
+    getMcpToolCatalogEntries: cliCommandCatalogRuntime.getMcpToolCatalogEntries,
+    getCliCommandCatalog: cliCommandCatalogRuntime.getCliCommandCatalog,
+    isCliEntrypointModule,
     isNodeTestRunnerProcess,
     normalizeCommandLineArguments,
     parseRuntimeValue,
@@ -291,10 +282,12 @@ export const __test__ = Object.freeze({
 registerCliCommands({
     defaultCommandName: FORMAT_ACTION,
     env: process.env,
+    getCliCommandCatalog: cliCommandCatalogRuntime.getCliCommandCatalog,
+    getMcpToolCatalogEntries: cliCommandCatalogRuntime.getMcpToolCatalogEntries,
     registry: cliCommandRegistry
 });
 
-if (shouldAutoRunCliProcess()) {
+if (shouldAutoRunCliProcess(process.env, process.execArgv, process.argv[1], import.meta.url)) {
     const normalizedArguments = normalizeCommandLineArguments(process.argv.slice(2));
 
     try {

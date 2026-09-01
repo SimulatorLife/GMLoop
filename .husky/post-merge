@@ -1,0 +1,9 @@
+set -eu
+if [ -x "$HOME/.githooks/post-merge" ]; then
+  echo "Chaining to global post-merge hook"
+  chain="${GIT_HOOK_CHAIN:-0}"
+  chain=$((chain + 1))
+  GIT_HOOK_CHAIN="$chain" "$HOME/.githooks/post-merge" "$@" || true
+fi
+
+pnpm run skill:repomix

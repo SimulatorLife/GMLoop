@@ -82,6 +82,124 @@ void describe("GmlSemanticBridge tests", () => {
         assert.strictEqual(occurrences[0].kind, Refactor.OccurrenceKind.REFERENCE);
     });
 
+    void it("does not resolve explicit script resource ids through same-name callable symbols", () => {
+        const mockProjectIndex = {
+            identifiers: {
+                scripts: {
+                    "scope:script:Attack": {
+                        identifierId: "script:Attack",
+                        name: "Attack",
+                        resourcePath: "scripts/attack/attack.yy",
+                        declarations: [
+                            {
+                                name: "Attack",
+                                filePath: "scripts/attack/attack.gml",
+                                start: { index: 9 },
+                                end: { index: 14 },
+                                classifications: ["identifier", "declaration", "constructor"]
+                            }
+                        ],
+                        references: [
+                            {
+                                filePath: "objects/obj_crab_large/Create_0.gml",
+                                name: "Attack",
+                                start: { index: 20 },
+                                end: { index: 25 }
+                            }
+                        ]
+                    }
+                }
+            },
+            resources: {
+                "scripts/attack/attack.yy": {
+                    name: "Attack",
+                    path: "scripts/attack/attack.yy",
+                    resourceType: "GMScript"
+                }
+            }
+        };
+
+        const bridge = new GmlSemanticBridge(mockProjectIndex, "/tmp");
+
+        assert.deepEqual(bridge.getSymbolOccurrences("Attack", "gml/scripts/Attack"), []);
+        assert.deepEqual(
+            bridge.getSymbolOccurrences("Attack", "gml/script/Attack").map((occurrence) => ({
+                kind: occurrence.kind,
+                path: occurrence.path,
+                start: occurrence.start,
+                end: occurrence.end
+            })),
+            [
+                {
+                    kind: Refactor.OccurrenceKind.DEFINITION,
+                    path: "scripts/attack/attack.gml",
+                    start: 9,
+                    end: 15
+                },
+                {
+                    kind: Refactor.OccurrenceKind.REFERENCE,
+                    path: "objects/obj_crab_large/Create_0.gml",
+                    start: 20,
+                    end: 26
+                }
+            ]
+        );
+    });
+
+    void it("listNamingConventionTargets skips constructor-backed script resource names when declarations are missing", async () => {
+        const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "gml-semantic-bridge-constructor-resource-"));
+
+        try {
+            fs.mkdirSync(path.join(tmpRoot, "scripts", "attack"), { recursive: true });
+            fs.writeFileSync(
+                path.join(tmpRoot, "scripts", "attack", "attack.gml"),
+                [
+                    "function Attack(knockback = 0) : Object() constructor {",
+                    "    self.knockback = knockback;",
+                    "}",
+                    ""
+                ].join("\n")
+            );
+
+            const mockProjectIndex = {
+                identifiers: {
+                    scripts: {
+                        "scope:script:Attack": {
+                            identifierId: "script:Attack",
+                            name: "Attack",
+                            resourcePath: "scripts/attack/attack.yy",
+                            declarations: [],
+                            references: []
+                        }
+                    }
+                },
+                resources: {
+                    "scripts/attack/attack.yy": {
+                        name: "Attack",
+                        path: "scripts/attack/attack.yy",
+                        resourceType: "GMScript"
+                    }
+                }
+            };
+
+            const bridge = new GmlSemanticBridge(mockProjectIndex, tmpRoot);
+            const targets = await bridge.listNamingConventionTargets();
+
+            assert.ok(
+                !targets.some(
+                    (target) =>
+                        target.category === "scriptResourceName" &&
+                        target.symbolId === "gml/scripts/Attack" &&
+                        target.name === "Attack"
+                ),
+                "constructor-backed script resource should not be treated as a script resource naming target"
+            );
+            assert.deepEqual(bridge.getSymbolOccurrences("Attack", "gml/scripts/Attack"), []);
+        } finally {
+            fs.rmSync(tmpRoot, { recursive: true, force: true });
+        }
+    });
+
     void it("normalizes semantic end indexes to exclusive naming convention occurrences", async () => {
         const mockProjectIndex = {
             identifiers: {
@@ -117,6 +235,117 @@ void describe("GmlSemanticBridge tests", () => {
         assert.strictEqual(xTarget?.occurrences?.[0]?.end, 22);
         assert.strictEqual(xTarget?.occurrences?.[1]?.start, 40);
         assert.strictEqual(xTarget?.occurrences?.[1]?.end, 42);
+    });
+
+    void it("listNamingConventionTargets includes enum-member references in GameMaker metadata", async () => {
+        const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "gml-semantic-bridge-enum-metadata-"));
+        const enumFilePath = "scripts/block_defs/block_defs.gml";
+        const objectMetadataPath = "objects/obj_slope/obj_slope.yy";
+        const roomMetadataPath = "rooms/rm_level/rm_level.yy";
+        const objectMetadataSource = `${JSON.stringify(
+            {
+                name: "obj_slope",
+                resourceType: "GMObject",
+                properties: [
+                    { value: "eBlockType.slope_r" },
+                    { value: "eBlockType.slope_ramp" },
+                    { value: "OtherEnum.slope_r" }
+                ]
+            },
+            null,
+            2
+        )}\n`;
+        const roomMetadataSource = `${JSON.stringify(
+            {
+                name: "rm_level",
+                resourceType: "GMRoom",
+                instances: [{ properties: [{ value: "eBlockType.slope_r" }] }]
+            },
+            null,
+            2
+        )}\n`;
+
+        fs.mkdirSync(path.join(tmpRoot, "scripts", "block_defs"), { recursive: true });
+        fs.mkdirSync(path.join(tmpRoot, "objects", "obj_slope"), { recursive: true });
+        fs.mkdirSync(path.join(tmpRoot, "rooms", "rm_level"), { recursive: true });
+        fs.writeFileSync(path.join(tmpRoot, enumFilePath), "enum eBlockType { slope_r }\n", "utf8");
+        fs.writeFileSync(path.join(tmpRoot, objectMetadataPath), objectMetadataSource, "utf8");
+        fs.writeFileSync(path.join(tmpRoot, roomMetadataPath), roomMetadataSource, "utf8");
+
+        const declarationStart = "enum eBlockType { ".length;
+        const objectMetadataReferenceStart = objectMetadataSource.indexOf("eBlockType.slope_r") + "eBlockType.".length;
+        const objectPartialReferenceStart =
+            objectMetadataSource.indexOf("eBlockType.slope_ramp") + "eBlockType.".length;
+        const roomMetadataReferenceStart = roomMetadataSource.indexOf("eBlockType.slope_r") + "eBlockType.".length;
+        const mockProjectIndex = {
+            identifiers: {
+                enumMembers: {
+                    "enum-member:eBlockType:slope_r": {
+                        identifierId: "enum-member:eBlockType:slope_r",
+                        enumName: "eBlockType",
+                        name: "slope_r",
+                        declarations: [
+                            {
+                                name: "slope_r",
+                                filePath: enumFilePath,
+                                start: { index: declarationStart },
+                                end: { index: declarationStart + "slope_r".length - 1 }
+                            }
+                        ],
+                        references: []
+                    }
+                }
+            },
+            resources: {
+                [objectMetadataPath]: {
+                    path: objectMetadataPath,
+                    name: "obj_slope",
+                    resourceType: "GMObject"
+                },
+                [roomMetadataPath]: {
+                    path: roomMetadataPath,
+                    name: "rm_level",
+                    resourceType: "GMRoom"
+                }
+            }
+        };
+
+        try {
+            const bridge = new GmlSemanticBridge(mockProjectIndex, tmpRoot);
+            const targets = await bridge.listNamingConventionTargets();
+            const enumMemberTarget = targets.find(
+                (target) => target.category === "enumMember" && target.name === "slope_r"
+            );
+
+            assert.ok(enumMemberTarget, "Expected slope_r enum member target");
+            assert.ok(
+                enumMemberTarget.occurrences.some(
+                    (occurrence) =>
+                        occurrence.path === objectMetadataPath &&
+                        occurrence.start === objectMetadataReferenceStart &&
+                        occurrence.end === objectMetadataReferenceStart + "slope_r".length
+                ),
+                "Expected object metadata enum member value to be included"
+            );
+            assert.ok(
+                enumMemberTarget.occurrences.some(
+                    (occurrence) =>
+                        occurrence.path === roomMetadataPath &&
+                        occurrence.start === roomMetadataReferenceStart &&
+                        occurrence.end === roomMetadataReferenceStart + "slope_r".length
+                ),
+                "Expected room metadata enum member value to be included"
+            );
+            assert.ok(
+                !enumMemberTarget.occurrences.some(
+                    (occurrence) =>
+                        occurrence.path === objectMetadataPath && occurrence.start === objectPartialReferenceStart
+                ),
+                "Expected partial enum member metadata values to be ignored"
+            );
+        } finally {
+            fs.rmSync(tmpRoot, { recursive: true, force: true });
+        }
     });
 
     void it("listNamingConventionTargets does not treat enum-member references as local variable occurrences", async () => {
@@ -336,6 +565,14 @@ void describe("GmlSemanticBridge tests", () => {
                 "function input_value_is_binding_legacy(_value) {",
                 '    return instanceof(_value) == "__input_class_binding";',
                 "}",
+                "",
+                "function input_value_uses_static_binding() {",
+                '    return struct_get(static_get(__input_class_binding), "set_text");',
+                "}",
+                "",
+                "function input_value_calls_static_binding() {",
+                '    scr_call_static(__input_class_binding, "reset");',
+                "}",
                 ""
             ].join("\n");
             fs.writeFileSync(
@@ -347,10 +584,12 @@ void describe("GmlSemanticBridge tests", () => {
             const bridge = new GmlSemanticBridge(projectIndex, tmpRoot);
             const occurrences = bridge.getSymbolOccurrences(
                 "__input_class_binding",
-                "gml/scripts/__input_class_binding"
+                "gml/script/__input_class_binding"
             );
             const bareTypeReferenceStart = findNthIndex(consumerSource, "__input_class_binding", 1);
             const stringTypeReferenceStart = findNthIndex(consumerSource, "__input_class_binding", 2);
+            const staticGetReferenceStart = findNthIndex(consumerSource, "__input_class_binding", 3);
+            const staticCallReferenceStart = findNthIndex(consumerSource, "__input_class_binding", 4);
 
             assert.ok(
                 occurrences.some(
@@ -371,6 +610,102 @@ void describe("GmlSemanticBridge tests", () => {
                         occurrence.kind === Refactor.OccurrenceKind.REFERENCE
                 ),
                 "expected instanceof string comparison to be reported as an occurrence"
+            );
+            assert.ok(
+                occurrences.some(
+                    (occurrence) =>
+                        occurrence.path === "scripts/input_value_is_binding/input_value_is_binding.gml" &&
+                        occurrence.start === staticGetReferenceStart &&
+                        occurrence.end === staticGetReferenceStart + "__input_class_binding".length &&
+                        occurrence.kind === Refactor.OccurrenceKind.REFERENCE
+                ),
+                "expected static_get constructor reference to be reported as an occurrence"
+            );
+            assert.ok(
+                occurrences.some(
+                    (occurrence) =>
+                        occurrence.path === "scripts/input_value_is_binding/input_value_is_binding.gml" &&
+                        occurrence.start === staticCallReferenceStart &&
+                        occurrence.end === staticCallReferenceStart + "__input_class_binding".length &&
+                        occurrence.kind === Refactor.OccurrenceKind.REFERENCE
+                ),
+                "expected scr_call_static constructor reference to be reported as an occurrence"
+            );
+        } finally {
+            fs.rmSync(tmpRoot, { recursive: true, force: true });
+        }
+    });
+
+    void it("getSymbolOccurrences includes the matching callable in multi-callable script callable renames", async () => {
+        const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "gml-semantic-bridge-multi-callable-resource-"));
+        const scriptMetadataPath = "scripts/Attack/Attack.yy";
+        const scriptSourcePath = "scripts/Attack/Attack.gml";
+        const scriptSource = [
+            "function Attack() constructor {}",
+            "function AttackProjectileCircle() : Attack() constructor {}",
+            ""
+        ].join("\n");
+
+        try {
+            fs.mkdirSync(path.join(tmpRoot, "scripts", "Attack"), { recursive: true });
+            fs.writeFileSync(
+                path.join(tmpRoot, "MyGame.yyp"),
+                `${JSON.stringify(
+                    {
+                        name: "MyGame",
+                        resourceType: "GMProject",
+                        resources: [{ id: { name: "Attack", path: scriptMetadataPath } }]
+                    },
+                    null,
+                    2
+                )}\n`
+            );
+            fs.writeFileSync(
+                path.join(tmpRoot, scriptMetadataPath),
+                `${JSON.stringify(
+                    {
+                        name: "Attack",
+                        resourceType: "GMScript",
+                        resourcePath: scriptMetadataPath
+                    },
+                    null,
+                    2
+                )}\n`
+            );
+            fs.writeFileSync(path.join(tmpRoot, scriptSourcePath), scriptSource, "utf8");
+
+            const projectIndex = await Semantic.buildProjectIndex(tmpRoot);
+            const bridge = new GmlSemanticBridge(projectIndex, tmpRoot);
+            const occurrences = bridge.getSymbolOccurrences("Attack", "gml/script/Attack");
+            const declarationStart = scriptSource.indexOf("Attack");
+            const parentCallStart = scriptSource.lastIndexOf("Attack()");
+            const otherConstructorStart = scriptSource.indexOf("AttackProjectileCircle");
+
+            assert.ok(
+                occurrences.some(
+                    (occurrence) =>
+                        occurrence.path === scriptSourcePath &&
+                        occurrence.start === declarationStart &&
+                        occurrence.end === declarationStart + "Attack".length &&
+                        occurrence.kind === Refactor.OccurrenceKind.DEFINITION
+                ),
+                "expected the callable declaration matching the resource name"
+            );
+            assert.ok(
+                occurrences.some(
+                    (occurrence) =>
+                        occurrence.path === scriptSourcePath &&
+                        occurrence.start === parentCallStart &&
+                        occurrence.end === parentCallStart + "Attack".length &&
+                        occurrence.kind === Refactor.OccurrenceKind.REFERENCE
+                ),
+                "expected parent constructor call references to the matching callable"
+            );
+            assert.ok(
+                !occurrences.some(
+                    (occurrence) => occurrence.path === scriptSourcePath && occurrence.start === otherConstructorStart
+                ),
+                "expected other callables in the same script resource to remain independent"
             );
         } finally {
             fs.rmSync(tmpRoot, { recursive: true, force: true });
@@ -1994,10 +2329,25 @@ void describe("GmlSemanticBridge tests", () => {
                     name: "pth_enemy_route",
                     resourceType: "GMPath"
                 },
+                "sounds/snd_hit/snd_hit.yy": {
+                    path: "sounds/snd_hit/snd_hit.yy",
+                    name: "snd_hit",
+                    resourceType: "GMSound"
+                },
+                "sounds/snd_legacy/snd_legacy.yy": {
+                    path: "sounds/snd_legacy/snd_legacy.yy",
+                    name: "snd_legacy",
+                    resourceType: "GMAudio"
+                },
                 "animcurves/curve_attack_arc/curve_attack_arc.yy": {
                     path: "animcurves/curve_attack_arc/curve_attack_arc.yy",
                     name: "curve_attack_arc",
                     resourceType: "GMAnimCurve"
+                },
+                "animcurves/curve_legacy/curve_legacy.yy": {
+                    path: "animcurves/curve_legacy/curve_legacy.yy",
+                    name: "curve_legacy",
+                    resourceType: "GMAnimationCurve"
                 },
                 "sequences/seq_intro/seq_intro.yy": {
                     path: "sequences/seq_intro/seq_intro.yy",
@@ -2018,6 +2368,11 @@ void describe("GmlSemanticBridge tests", () => {
                     path: "notes/note_design/note_design.yy",
                     name: "note_design",
                     resourceType: "GMNote"
+                },
+                "notes/note_legacy/note_legacy.yy": {
+                    path: "notes/note_legacy/note_legacy.yy",
+                    name: "note_legacy",
+                    resourceType: "GMNotes"
                 },
                 "extensions/ext_physics/ext_physics.yy": {
                     path: "extensions/ext_physics/ext_physics.yy",
@@ -2168,10 +2523,15 @@ void describe("GmlSemanticBridge tests", () => {
         assert.ok(
             targets.some((target) => target.category === "pathResourceName" && target.name === "pth_enemy_route")
         );
+        assert.ok(targets.some((target) => target.category === "audioResourceName" && target.name === "snd_hit"));
+        assert.ok(targets.some((target) => target.category === "audioResourceName" && target.name === "snd_legacy"));
         assert.ok(
             targets.some(
                 (target) => target.category === "animationCurveResourceName" && target.name === "curve_attack_arc"
             )
+        );
+        assert.ok(
+            targets.some((target) => target.category === "animationCurveResourceName" && target.name === "curve_legacy")
         );
         assert.ok(targets.some((target) => target.category === "sequenceResourceName" && target.name === "seq_intro"));
         assert.ok(targets.some((target) => target.category === "tilesetResourceName" && target.name === "tile_world"));
@@ -2179,6 +2539,7 @@ void describe("GmlSemanticBridge tests", () => {
             targets.some((target) => target.category === "particleSystemResourceName" && target.name === "part_trail")
         );
         assert.ok(targets.some((target) => target.category === "noteResourceName" && target.name === "note_design"));
+        assert.ok(targets.some((target) => target.category === "noteResourceName" && target.name === "note_legacy"));
         assert.ok(
             targets.some((target) => target.category === "extensionResourceName" && target.name === "ext_physics")
         );
@@ -2235,6 +2596,232 @@ void describe("GmlSemanticBridge tests", () => {
 
         assert.ok(targets.some((target) => target.category === "constructorFunction" && target.name === "Vector3"));
         assert.ok(!targets.some((target) => target.category === "scriptResourceName" && target.name === "Vector3"));
+    });
+
+    void it("listNamingConventionTargets does not classify constructor names as variable targets", async () => {
+        const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "gml-semantic-bridge-constructor-naming-"));
+        const relativeFilePath = "scripts/use_health/use_health.gml";
+        const sourceText = [
+            "hp = new HealthConfig(1, 1);",
+            "hp.set_damage_for_type(eDamageType.roll, 1);  // Can take damage from player rolling into it",
+            ""
+        ].join("\n");
+        const constructorReferenceStart = sourceText.indexOf("HealthConfig");
+        const enumMemberReferenceStart = sourceText.indexOf("roll");
+
+        fs.mkdirSync(path.join(tmpRoot, "scripts", "use_health"), { recursive: true });
+        fs.writeFileSync(path.join(tmpRoot, relativeFilePath), sourceText, "utf8");
+
+        try {
+            const mockProjectIndex = {
+                resources: {
+                    "scripts/HealthConfig/HealthConfig.yy": {
+                        path: "scripts/HealthConfig/HealthConfig.yy",
+                        name: "HealthConfig",
+                        resourceType: "GMScript"
+                    }
+                },
+                identifiers: {
+                    scripts: {
+                        "scope:script:HealthConfig": {
+                            identifierId: "script:scope:script:HealthConfig",
+                            name: "HealthConfig",
+                            resourcePath: "scripts/HealthConfig/HealthConfig.yy",
+                            declarations: [
+                                {
+                                    name: "HealthConfig",
+                                    filePath: "scripts/HealthConfig/HealthConfig.gml",
+                                    classifications: ["function", "constructor", "struct"]
+                                }
+                            ]
+                        }
+                    },
+                    enumMembers: {
+                        "enum-member:eDamageType:roll": {
+                            identifierId: "enum-member:eDamageType:roll",
+                            enumName: "eDamageType",
+                            name: "roll",
+                            declarations: [
+                                {
+                                    name: "roll",
+                                    filePath: "scripts/damage_type/damage_type.gml",
+                                    start: { index: 24 },
+                                    end: { index: 27 }
+                                }
+                            ],
+                            references: [
+                                {
+                                    filePath: relativeFilePath,
+                                    start: { index: enumMemberReferenceStart },
+                                    end: { index: enumMemberReferenceStart + "roll".length - 1 }
+                                }
+                            ]
+                        }
+                    },
+                    globalVariables: {
+                        HealthConfig: {
+                            identifierId: "global:HealthConfig",
+                            name: "HealthConfig",
+                            declarations: [
+                                {
+                                    name: "HealthConfig",
+                                    filePath: relativeFilePath,
+                                    start: { index: constructorReferenceStart },
+                                    end: { index: constructorReferenceStart + "HealthConfig".length - 1 }
+                                }
+                            ]
+                        }
+                    },
+                    instanceVariables: {
+                        HealthConfig: {
+                            identifierId: "instance:HealthConfig",
+                            name: "HealthConfig",
+                            declarations: [
+                                {
+                                    name: "HealthConfig",
+                                    filePath: relativeFilePath,
+                                    start: { index: constructorReferenceStart },
+                                    end: { index: constructorReferenceStart + "HealthConfig".length - 1 }
+                                }
+                            ]
+                        }
+                    }
+                },
+                files: {
+                    [relativeFilePath]: {
+                        declarations: [
+                            {
+                                name: "HealthConfig",
+                                scopeId: "scope:event",
+                                classifications: ["variable"],
+                                start: { index: constructorReferenceStart },
+                                end: { index: constructorReferenceStart + "HealthConfig".length - 1 }
+                            }
+                        ],
+                        references: []
+                    }
+                },
+                scopes: {
+                    "scope:event": {
+                        kind: "function"
+                    }
+                }
+            };
+
+            const bridge = new GmlSemanticBridge(mockProjectIndex, tmpRoot);
+            const targets = await bridge.listNamingConventionTargets();
+
+            assert.ok(
+                targets.some((target) => target.category === "constructorFunction" && target.name === "HealthConfig"),
+                "Expected HealthConfig to remain a constructor naming target"
+            );
+            assert.ok(
+                targets.some((target) => target.category === "enumMember" && target.name === "roll"),
+                "Expected the enum member from the sample to remain renameable"
+            );
+            assert.ok(
+                !targets.some(
+                    (target) =>
+                        target.name === "HealthConfig" &&
+                        (target.category === "localVariable" ||
+                            target.category === "globalVariable" ||
+                            target.category === "instanceVariable")
+                ),
+                "Expected constructor names to be excluded from generic variable naming targets"
+            );
+        } finally {
+            fs.rmSync(tmpRoot, { recursive: true, force: true });
+        }
+    });
+
+    void it("listNamingConventionTargets uses semantic receiver resolution for constructor static members", async () => {
+        const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "gml-semantic-bridge-static-member-semantic-"));
+        const timerFilePath = "scripts/Timer/Timer.gml";
+        const curveFilePath = "scripts/CurveHandlerTimed/CurveHandlerTimed.gml";
+        const timerSource = [
+            "function Timer() constructor {",
+            "    self.multiplier = 1;",
+            "",
+            "    static get_multiplier = function() {",
+            "        return self.multiplier;",
+            "    };",
+            "}",
+            ""
+        ].join("\n");
+        const curveSource = [
+            "function CurveHandlerTimed() constructor {",
+            "    self.timer = new Timer();",
+            "",
+            "    static set_curve_config = function(speed_multiplier) {",
+            "        if (speed_multiplier != timer.get_multiplier()) {",
+            "            self.timer.get_multiplier();",
+            "        }",
+            "    };",
+            "}",
+            ""
+        ].join("\n");
+
+        try {
+            fs.mkdirSync(path.join(tmpRoot, "scripts", "Timer"), { recursive: true });
+            fs.mkdirSync(path.join(tmpRoot, "scripts", "CurveHandlerTimed"), { recursive: true });
+            fs.writeFileSync(
+                path.join(tmpRoot, "MyGame.yyp"),
+                `${JSON.stringify({ name: "MyGame", resourceType: "GMProject" }, null, 2)}\n`
+            );
+            fs.writeFileSync(
+                path.join(tmpRoot, "scripts", "Timer", "Timer.yy"),
+                `${JSON.stringify({ name: "Timer", resourceType: "GMScript" }, null, 2)}\n`
+            );
+            fs.writeFileSync(
+                path.join(tmpRoot, "scripts", "CurveHandlerTimed", "CurveHandlerTimed.yy"),
+                `${JSON.stringify({ name: "CurveHandlerTimed", resourceType: "GMScript" }, null, 2)}\n`
+            );
+            fs.writeFileSync(path.join(tmpRoot, timerFilePath), timerSource, "utf8");
+            fs.writeFileSync(path.join(tmpRoot, curveFilePath), curveSource, "utf8");
+
+            const declarationStart = findNthIndex(timerSource, "get_multiplier", 1);
+            const firstCallStart = findNthIndex(curveSource, "get_multiplier", 1);
+            const secondCallStart = findNthIndex(curveSource, "get_multiplier", 2);
+
+            const projectIndex = await Semantic.buildProjectIndex(tmpRoot);
+            const bridge = new GmlSemanticBridge(projectIndex, tmpRoot);
+            const targets = await bridge.listNamingConventionTargets([timerFilePath], ["staticVariable"]);
+            const target = targets.find(
+                (candidate) => candidate.category === "staticVariable" && candidate.name === "get_multiplier"
+            );
+
+            assert.ok(target);
+            assert.deepEqual(
+                target.occurrences.map((occurrence) => ({
+                    end: occurrence.end,
+                    kind: occurrence.kind,
+                    path: occurrence.path,
+                    start: occurrence.start
+                })),
+                [
+                    {
+                        end: declarationStart + "get_multiplier".length,
+                        kind: "definition",
+                        path: timerFilePath,
+                        start: declarationStart
+                    },
+                    {
+                        end: firstCallStart + "get_multiplier".length,
+                        kind: "reference",
+                        path: curveFilePath,
+                        start: firstCallStart
+                    },
+                    {
+                        end: secondCallStart + "get_multiplier".length,
+                        kind: "reference",
+                        path: curveFilePath,
+                        start: secondCallStart
+                    }
+                ]
+            );
+        } finally {
+            fs.rmSync(tmpRoot, { recursive: true, force: true });
+        }
     });
 
     void it("listNamingConventionTargets keeps plain functions in mixed multi-callable scripts out of structDeclaration fallback", async () => {
@@ -2393,6 +2980,147 @@ void describe("GmlSemanticBridge tests", () => {
                         path: "scripts/cm_aab/cm_aab.gml",
                         start: consumerSource.lastIndexOf("CM_RAY"),
                         end: consumerSource.lastIndexOf("CM_RAY") + "CM_RAY".length
+                    }
+                ]
+            );
+        } finally {
+            fs.rmSync(tmpRoot, { recursive: true, force: true });
+        }
+    });
+
+    void it("getSymbolOccurrences returns exact enum member ranges before comma-separated call arguments", async () => {
+        const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "gml-semantic-bridge-enum-member-call-"));
+
+        try {
+            const enumSource = ["enum eTestResultType {", "    console", "}", ""].join("\n");
+            const consumerSource = [
+                "function group_vertex_buffers() {",
+                "    func_run_test_group(test_cases_uvs, eTestResultType.console, false);",
+                "}",
+                ""
+            ].join("\n");
+
+            fs.mkdirSync(path.join(tmpRoot, "scripts", "group_test"), { recursive: true });
+            fs.mkdirSync(path.join(tmpRoot, "scripts", "group_vertex_buffers"), { recursive: true });
+            fs.writeFileSync(
+                path.join(tmpRoot, "MyGame.yyp"),
+                `${JSON.stringify({ name: "MyGame", resourceType: "GMProject" }, null, 2)}\n`
+            );
+            fs.writeFileSync(
+                path.join(tmpRoot, "scripts", "group_test", "group_test.yy"),
+                `${JSON.stringify({ name: "group_test", resourceType: "GMScript" }, null, 2)}\n`
+            );
+            fs.writeFileSync(path.join(tmpRoot, "scripts", "group_test", "group_test.gml"), enumSource);
+            fs.writeFileSync(
+                path.join(tmpRoot, "scripts", "group_vertex_buffers", "group_vertex_buffers.yy"),
+                `${JSON.stringify({ name: "group_vertex_buffers", resourceType: "GMScript" }, null, 2)}\n`
+            );
+            fs.writeFileSync(
+                path.join(tmpRoot, "scripts", "group_vertex_buffers", "group_vertex_buffers.gml"),
+                consumerSource
+            );
+
+            const projectIndex = await Semantic.buildProjectIndex(tmpRoot);
+            const bridge = new GmlSemanticBridge(projectIndex, tmpRoot);
+            const occurrences = bridge
+                .getSymbolOccurrences("console", "gml/enum-member/console")
+                .toSorted((left, right) => `${left.path}:${left.start}`.localeCompare(`${right.path}:${right.start}`));
+            const declarationStart = enumSource.indexOf("console");
+            const referenceStart = consumerSource.indexOf("console");
+
+            assert.deepEqual(
+                occurrences.map((occurrence) => ({
+                    kind: occurrence.kind,
+                    path: occurrence.path,
+                    start: occurrence.start,
+                    end: occurrence.end
+                })),
+                [
+                    {
+                        kind: Refactor.OccurrenceKind.DEFINITION,
+                        path: "scripts/group_test/group_test.gml",
+                        start: declarationStart,
+                        end: declarationStart + "console".length
+                    },
+                    {
+                        kind: Refactor.OccurrenceKind.REFERENCE,
+                        path: "scripts/group_vertex_buffers/group_vertex_buffers.gml",
+                        start: referenceStart,
+                        end: referenceStart + "console".length
+                    }
+                ]
+            );
+        } finally {
+            fs.rmSync(tmpRoot, { recursive: true, force: true });
+        }
+    });
+
+    void it("getSymbolOccurrences limits enum member renames to matching dotted enum references", async () => {
+        const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "gml-semantic-bridge-enum-member-dotted-"));
+
+        try {
+            const enumSource = ["enum eDamageType {", "    damage,", "    step", "}", ""].join("\n");
+            const consumerSource = [
+                "function Weapon(damage) : Attack(knockback, cooldown_max, damage) constructor {",
+                "    curr_sys.step();",
+                "    return eDamageType.damage + eDamageType.step;",
+                "}",
+                ""
+            ].join("\n");
+
+            fs.mkdirSync(path.join(tmpRoot, "scripts", "damage_defs"), { recursive: true });
+            fs.mkdirSync(path.join(tmpRoot, "scripts", "Weapon"), { recursive: true });
+            fs.writeFileSync(
+                path.join(tmpRoot, "MyGame.yyp"),
+                `${JSON.stringify({ name: "MyGame", resourceType: "GMProject" }, null, 2)}\n`
+            );
+            fs.writeFileSync(
+                path.join(tmpRoot, "scripts", "damage_defs", "damage_defs.yy"),
+                `${JSON.stringify({ name: "damage_defs", resourceType: "GMScript" }, null, 2)}\n`
+            );
+            fs.writeFileSync(path.join(tmpRoot, "scripts", "damage_defs", "damage_defs.gml"), enumSource);
+            fs.writeFileSync(
+                path.join(tmpRoot, "scripts", "Weapon", "Weapon.yy"),
+                `${JSON.stringify({ name: "Weapon", resourceType: "GMScript" }, null, 2)}\n`
+            );
+            fs.writeFileSync(path.join(tmpRoot, "scripts", "Weapon", "Weapon.gml"), consumerSource);
+
+            const projectIndex = await Semantic.buildProjectIndex(tmpRoot);
+            const bridge = new GmlSemanticBridge(projectIndex, tmpRoot);
+            const damageOccurrences = bridge
+                .getSymbolOccurrences("damage", "gml/enum-member/damage")
+                .filter((occurrence) => occurrence.path === "scripts/Weapon/Weapon.gml");
+            const stepOccurrences = bridge
+                .getSymbolOccurrences("step", "gml/enum-member/step")
+                .filter((occurrence) => occurrence.path === "scripts/Weapon/Weapon.gml");
+            const enumDamageStart = consumerSource.indexOf("damage", consumerSource.indexOf("eDamageType.damage"));
+            const enumStepStart = consumerSource.indexOf("step", consumerSource.indexOf("eDamageType.step"));
+
+            assert.deepEqual(
+                damageOccurrences.map((occurrence) => ({
+                    kind: occurrence.kind,
+                    start: occurrence.start,
+                    end: occurrence.end
+                })),
+                [
+                    {
+                        kind: Refactor.OccurrenceKind.REFERENCE,
+                        start: enumDamageStart,
+                        end: enumDamageStart + "damage".length
+                    }
+                ]
+            );
+            assert.deepEqual(
+                stepOccurrences.map((occurrence) => ({
+                    kind: occurrence.kind,
+                    start: occurrence.start,
+                    end: occurrence.end
+                })),
+                [
+                    {
+                        kind: Refactor.OccurrenceKind.REFERENCE,
+                        start: enumStepStart,
+                        end: enumStepStart + "step".length
                     }
                 ]
             );
@@ -2591,7 +3319,7 @@ void describe("GmlSemanticBridge tests", () => {
         }
     });
 
-    void it("listNamingConventionTargets includes unresolved dotted references for unique constructor static members", async () => {
+    void it("listNamingConventionTargets leaves unknown receiver dotted calls unresolved", async () => {
         const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "gml-semantic-bridge-struct-static-member-"));
 
         try {
@@ -2632,29 +3360,202 @@ void describe("GmlSemanticBridge tests", () => {
             const targets = await bridge.listNamingConventionTargets();
             const subTarget = targets.find((target) => target.category === "staticVariable" && target.name === "Sub");
 
-            assert.ok(subTarget);
-            assert.deepEqual(
-                subTarget?.occurrences.map((occurrence) => ({
-                    kind: occurrence.kind,
-                    path: occurrence.path
-                })),
-                [
-                    {
-                        kind: Refactor.OccurrenceKind.DEFINITION,
-                        path: "scripts/vec/vec.gml"
-                    },
-                    {
-                        kind: Refactor.OccurrenceKind.REFERENCE,
-                        path: "scripts/move_step/move_step.gml"
-                    }
-                ]
+            assert.ok(subTarget !== undefined);
+            const gaps = bridge.checkSemanticGaps("Sub");
+            assert.ok(gaps.length > 0);
+            assert.match(gaps[0].message, /Unresolved same-name property access 'Sub'/);
+        } finally {
+            fs.rmSync(tmpRoot, { recursive: true, force: true });
+        }
+    });
+
+    void it("checkSemanticGaps reports function-return receiver constructor static member calls", async () => {
+        const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "gml-semantic-bridge-static-return-receiver-"));
+        const colmeshFilePath = "scripts/Colmesh/Colmesh.gml";
+        const shapeFilePath = "scripts/ColmeshShape/ColmeshShape.gml";
+
+        try {
+            const colmeshSource = [
+                "function Colmesh() constructor {",
+                "    static get_shape = function(shape) {",
+                "        return shape;",
+                "    };",
+                "",
+                "    static add_shape = function(shape) {",
+                "        return get_shape(shape).get_min_max();",
+                "    };",
+                "}",
+                ""
+            ].join("\n");
+            const shapeSource = [
+                "function ColmeshShape() constructor {",
+                "    static get_min_max = function() {",
+                "        return [0, 0, 0, 1, 1, 1];",
+                "    };",
+                "}",
+                ""
+            ].join("\n");
+
+            fs.mkdirSync(path.join(tmpRoot, "scripts", "Colmesh"), { recursive: true });
+            fs.mkdirSync(path.join(tmpRoot, "scripts", "ColmeshShape"), { recursive: true });
+            fs.writeFileSync(
+                path.join(tmpRoot, "MyGame.yyp"),
+                `${JSON.stringify({ name: "MyGame", resourceType: "GMProject" }, null, 2)}\n`
+            );
+            fs.writeFileSync(
+                path.join(tmpRoot, "scripts", "Colmesh", "Colmesh.yy"),
+                `${JSON.stringify({ name: "Colmesh", resourceType: "GMScript" }, null, 2)}\n`
+            );
+            fs.writeFileSync(path.join(tmpRoot, colmeshFilePath), colmeshSource);
+            fs.writeFileSync(
+                path.join(tmpRoot, "scripts", "ColmeshShape", "ColmeshShape.yy"),
+                `${JSON.stringify({ name: "ColmeshShape", resourceType: "GMScript" }, null, 2)}\n`
+            );
+            fs.writeFileSync(path.join(tmpRoot, shapeFilePath), shapeSource);
+
+            const projectIndex = await Semantic.buildProjectIndex(tmpRoot);
+            const bridge = new GmlSemanticBridge(projectIndex, tmpRoot);
+            const targets = await bridge.listNamingConventionTargets();
+
+            assert.ok(targets.some((target) => target.category === "staticVariable" && target.name === "get_min_max"));
+            assert.ok(
+                bridge
+                    .checkSemanticGaps("get_min_max")
+                    .some(
+                        (gap) =>
+                            gap.path === colmeshFilePath &&
+                            /Unresolved same-name property access 'get_min_max'/.test(gap.message)
+                    )
             );
         } finally {
             fs.rmSync(tmpRoot, { recursive: true, force: true });
         }
     });
 
-    void it("listNamingConventionTargets includes unresolved bare calls for unique constructor static members", async () => {
+    void it("checkSemanticGaps reports dynamic shape receiver constructor static member calls", async () => {
+        const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "gml-semantic-bridge-static-dynamic-receiver-"));
+        const dynamicFilePath = "scripts/ColmeshDynamic/ColmeshDynamic.gml";
+        const shapeFilePath = "scripts/ColmeshShape/ColmeshShape.gml";
+
+        try {
+            const dynamicSource = [
+                "function ColmeshDynamic(shape) constructor {",
+                "    static get_min_max = function() {",
+                "        return shape.get_min_max();",
+                "    };",
+                "}",
+                ""
+            ].join("\n");
+            const shapeSource = [
+                "function ColmeshShape() constructor {",
+                "    static get_min_max = function() {",
+                "        return [0, 0, 0, 1, 1, 1];",
+                "    };",
+                "}",
+                ""
+            ].join("\n");
+
+            fs.mkdirSync(path.join(tmpRoot, "scripts", "ColmeshDynamic"), { recursive: true });
+            fs.mkdirSync(path.join(tmpRoot, "scripts", "ColmeshShape"), { recursive: true });
+            fs.writeFileSync(
+                path.join(tmpRoot, "MyGame.yyp"),
+                `${JSON.stringify({ name: "MyGame", resourceType: "GMProject" }, null, 2)}\n`
+            );
+            fs.writeFileSync(
+                path.join(tmpRoot, "scripts", "ColmeshDynamic", "ColmeshDynamic.yy"),
+                `${JSON.stringify({ name: "ColmeshDynamic", resourceType: "GMScript" }, null, 2)}\n`
+            );
+            fs.writeFileSync(path.join(tmpRoot, dynamicFilePath), dynamicSource);
+            fs.writeFileSync(
+                path.join(tmpRoot, "scripts", "ColmeshShape", "ColmeshShape.yy"),
+                `${JSON.stringify({ name: "ColmeshShape", resourceType: "GMScript" }, null, 2)}\n`
+            );
+            fs.writeFileSync(path.join(tmpRoot, shapeFilePath), shapeSource);
+
+            const projectIndex = await Semantic.buildProjectIndex(tmpRoot);
+            const bridge = new GmlSemanticBridge(projectIndex, tmpRoot);
+            const targets = await bridge.listNamingConventionTargets();
+
+            assert.ok(targets.some((target) => target.category === "staticVariable" && target.name === "get_min_max"));
+            assert.ok(
+                bridge
+                    .checkSemanticGaps("get_min_max")
+                    .some(
+                        (gap) =>
+                            gap.path === dynamicFilePath &&
+                            /Unresolved same-name property access 'get_min_max'/.test(gap.message)
+                    )
+            );
+        } finally {
+            fs.rmSync(tmpRoot, { recursive: true, force: true });
+        }
+    });
+
+    void it("listNamingConventionTargets excludes constructor static declarations from generic instance targets", async () => {
+        const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "gml-semantic-bridge-static-generic-owner-"));
+        const filePath = "scripts/ColmeshShape/ColmeshShape.gml";
+        const sourceText = [
+            "function ColmeshShape() constructor {",
+            "    static get_min_max = function() {",
+            "        return [0, 0, 0, 1, 1, 1];",
+            "    };",
+            "}",
+            ""
+        ].join("\n");
+
+        try {
+            fs.mkdirSync(path.join(tmpRoot, "scripts", "ColmeshShape"), { recursive: true });
+            fs.writeFileSync(path.join(tmpRoot, filePath), sourceText);
+
+            const declarationStart = sourceText.indexOf("get_min_max");
+            const declarationEnd = declarationStart + "get_min_max".length - 1;
+            const declaration = {
+                filePath,
+                name: "get_min_max",
+                scopeId: "scope:ColmeshShape",
+                start: { index: declarationStart },
+                end: { index: declarationEnd }
+            };
+            const mockProjectIndex = {
+                identifiers: {
+                    constructorStaticMembers: {
+                        "static:ColmeshShape.get_min_max": {
+                            identifierId: "static:ColmeshShape.get_min_max",
+                            name: "get_min_max",
+                            declarations: [declaration],
+                            references: []
+                        }
+                    },
+                    instanceVariables: {
+                        "var:get_min_max": {
+                            identifierId: "var:get_min_max",
+                            name: "get_min_max",
+                            declarations: [declaration],
+                            references: []
+                        }
+                    }
+                },
+                resources: {},
+                files: {
+                    [filePath]: {
+                        references: []
+                    }
+                },
+                scopes: {}
+            };
+
+            const bridge = new GmlSemanticBridge(mockProjectIndex, tmpRoot);
+            const targets = await bridge.listNamingConventionTargets([filePath], ["instanceVariable"]);
+
+            assert.ok(
+                !targets.some((target) => target.category === "instanceVariable" && target.name === "get_min_max")
+            );
+        } finally {
+            fs.rmSync(tmpRoot, { recursive: true, force: true });
+        }
+    });
+
+    void it("listNamingConventionTargets leaves bare constructor static calls unresolved", async () => {
         const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "gml-semantic-bridge-static-member-bare-call-"));
 
         try {
@@ -2707,31 +3608,16 @@ void describe("GmlSemanticBridge tests", () => {
                 (target) => target.category === "staticVariable" && target.name === "Reset"
             );
 
-            assert.ok(resetTarget);
-            // Sort by kind then path to ensure stable comparison regardless of traversal order.
-            const sortedOccurrences = resetTarget.occurrences
-                .map((occurrence) => ({ kind: occurrence.kind, path: occurrence.path }))
-                .sort((a, b) => `${a.kind}\0${a.path}`.localeCompare(`${b.kind}\0${b.path}`));
-            assert.deepEqual(sortedOccurrences, [
-                {
-                    kind: Refactor.OccurrenceKind.DEFINITION,
-                    path: "scripts/generator_state/generator_state.gml"
-                },
-                {
-                    kind: Refactor.OccurrenceKind.REFERENCE,
-                    path: "scripts/generator_state/generator_state.gml"
-                },
-                {
-                    kind: Refactor.OccurrenceKind.REFERENCE,
-                    path: "scripts/initialize/initialize.gml"
-                }
-            ]);
+            assert.ok(resetTarget !== undefined);
+            const gaps = bridge.checkSemanticGaps("Reset");
+            assert.ok(gaps.length > 0);
+            assert.match(gaps[0].message, /Unresolved same-name bare call 'Reset'/);
         } finally {
             fs.rmSync(tmpRoot, { recursive: true, force: true });
         }
     });
 
-    void it("listNamingConventionTargets excludes ambiguous constructor static members with unresolved references", async () => {
+    void it("listNamingConventionTargets does not attach ambiguous unknown receiver references", async () => {
         const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "gml-semantic-bridge-static-member-ambiguous-"));
 
         try {
@@ -2776,11 +3662,56 @@ void describe("GmlSemanticBridge tests", () => {
                 (target) => target.category === "staticVariable" && target.name === "Add"
             );
 
-            assert.strictEqual(
-                addTargets.length,
-                0,
-                "Should abort yielding static variable targets for ambiguous occurrences"
+            assert.strictEqual(addTargets.length, 2);
+            const gaps = bridge.checkSemanticGaps("Add");
+            assert.ok(gaps.length > 0);
+            assert.match(gaps[0].message, /Unresolved same-name property access 'Add'/);
+        } finally {
+            fs.rmSync(tmpRoot, { recursive: true, force: true });
+        }
+    });
+
+    void it("returns exact enum member occurrence ranges before comma-separated call arguments", async () => {
+        const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "gml-semantic-bridge-enum-member-range-"));
+
+        try {
+            const enumSource = "enum eTestResultType { console }\n";
+            const useSource = "func_run_test_group(test_cases_uvs, eTestResultType.console, false);\n";
+
+            fs.mkdirSync(path.join(tmpRoot, "scripts", "group_test"), { recursive: true });
+            fs.mkdirSync(path.join(tmpRoot, "scripts", "group_vertex_buffers"), { recursive: true });
+            fs.writeFileSync(
+                path.join(tmpRoot, "MyGame.yyp"),
+                `${JSON.stringify({ name: "MyGame", resourceType: "GMProject" }, null, 2)}\n`
             );
+            fs.writeFileSync(
+                path.join(tmpRoot, "scripts", "group_test", "group_test.yy"),
+                `${JSON.stringify({ name: "group_test", resourceType: "GMScript" }, null, 2)}\n`
+            );
+            fs.writeFileSync(path.join(tmpRoot, "scripts", "group_test", "group_test.gml"), enumSource);
+            fs.writeFileSync(
+                path.join(tmpRoot, "scripts", "group_vertex_buffers", "group_vertex_buffers.yy"),
+                `${JSON.stringify({ name: "group_vertex_buffers", resourceType: "GMScript" }, null, 2)}\n`
+            );
+            fs.writeFileSync(
+                path.join(tmpRoot, "scripts", "group_vertex_buffers", "group_vertex_buffers.gml"),
+                useSource
+            );
+
+            const projectIndex = await Semantic.buildProjectIndex(tmpRoot);
+            const bridge = new GmlSemanticBridge(projectIndex, tmpRoot);
+            const targets = await bridge.listNamingConventionTargets();
+            const consoleTarget = targets.find(
+                (target) => target.category === "enumMember" && target.name === "console"
+            );
+
+            assert.ok(consoleTarget);
+            const referenceOccurrence = consoleTarget.occurrences.find(
+                (occurrence) => occurrence.path === "scripts/group_vertex_buffers/group_vertex_buffers.gml"
+            );
+
+            assert.ok(referenceOccurrence);
+            assert.equal(useSource.slice(referenceOccurrence.start, referenceOccurrence.end), "console");
         } finally {
             fs.rmSync(tmpRoot, { recursive: true, force: true });
         }
@@ -2926,6 +3857,66 @@ void describe("GmlSemanticBridge tests", () => {
         assert.ok(targets.some((target) => target.category === "scriptResourceName" && target.name === "DemoLibrary"));
         assert.ok(targets.some((target) => target.category === "function" && target.name === "DemoLibrary"));
         assert.ok(targets.some((target) => target.category === "function" && target.name === "helper_fn"));
+    });
+
+    void it("listNamingConventionTargets includes script resources with same-name constructors in multi-callable files", async () => {
+        const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "gml-semantic-bridge-multi-constructor-resource-"));
+        const mockProjectIndex = {
+            resources: {
+                "scripts/Attack/Attack.yy": {
+                    path: "scripts/Attack/Attack.yy",
+                    name: "Attack",
+                    resourceType: "GMScript"
+                }
+            },
+            identifiers: {
+                scripts: {
+                    "scope:script:Attack": {
+                        identifierId: "script:scope:script:Attack",
+                        name: "Attack",
+                        resourcePath: "scripts/Attack/Attack.yy",
+                        declarations: [
+                            {
+                                name: "Attack",
+                                filePath: "scripts/Attack/Attack.gml",
+                                classifications: ["function", "constructor", "struct"]
+                            },
+                            {
+                                name: "AttackProjectileCircle",
+                                filePath: "scripts/Attack/Attack.gml",
+                                classifications: ["function", "constructor", "struct"]
+                            }
+                        ]
+                    }
+                }
+            }
+        };
+
+        try {
+            fs.mkdirSync(path.join(tmpRoot, "scripts", "Attack"), { recursive: true });
+            fs.writeFileSync(
+                path.join(tmpRoot, "scripts", "Attack", "Attack.gml"),
+                [
+                    "function Attack() constructor {}",
+                    "function AttackProjectileCircle() : Attack() constructor {}",
+                    ""
+                ].join("\n"),
+                "utf8"
+            );
+
+            const bridge = new GmlSemanticBridge(mockProjectIndex, tmpRoot);
+            const targets = await bridge.listNamingConventionTargets();
+
+            assert.ok(targets.some((target) => target.category === "scriptResourceName" && target.name === "Attack"));
+            assert.ok(targets.some((target) => target.category === "constructorFunction" && target.name === "Attack"));
+            assert.ok(
+                targets.some(
+                    (target) => target.category === "constructorFunction" && target.name === "AttackProjectileCircle"
+                )
+            );
+        } finally {
+            fs.rmSync(tmpRoot, { recursive: true, force: true });
+        }
     });
 
     void it("getSymbolOccurrences keeps multi-function script resource renames independent from same-name callables", () => {
@@ -3137,6 +4128,178 @@ void describe("GmlSemanticBridge tests", () => {
                     target.occurrences.length === 4
             )
         );
+    });
+
+    void it("listNamingConventionTargets clamps local declaration occurrences to identifier tokens", async () => {
+        const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "gml-semantic-bridge-local-range-"));
+        const relativeFilePath = "scripts/group_vertex_buffers/group_vertex_buffers.gml";
+        const absoluteFilePath = path.join(tmpRoot, relativeFilePath);
+        const sourceText = [
+            "function group_vertex_buffers() {",
+            "    var _ltX0 =   _l*_cos - _t*_sin;",
+            "    var _ltZ  = -(_l*_sin + _t*_cos) + _z;",
+            "    return _ltX0 + _ltZ;",
+            "}",
+            ""
+        ].join("\n");
+
+        fs.mkdirSync(path.dirname(absoluteFilePath), { recursive: true });
+        fs.writeFileSync(absoluteFilePath, sourceText, "utf8");
+
+        const ltX0DeclarationStart = findNthIndex(sourceText, "_ltX0", 1);
+        const ltX0ReferenceStart = findNthIndex(sourceText, "_ltX0", 2);
+        const ltZDeclarationStart = findNthIndex(sourceText, "_ltZ", 1);
+        const ltZReferenceStart = findNthIndex(sourceText, "_ltZ", 2);
+
+        const mockProjectIndex = {
+            identifiers: {
+                instanceVariables: {}
+            },
+            files: {
+                [relativeFilePath]: {
+                    declarations: [
+                        {
+                            name: "_ltX0",
+                            scopeId: "scope:function",
+                            classifications: ["variable"],
+                            start: { index: ltX0DeclarationStart },
+                            end: { index: sourceText.indexOf("=", ltX0DeclarationStart) }
+                        },
+                        {
+                            name: "_ltZ",
+                            scopeId: "scope:function",
+                            classifications: ["variable"],
+                            start: { index: ltZDeclarationStart },
+                            end: { index: sourceText.indexOf("=", ltZDeclarationStart) }
+                        }
+                    ],
+                    references: [
+                        {
+                            name: "_ltX0",
+                            scopeId: "scope:function",
+                            start: { index: ltX0ReferenceStart },
+                            end: { index: ltX0ReferenceStart + "_ltX0".length - 1 },
+                            declaration: {
+                                name: "_ltX0",
+                                scopeId: "scope:function",
+                                start: { index: ltX0DeclarationStart }
+                            }
+                        },
+                        {
+                            name: "_ltZ",
+                            scopeId: "scope:function",
+                            start: { index: ltZReferenceStart },
+                            end: { index: ltZReferenceStart + "_ltZ".length - 1 },
+                            declaration: {
+                                name: "_ltZ",
+                                scopeId: "scope:function",
+                                start: { index: ltZDeclarationStart }
+                            }
+                        }
+                    ]
+                }
+            }
+        };
+
+        const bridge = new GmlSemanticBridge(mockProjectIndex, tmpRoot);
+        const targets = await bridge.listNamingConventionTargets([relativeFilePath], ["localVariable"]);
+        const ltX0Target = targets.find((target) => target.name === "_ltX0");
+        const ltZTarget = targets.find((target) => target.name === "_ltZ");
+
+        assert.deepEqual(
+            ltX0Target?.occurrences.map((occurrence) => sourceText.slice(occurrence.start, occurrence.end)),
+            ["_ltX0", "_ltX0"]
+        );
+        assert.deepEqual(
+            ltZTarget?.occurrences.map((occurrence) => sourceText.slice(occurrence.start, occurrence.end)),
+            ["_ltZ", "_ltZ"]
+        );
+    });
+
+    void it("namingConvention codemod preserves initializers when local declaration semantic ranges include assignment syntax", async () => {
+        const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "gml-semantic-bridge-cannonfather-fix-"));
+        const relativeFilePath = "scripts/group_vertex_buffers/group_vertex_buffers.gml";
+        const absoluteFilePath = path.join(tmpRoot, relativeFilePath);
+        const sourceText = [
+            "function group_vertex_buffers() {",
+            "    var _ltX0 =   _l*_cos - _t*_sin;",
+            "    var _ltZ  = -(_l*_sin + _t*_cos) + _z;",
+            "    var _rtX0 =   _r*_cos - _t*_sin;",
+            "    var _rtZ  = -(_r*_sin + _t*_cos) + _z;",
+            "    return _ltX0 + _ltZ + _rtX0 + _rtZ;",
+            "}",
+            ""
+        ].join("\n");
+        const names = ["_ltX0", "_ltZ", "_rtX0", "_rtZ"];
+
+        fs.mkdirSync(path.dirname(absoluteFilePath), { recursive: true });
+        fs.writeFileSync(absoluteFilePath, sourceText, "utf8");
+
+        const declarations = names.map((name) => {
+            const start = findNthIndex(sourceText, name, 1);
+            return {
+                name,
+                scopeId: "scope:function",
+                classifications: ["variable"],
+                start: { index: start },
+                end: { index: sourceText.indexOf("=", start) }
+            };
+        });
+        const references = names.map((name) => {
+            const start = findNthIndex(sourceText, name, 2);
+            const declarationStart = findNthIndex(sourceText, name, 1);
+            return {
+                name,
+                scopeId: "scope:function",
+                start: { index: start },
+                end: { index: start + name.length - 1 },
+                declaration: {
+                    name,
+                    scopeId: "scope:function",
+                    start: { index: declarationStart }
+                }
+            };
+        });
+        const semantic = new GmlSemanticBridge(
+            {
+                identifiers: {
+                    instanceVariables: {}
+                },
+                files: {
+                    [relativeFilePath]: {
+                        declarations,
+                        references
+                    }
+                }
+            },
+            tmpRoot
+        );
+        const engine = new Refactor.RefactorEngine({ semantic });
+        const result = await engine.executeConfiguredCodemods({
+            projectRoot: tmpRoot,
+            targetPaths: [relativeFilePath],
+            gmlFilePaths: [relativeFilePath],
+            config: {
+                codemods: {
+                    namingConvention: {
+                        rules: {
+                            localVariable: {
+                                caseStyle: "lower_snake",
+                                bannedPrefixes: ["_"]
+                            }
+                        }
+                    }
+                }
+            },
+            readFile: async () => sourceText
+        });
+        const outputText = result.appliedFiles.get(relativeFilePath) ?? "";
+
+        assert.match(outputText, /var lt_x0 =\s+_l\*_cos - _t\*_sin;/);
+        assert.match(outputText, /var lt_z\s+= -\(_l\*_sin \+ _t\*_cos\) \+ _z;/);
+        assert.match(outputText, /var rt_x0 =\s+_r\*_cos - _t\*_sin;/);
+        assert.match(outputText, /var rt_z\s+= -\(_r\*_sin \+ _t\*_cos\) \+ _z;/);
+        assert.doesNotMatch(outputText, /var\s+\w+\s{2,}_[lrtb]\*/u);
     });
 
     void it("listNamingConventionTargets synthesizes implicit instance-variable targets from object assignments", async () => {
@@ -3549,6 +4712,205 @@ void describe("GmlSemanticBridge tests", () => {
         );
     });
 
+    void it("getSymbolOccurrences includes explicit self member tokens for instance-variable renames", () => {
+        const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "gml-semantic-bridge-self-instance-member-"));
+        const filePath = "scripts/ColmeshShape/ColmeshShape.gml";
+        const sourceText = [
+            "function ColmeshDynamic(M) constructor {",
+            "    self.M = matrix_build_identity();",
+            "    static get_min_max = function() {",
+            "        return matrix_transform_vertex(M, 0, 0, 0);",
+            "    }",
+            "}",
+            ""
+        ].join("\n");
+
+        try {
+            fs.mkdirSync(path.join(tmpRoot, "scripts", "ColmeshShape"), { recursive: true });
+            fs.writeFileSync(path.join(tmpRoot, filePath), sourceText, "utf8");
+
+            const selfMemberStart = sourceText.indexOf("M = matrix_build_identity");
+            const bareReferenceStart = sourceText.indexOf("M, 0, 0, 0");
+            const mockProjectIndex = {
+                identifiers: {
+                    instanceVariables: {
+                        "var:M": {
+                            identifierId: "var:M",
+                            name: "M",
+                            references: [
+                                {
+                                    filePath,
+                                    name: "M",
+                                    scopeId: "scope:ColmeshDynamic",
+                                    start: { index: bareReferenceStart },
+                                    end: { index: bareReferenceStart }
+                                }
+                            ]
+                        }
+                    }
+                },
+                resources: {},
+                files: {
+                    [filePath]: {
+                        references: []
+                    }
+                },
+                scopes: {}
+            };
+
+            const bridge = new GmlSemanticBridge(mockProjectIndex, tmpRoot);
+            const occurrences = bridge.getSymbolOccurrences("M", "gml/var/M");
+
+            assert.ok(
+                occurrences.some(
+                    (occurrence) =>
+                        occurrence.path === filePath &&
+                        occurrence.start === selfMemberStart &&
+                        occurrence.end === selfMemberStart + "M".length
+                ),
+                "expected self.M member token to be reported as an instance-variable occurrence"
+            );
+            assert.ok(
+                occurrences.some(
+                    (occurrence) =>
+                        occurrence.path === filePath &&
+                        occurrence.start === bareReferenceStart &&
+                        occurrence.end === bareReferenceStart + "M".length
+                ),
+                "expected bare M token to remain an instance-variable occurrence"
+            );
+        } finally {
+            fs.rmSync(tmpRoot, { force: true, recursive: true });
+        }
+    });
+
+    void it("listNamingConventionTargets excludes outer constructor arguments from static function body references", async () => {
+        const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "gml-semantic-bridge-static-function-local-"));
+        const filePath = "scripts/ColmeshShape/ColmeshShape.gml";
+        const sourceText = [
+            "function ColmeshDynamic(shape, M, group) constructor {",
+            "    self.M = matrix_build_identity();",
+            "    static set_matrix = function(_M, _moving = true) {",
+            "        array_copy(M, 0, _M, 0, 16);",
+            "    };",
+            "    static get_min_max = function() {",
+            "        return matrix_transform_vertex(M, 0, 0, 0);",
+            "    };",
+            "    set_matrix(M, false);",
+            "}",
+            ""
+        ].join("\n");
+
+        try {
+            fs.mkdirSync(path.join(tmpRoot, "scripts", "ColmeshShape"), { recursive: true });
+            fs.writeFileSync(path.join(tmpRoot, filePath), sourceText, "utf8");
+
+            const constructorParameterStart = sourceText.indexOf("M, group");
+            const staticParameterStart = sourceText.indexOf("_M, _moving");
+            const staticParameterReferenceStart = sourceText.indexOf("_M, 0, 16");
+            const staticSetMatrixFieldReferenceStart = sourceText.indexOf("M, 0, _M");
+            const staticGetMinMaxFieldReferenceStart = sourceText.indexOf("M, 0, 0, 0");
+            const constructorParameterReferenceStart = sourceText.indexOf("M, false");
+            const mockProjectIndex = {
+                identifiers: {},
+                resources: {},
+                files: {
+                    [filePath]: {
+                        declarations: [
+                            {
+                                name: "M",
+                                filePath,
+                                scopeId: "scope:ColmeshDynamic",
+                                classifications: ["parameter"],
+                                start: { index: constructorParameterStart },
+                                end: { index: constructorParameterStart }
+                            },
+                            {
+                                name: "_M",
+                                filePath,
+                                scopeId: "scope:set_matrix",
+                                classifications: ["parameter"],
+                                start: { index: staticParameterStart },
+                                end: { index: staticParameterStart + "_M".length - 1 }
+                            }
+                        ],
+                        references: [
+                            {
+                                name: "M",
+                                scopeId: "scope:set_matrix",
+                                classifications: ["variable"],
+                                start: { index: staticSetMatrixFieldReferenceStart },
+                                end: { index: staticSetMatrixFieldReferenceStart },
+                                declaration: {
+                                    name: "M",
+                                    scopeId: "scope:ColmeshDynamic",
+                                    start: { index: constructorParameterStart }
+                                }
+                            },
+                            {
+                                name: "_M",
+                                scopeId: "scope:set_matrix",
+                                classifications: ["parameter"],
+                                start: { index: staticParameterReferenceStart },
+                                end: { index: staticParameterReferenceStart + "_M".length - 1 },
+                                declaration: {
+                                    name: "_M",
+                                    scopeId: "scope:set_matrix",
+                                    start: { index: staticParameterStart }
+                                }
+                            },
+                            {
+                                name: "M",
+                                scopeId: "scope:get_min_max",
+                                classifications: ["variable"],
+                                start: { index: staticGetMinMaxFieldReferenceStart },
+                                end: { index: staticGetMinMaxFieldReferenceStart },
+                                declaration: {
+                                    name: "M",
+                                    scopeId: "scope:ColmeshDynamic",
+                                    start: { index: constructorParameterStart }
+                                }
+                            },
+                            {
+                                name: "M",
+                                scopeId: "scope:ColmeshDynamic",
+                                classifications: ["parameter"],
+                                start: { index: constructorParameterReferenceStart },
+                                end: { index: constructorParameterReferenceStart },
+                                declaration: {
+                                    name: "M",
+                                    scopeId: "scope:ColmeshDynamic",
+                                    start: { index: constructorParameterStart }
+                                }
+                            }
+                        ]
+                    }
+                },
+                scopes: {}
+            };
+
+            const bridge = new GmlSemanticBridge(mockProjectIndex, tmpRoot);
+            const targets = await bridge.listNamingConventionTargets([filePath], ["argument"]);
+            const constructorParameterTarget = targets.find((target) => target.name === "M");
+            const staticParameterTarget = targets.find((target) => target.name === "_M");
+
+            assert.deepEqual(
+                constructorParameterTarget?.occurrences.map((occurrence) =>
+                    sourceText.slice(occurrence.start, occurrence.end)
+                ),
+                ["M", "M"]
+            );
+            assert.deepEqual(
+                staticParameterTarget?.occurrences.map((occurrence) =>
+                    sourceText.slice(occurrence.start, occurrence.end)
+                ),
+                ["_M", "_M"]
+            );
+        } finally {
+            fs.rmSync(tmpRoot, { force: true, recursive: true });
+        }
+    });
+
     void it("collectImplicitInstanceVariableTargets excludes script-scope property references", () => {
         const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "gml-semantic-bridge-implicit-script-scope-"));
         const scriptFilePath = "scripts/conveniencefunctions/conveniencefunctions.gml";
@@ -3697,5 +5059,78 @@ void describe("GmlSemanticBridge tests", () => {
             ["validInstance"],
             "instanceVariables masking a macro/enum should be excluded"
         );
+    });
+
+    void it("namingConvention skips renaming a script resource if its lowercase name conflicts with an instance variable defined in a constructor", async () => {
+        const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "gml-semantic-bridge-conflict-shadowing-"));
+        const relativeFilePath = "scripts/ZModels/ZModels.gml";
+        const absoluteFilePath = path.join(tmpRoot, relativeFilePath);
+        const sourceText = ["function ZModelSphere() constructor {", "    quaternion = new Quaternion();", "}"].join(
+            "\n"
+        );
+
+        fs.mkdirSync(path.dirname(absoluteFilePath), { recursive: true });
+        fs.writeFileSync(absoluteFilePath, sourceText, "utf8");
+
+        const yyFilePath = path.join(tmpRoot, "scripts/Quaternion/Quaternion.yy");
+        fs.mkdirSync(path.dirname(yyFilePath), { recursive: true });
+        fs.writeFileSync(
+            yyFilePath,
+            JSON.stringify({
+                resourceType: "GMScript",
+                name: "Quaternion"
+            }),
+            "utf8"
+        );
+
+        const zmodelsYyPath = path.join(tmpRoot, "scripts/ZModels/ZModels.yy");
+        fs.writeFileSync(
+            zmodelsYyPath,
+            JSON.stringify({
+                resourceType: "GMScript",
+                name: "ZModels"
+            }),
+            "utf8"
+        );
+
+        // Build the semantic project index
+        const projectIndex = await Semantic.buildProjectIndex(tmpRoot);
+
+        // Verify quaternion instance variable is registered
+        const identifiers = projectIndex.identifiers || {};
+        assert.ok(identifiers.instanceVariables, "Should have instanceVariables in index");
+        const hasQuaternionVar = Object.values(identifiers.instanceVariables).some(
+            (entry: any) => entry.name === "quaternion"
+        );
+        assert.ok(hasQuaternionVar, "quaternion should be registered as an instance variable");
+
+        // Plan the naming convention codemod
+        const semantic = new GmlSemanticBridge(projectIndex, tmpRoot);
+        const engine = new Refactor.RefactorEngine({ semantic });
+        const plan = await engine.planNamingConventionCodemod({
+            projectRoot: tmpRoot,
+            targetPaths: [tmpRoot],
+            config: {
+                codemods: {
+                    namingConvention: {
+                        rules: {
+                            scriptResourceName: { caseStyle: "lower_snake" }
+                        }
+                    }
+                }
+            }
+        });
+
+        // The script resource Quaternion should NOT be renamed to quaternion because of collision
+        const quaternionRename = plan.topLevelRenameRequests.find((r) => r.symbolId === "gml/scripts/Quaternion");
+        assert.equal(quaternionRename, undefined, "Quaternion rename should be skipped due to shadowing conflict");
+
+        const hasConflictWarning = plan.warnings.some(
+            (w) => w.includes("conflict with existing symbol") || w.includes("shadow") || w.includes("planning failed")
+        );
+        assert.equal(hasConflictWarning, true, "Should have a warning about shadowing conflict");
+
+        // Clean up
+        fs.rmSync(tmpRoot, { recursive: true, force: true });
     });
 });

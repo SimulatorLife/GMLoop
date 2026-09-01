@@ -4,8 +4,9 @@
  * Verifies that passing `cachedAst`, `cachedSymbols`, and `cachedReferences`
  * through `TranspilationOptions` avoids redundant AST traversals and produces
  * identical output to the parse-from-source path.  This covers the hot-reload
- * startup optimization where `collectScriptNames` already produces an AST, symbols,
- * and references that `performInitialScan` can reuse via the file cache.
+ * standalone `transpileFile` support for callers that already own a parsed AST,
+ * symbols, and references. Watch startup intentionally does not retain project-wide
+ * ASTs because doing so exhausts memory on large GameMaker projects.
  */
 
 import assert from "node:assert/strict";

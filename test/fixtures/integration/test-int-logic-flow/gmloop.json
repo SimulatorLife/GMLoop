@@ -2,17 +2,23 @@
   "printWidth": 120,
   "allowInlineControlFlowBlocks": true,
   "lintRules": {
+    "gml/remove-doc-function-tags": "error",
     "gml/normalize-doc-comments": "error",
-    "gml/optimize-logical-flow": "error"
-  },
-  "refactor": {
-    "codemods": {
-      "docCommentAlignment": {}
-    }
+    "gml/normalize-doc-param-separators": "error",
+    "gml/prefer-direct-boolean-return": "error",
+    "gml/no-double-negation": "error",
+    "gml/prefer-de-morgan": "error",
+    "gml/no-redundant-logical-operands": "error",
+    "gml/no-logical-absorption": "error",
+    "gml/prefer-logical-factorization": "error",
+    "gml/no-logical-complements": "error",
+    "gml/prefer-logical-xor": "error",
+    "gml/prefer-conditional-assignment": "error"
   },
   "fixture": {
     "kind": "integration",
     "assertion": "transform",
-    "comparison": "exact"
+    "comparison": "exact",
+    "expectedTextFile": "expected.current.txt"
   }
 }

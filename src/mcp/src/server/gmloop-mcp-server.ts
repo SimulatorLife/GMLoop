@@ -1,4 +1,5 @@
 import { CLI } from "@gmloop/cli";
+import { Core } from "@gmloop/core";
 import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
@@ -78,7 +79,7 @@ export function extractGraphById(
     envelope: CliGraphEnvelope<GraphOverviewEnvelope>,
     graphId: string
 ): (GraphOverviewEnvelope["graphs"][number] & { graphId: string }) | null {
-    return envelope.payload.graphs?.find((entry) => entry.graphId === graphId) ?? null;
+    return envelope?.payload?.graphs?.find((entry) => entry.graphId === graphId) ?? null;
 }
 
 function createToolInputSchema(entry: CliCatalogEntry): z.ZodObject<Record<string, z.ZodTypeAny>> {
@@ -165,8 +166,16 @@ function createCliCommandArgv(entry: CliCatalogEntry, argumentsObject: Record<st
     return argv;
 }
 
-function createToolTextSummary(commandPath: ReadonlyArray<string>, exitCode: number): string {
-    return `${commandPath.join(" ")} exited with code ${exitCode}`;
+function createToolTextContent(
+    commandPath: ReadonlyArray<string>,
+    result: Readonly<{ exitCode: number; stderr: string; stdout: string }>
+): string {
+    if (result.exitCode !== 0) {
+        return readCliFailureSummary(result);
+    }
+
+    const stdout = result.stdout.trim();
+    return stdout.length > 0 ? stdout : `${commandPath.join(" ")} exited with code ${result.exitCode}`;
 }
 
 function readCliFailureSummary(result: { exitCode: number; stderr: string; stdout: string }): string {
@@ -183,6 +192,48 @@ function readCliFailureSummary(result: { exitCode: number; stderr: string; stdou
     return `CLI command exited with code ${result.exitCode}.`;
 }
 
+/**
+ * Parse the JSON payload that the CLI emitted on stdout for a particular
+ * command. The shared {@link Core.parseJsonWithContext} helper is used so that
+ * any syntax error is reported with the originating command description and
+ * a `JsonParseError` instance instead of an opaque `SyntaxError` whose message
+ * only mentions the unexpected token. Keeping this in a small, exported helper
+ * lets tests exercise the failure mode directly without having to spin up a
+ * captured CLI subprocess.
+ *
+ * @param stdout Raw stdout text emitted by the CLI.
+ * @param argv Command argv that produced the stdout (used as the parse
+ *              `description` so the error names the failing command).
+ * @returns Parsed JSON value, narrowed to the caller's `TPayload` type.
+ */
+export function parseCliJsonStdout<TPayload>(stdout: string, argv: ReadonlyArray<string>): TPayload {
+    const description = `CLI JSON output for ${argv.join(" ")}`;
+    return Core.parseJsonWithContext(stdout, { description }) as TPayload;
+}
+
+/**
+ * Parse CLI stdout as JSON when a CLI-backed MCP tool emits a structured
+ * payload.
+ *
+ * Returns `null` for commands that produce human text or no stdout so MCP
+ * callers can rely on a stable `jsonPayload` field without parsing stdout.
+ * Syntax errors still use {@link parseCliJsonStdout} once the output looks
+ * JSON-shaped, which preserves contextual parse-error messages for malformed
+ * command contracts.
+ *
+ * @param stdout Raw stdout text emitted by the CLI invocation.
+ * @param argv Command argv that produced the stdout.
+ * @returns Parsed JSON payload, or `null` when stdout is not JSON-shaped.
+ */
+export function parseOptionalCliJsonStdout(stdout: string, argv: ReadonlyArray<string>): unknown {
+    const trimmedStdout = stdout.trim();
+    if (trimmedStdout.length === 0 || (!trimmedStdout.startsWith("{") && !trimmedStdout.startsWith("["))) {
+        return null;
+    }
+
+    return parseCliJsonStdout<unknown>(trimmedStdout, argv);
+}
+
 async function runCliJsonCommand<TPayload>(
     argv: Array<string>,
     cwd = process.cwd()
@@ -196,7 +247,7 @@ async function runCliJsonCommand<TPayload>(
     }
 
     return {
-        payload: JSON.parse(result.stdout) as TPayload,
+        payload: parseCliJsonStdout<TPayload>(result.stdout, argv),
         stdout: result.stdout
     };
 }
@@ -263,13 +314,14 @@ function registerCliTools(server: McpServer): void {
                 const cwd = typeof cwdValue === "string" && cwdValue.length > 0 ? cwdValue : process.cwd();
                 const result = await CLI.runCliCommandCapture({
                     argv,
-                    cwd
+                    cwd,
+                    env: entry.displayName === "live-reload session" ? { GMLOOP_LIVE_RELOAD_START_SOURCE: "mcp" } : {}
                 });
 
                 return {
                     content: [
                         {
-                            text: createToolTextSummary(entry.commandPath, result.exitCode),
+                            text: createToolTextContent(entry.commandPath, result),
                             type: "text"
                         }
                     ],
@@ -279,6 +331,7 @@ function registerCliTools(server: McpServer): void {
                         command: entry.displayName,
                         cwd,
                         exitCode: result.exitCode,
+                        jsonPayload: parseOptionalCliJsonStdout(result.stdout, argv),
                         stderr: result.stderr,
                         stdout: result.stdout
                     }

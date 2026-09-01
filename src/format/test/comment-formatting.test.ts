@@ -15,6 +15,59 @@ async function assertFormattedOutput(
     assert.equal(formatted, toGmlSource(expectedLines));
 }
 
+void test("preserves one blank line before a callback-body line comment", async () => {
+    await assertFormattedOutput(
+        [
+            "ts_path = time_source_create(",
+            "    time_source_game,",
+            "    function () {",
+            '        gml_pragma("forceinline");',
+            "",
+            "",
+            "        // Check if still on a valid path",
+            "        var curr_sight_rad = sight_radius.get();",
+            "    }",
+            ");",
+            ""
+        ],
+        [
+            "ts_path = time_source_create(",
+            "    time_source_game,",
+            "    function () {",
+            '        gml_pragma("forceinline");',
+            "",
+            "        // Check if still on a valid path",
+            "        var curr_sight_rad = sight_radius.get();",
+            "    }",
+            ");",
+            ""
+        ]
+    );
+});
+
+void test("does not add a second blank line before nested leading comments", async () => {
+    await assertFormattedOutput(
+        [
+            "function demo() {",
+            "    update_state();",
+            "",
+            "    // Run after state changes",
+            "    refresh_display();",
+            "}",
+            ""
+        ],
+        [
+            "function demo() {",
+            "    update_state();",
+            "",
+            "    // Run after state changes",
+            "    refresh_display();",
+            "}",
+            ""
+        ]
+    );
+});
+
 void test("preserves triple-slash continuation lines adjacent to doc tags", async () => {
     const source = [
         "/// @description Base doc line.",
@@ -263,39 +316,6 @@ void test("does not duplicate same-line slash suffix after decorative block comm
     assert.equal(slashOnlyBannerLines.length, 0);
 });
 
-void test("does not convert adjacent multi-line block comment blocks into line comments", async () => {
-    const source = [
-        "function demo() {",
-        "    /*",
-        "    Block docs",
-        "    */",
-        "    /*",
-        "    Return an array",
-        "    */",
-        "    return [1, 2, 3];",
-        "}",
-        ""
-    ].join("\n");
-
-    const formatted = await Format.format(source);
-
-    assert.equal(
-        formatted,
-        [
-            "function demo() {",
-            "    /*",
-            "    Block docs",
-            "    */",
-            "    /*",
-            "    Return an array",
-            "    */",
-            "    return [1, 2, 3];",
-            "}",
-            ""
-        ].join("\n")
-    );
-});
-
 void test("does not collapse a non-decorative multi-line block comment into a one-line block comment", async () => {
     const source = [
         "function demo() {",
@@ -415,9 +435,9 @@ void test("does not promote plain comments into doc-comment attachments", async 
     assert.equal(
         formatted,
         [
+            "/// @function scr_create_fx",
             "// @param sprite_index",
             "/* @description Create an effect */",
-            "/// @function scr_create_fx",
             "/// @returns {Id.Instance} instance",
             "function scr_create_fx() {}",
             ""

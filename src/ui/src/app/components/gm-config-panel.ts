@@ -1,29 +1,37 @@
 import { html, nothing } from "lit";
 
 import type {
-    GraphVisualizationExternalToolParameter,
-    GraphVisualizationGameMakerCliCommandEntry,
-    GraphVisualizationGameMakerCliMcpToolEntry,
     GraphVisualizationProjectConfigurationCatalog,
     GraphVisualizationProjectConfigurationEntry,
     GraphVisualizationProjectConfigurationLintRuleEntry,
     GraphVisualizationProjectConfigurationRefactorCodemodEntry
-} from "../../graph/types.js";
+} from "../../graph/index.js";
 import type { GraphVisualizationUiModel } from "../contracts.js";
-import type { GraphVisualizationUiState } from "../state/types.js";
+import { getUiErrorMessage } from "../error-message.js";
 import {
     GRAPH_UI_EVENT_CLEAR_PAGE_ERROR,
+    GRAPH_UI_EVENT_CONFIG_DRAFT_CHANGED,
     GRAPH_UI_EVENT_SAVE_CONFIG,
     GRAPH_UI_EVENT_TRIGGER_CREATE_CONFIG,
     type GraphUiSaveConfigDetail
-} from "./events.js";
+} from "../events/events.js";
+import type { GraphVisualizationUiState } from "../state/types.js";
+import { EventBusManager } from "./event-bus-mixin.js";
+import { LifecycleParticipantsController } from "./lifecycle-participants-controller.js";
 import { LightDomLitElement } from "./light-dom-lit-element.js";
-import { getLintFixableBadgeLabel } from "./lint-rule-labels.js";
+import {
+    getLintFixableBadgeLabel,
+    isLintLevel,
+    isLintLevelFilter,
+    LINT_LEVEL_LABELS,
+    LINT_LEVELS,
+    type LintLevel,
+    type LintLevelFilter
+} from "./lint-rule-levels.js";
 import type { GmBadgeTone } from "./primitives/gm-badge.js";
+import { renderProcessButtonContent } from "./primitives/gm-button.js";
 
 type ConfigJsonObject = Record<string, unknown>;
-type LintLevel = GraphVisualizationProjectConfigurationLintRuleEntry["level"];
-type LintLevelFilter = "all" | LintLevel;
 type DraftParseResult = Readonly<
     { config: ConfigJsonObject; error: null; ok: true } | { config: null; error: string; ok: false }
 >;
@@ -33,9 +41,9 @@ const FORMAT_BUILDER_OPTION_NAMES = new Set([
     "logicalOperatorsStyle",
     "printWidth",
     "semi",
-    "tabWidth"
+    "tabWidth",
+    "useTabs"
 ]);
-const LINT_LEVELS: ReadonlyArray<LintLevel> = ["error", "warn", "off"];
 
 function serializeConfigurationValue(value: unknown): string {
     return JSON.stringify(value, null, 2);
@@ -49,7 +57,7 @@ function parseDraftConfig(text: string): DraftParseResult {
         }
         return { config: parsed, error: null, ok: true };
     } catch (error) {
-        return { config: null, error: error instanceof Error ? error.message : "Invalid JSON.", ok: false };
+        return { config: null, error: getUiErrorMessage(error, "Invalid JSON."), ok: false };
     }
 }
 
@@ -116,7 +124,7 @@ function readRawLintRuleLevel(config: ConfigJsonObject, ruleId: string): LintLev
         return null;
     }
     const rawLevel = lintRules[ruleId];
-    return rawLevel === "error" || rawLevel === "warn" || rawLevel === "off" ? rawLevel : null;
+    return isLintLevel(rawLevel) ? rawLevel : null;
 }
 
 function readRawCodemodConfig(config: ConfigJsonObject, codemodId: string): unknown {
@@ -132,74 +140,26 @@ function readRawCodemodConfig(config: ConfigJsonObject, codemodId: string): unkn
 }
 
 function getLintLevelLabel(level: LintLevel): string {
-    if (level === "error") {
-        return "Error";
-    }
-    if (level === "warn") {
-        return "Warn";
-    }
-    return "Off";
+    return LINT_LEVEL_LABELS[level];
 }
 
 function renderBadge(label: string, tone: GmBadgeTone = "neutral") {
     return html`<gm-badge .label=${label} .tone=${tone}></gm-badge>`;
 }
 
-function renderExternalToolParameter(entry: GraphVisualizationExternalToolParameter) {
-    return html`
-        <li class="config-tool-row">
-            <span class="config-tool-name">${entry.syntax}</span>
-            <span class="config-tool-description">${entry.description || "No description provided."}</span>
-            <span class="config-badge-row">
-                ${renderBadge(entry.kind, "muted")}
-                ${renderBadge(entry.required ? "Required" : "Optional", entry.required ? "warning" : "muted")}
-                ${renderBadge(entry.multiple ? "Multiple" : entry.valueType, "neutral")}
-                ${entry.choices.map((choice) => renderBadge(`Choice: ${choice}`, "muted"))}
-            </span>
-        </li>
-    `;
-}
-
-function renderGameMakerCliCommandEntry(entry: GraphVisualizationGameMakerCliCommandEntry) {
-    return html`
-        <details class="config-tool-details">
-            <summary>
-                <span>${entry.displayName}</span>
-                ${renderBadge(`${String(entry.parameters.length)} parameters`, "muted")}
-            </summary>
-            <p>${entry.description || "No description provided by gm-cli."}</p>
-            <pre class="config-code-block">${entry.usageLines.join("\n")}</pre>
-            ${entry.parameters.length === 0
-                ? nothing
-                : html`<ul class="config-tool-list">
-                      ${entry.parameters.map((parameter) => renderExternalToolParameter(parameter))}
-                  </ul>`}
-        </details>
-    `;
-}
-
-function renderGameMakerCliMcpToolEntry(entry: GraphVisualizationGameMakerCliMcpToolEntry) {
-    return html`
-        <details class="config-tool-details">
-            <summary>
-                <span>${entry.name}</span>
-                ${renderBadge(
-                    entry.fields.length === 0 ? "No input fields" : `${String(entry.fields.length)} fields`,
-                    "muted"
-                )}
-            </summary>
-            <p>${entry.description || "No description provided by ResourceTool MCP."}</p>
-            ${entry.fields.length === 0
-                ? nothing
-                : html`<ul class="config-tool-list">
-                      ${entry.fields.map((field) => renderExternalToolParameter(field))}
-                  </ul>`}
-        </details>
-    `;
-}
-
 /**
  * Config surface that renders and edits active workspace configuration catalogs.
+ *
+ * Lifecycle wiring is delegated to injected collaborators so this class
+ * does not deepen the {@link LightDomLitElement} subclass with
+ * `connectedCallback` / `disconnectedCallback` overrides. The
+ * `gm-error-banner-dismiss` subscription is owned by an
+ * {@link EventBusManager} registered through a
+ * {@link LifecycleParticipantsController}, mirroring the pattern used by
+ * `GmGraphToolbar` and `GmLiveReloadPanel`. The class retains only the
+ * `render` override that Lit requires, so its public behaviour and the
+ * order in which listeners connect and disconnect stay identical to the
+ * previous hand-rolled lifecycle methods.
  */
 export class GmConfigPanel extends LightDomLitElement {
     public static properties = {
@@ -227,14 +187,11 @@ export class GmConfigPanel extends LightDomLitElement {
         );
     };
 
-    public connectedCallback(): void {
-        super.connectedCallback();
-        this.addEventListener("gm-error-banner-dismiss", this.#onDismissErrorBanner);
-    }
-
-    public disconnectedCallback(): void {
-        this.removeEventListener("gm-error-banner-dismiss", this.#onDismissErrorBanner);
-        super.disconnectedCallback();
+    public constructor() {
+        super();
+        new LifecycleParticipantsController(this, [
+            new EventBusManager(this, [{ event: "gm-error-banner-dismiss", handler: this.#onDismissErrorBanner }])
+        ]);
     }
 
     #emitCreateConfig = (): void => {
@@ -256,6 +213,10 @@ export class GmConfigPanel extends LightDomLitElement {
         );
     }
 
+    #emitDraftChanged(): void {
+        this.dispatchEvent(new CustomEvent(GRAPH_UI_EVENT_CONFIG_DRAFT_CHANGED, { bubbles: true, composed: true }));
+    }
+
     #ensureDraftForCatalog(catalog: GraphVisualizationProjectConfigurationCatalog): void {
         const key = `${catalog.gmloop.configPath ?? "missing"}:${serializeConfigurationValue(catalog.gmloop.rawConfig)}`;
         if (key === this.#draftCatalogKey) {
@@ -263,6 +224,7 @@ export class GmConfigPanel extends LightDomLitElement {
         }
         this.#draftCatalogKey = key;
         this.#draftText = serializeConfigurationValue(createEditableConfigFromCatalog(catalog));
+        this.#emitDraftChanged();
     }
 
     #readDraft(): DraftParseResult {
@@ -272,6 +234,7 @@ export class GmConfigPanel extends LightDomLitElement {
     #setDraftConfig(config: ConfigJsonObject): void {
         this.#draftText = serializeConfigurationValue(config);
         this.requestUpdate();
+        this.#emitDraftChanged();
     }
 
     #updateDraftConfig(mutator: (config: ConfigJsonObject) => void): void {
@@ -291,7 +254,40 @@ export class GmConfigPanel extends LightDomLitElement {
         }
         this.#draftText = target.value;
         this.requestUpdate();
+        this.#emitDraftChanged();
     };
+
+    public get isDraftDirty(): boolean {
+        if (!this.model?.projectConfigurationCatalog) {
+            return false;
+        }
+        const initialText = serializeConfigurationValue(
+            createEditableConfigFromCatalog(this.model.projectConfigurationCatalog)
+        );
+        return this.#draftText !== initialText;
+    }
+
+    public get isDraftValid(): boolean {
+        return this.#readDraft().ok;
+    }
+
+    public get draftValidationError(): string | null {
+        const result = this.#readDraft();
+        return result.ok ? null : result.error;
+    }
+
+    public saveDraft(): void {
+        const draft = this.#readDraft();
+        if (draft.ok) {
+            this.#emitSaveConfig(draft.config);
+        }
+    }
+
+    public resetDraft(): void {
+        if (this.model?.projectConfigurationCatalog) {
+            this.#resetDraft(this.model.projectConfigurationCatalog);
+        }
+    }
 
     #setFormatEntry(entry: GraphVisualizationProjectConfigurationEntry, rawValue: string, checked: boolean): void {
         this.#updateDraftConfig((config) => {
@@ -351,7 +347,7 @@ export class GmConfigPanel extends LightDomLitElement {
             return;
         }
         const nextValue = target.value;
-        if (nextValue !== "all" && nextValue !== "error" && nextValue !== "off" && nextValue !== "warn") {
+        if (!isLintLevelFilter(nextValue)) {
             return;
         }
         this.#lintLevelFilter = nextValue;
@@ -387,6 +383,7 @@ export class GmConfigPanel extends LightDomLitElement {
         this.#draftCatalogKey = "";
         this.#ensureDraftForCatalog(catalog);
         this.requestUpdate();
+        this.#emitDraftChanged();
     }
 
     #isLintFilterResetDisabled(): boolean {
@@ -417,64 +414,24 @@ export class GmConfigPanel extends LightDomLitElement {
         });
     }
 
-    #renderSavePanel(catalog: GraphVisualizationProjectConfigurationCatalog, draft: DraftParseResult) {
-        const initialText = serializeConfigurationValue(createEditableConfigFromCatalog(catalog));
-        const isDirty = this.#draftText !== initialText;
-        const isSaveDisabled = !draft.ok || !isDirty || this.state?.isConfigSavePending === true;
-
-        return html`
-            <aside class="config-save-panel" aria-label="Config save and JSON preview">
-                <div class="config-save-panel-header">
-                    ${renderBadge(
-                        draft.ok ? (isDirty ? "Unsaved" : "Saved") : "Invalid",
-                        draft.ok ? (isDirty ? "warning" : "success") : "error"
-                    )}
-                </div>
-                <div class="config-save-actions">
-                    <button
-                        type="button"
-                        class="gm-btn gm-btn--primary"
-                        ?disabled=${isSaveDisabled}
-                        @click=${() => (draft.ok ? this.#emitSaveConfig(draft.config) : undefined)}
-                    >
-                        <span class="button-content">
-                            ${this.state?.isConfigSavePending === true
-                                ? html`<span class="button-spinner" aria-hidden="true"></span>`
-                                : nothing}
-                            <span class="button-label">Save Config</span>
-                        </span>
-                    </button>
-                    <button
-                        type="button"
-                        class="gm-btn gm-btn--chip"
-                        ?disabled=${!isDirty || this.state?.isConfigSavePending === true}
-                        @click=${() => this.#resetDraft(catalog)}
-                    >
-                        Reset Draft
-                    </button>
-                </div>
-                <p class=${draft.ok ? "config-validation is-valid" : "config-validation is-invalid"} aria-live="polite">
-                    ${draft.ok ? "JSON is valid and ready to save." : draft.error}
-                </p>
-                <pre class="config-json-preview">
-${draft.ok ? serializeConfigurationValue(draft.config) : this.#draftText}</pre
-                >
-            </aside>
-        `;
-    }
-
     #renderFormatBuilder(catalog: GraphVisualizationProjectConfigurationCatalog, draftConfig: ConfigJsonObject) {
         const entries = catalog.format.entries.filter((entry) => FORMAT_BUILDER_OPTION_NAMES.has(entry.name));
         return html`
-            <section class="config-builder-section" aria-labelledby="config-format-heading">
-                <div class="config-section-heading">
-                    <h3 id="config-format-heading">Format</h3>
-                    <p>Formatter-owned options saved at the top level of <code>gmloop.json</code>.</p>
-                </div>
-                <div class="config-form-grid">
-                    ${entries.map((entry) => this.#renderFormatControl(entry, draftConfig))}
-                </div>
-            </section>
+            <gm-collapsible
+                class="config-builder-section"
+                .labelledBy=${"config-format-heading"}
+                .summary=${html`
+                    <div class="config-section-heading">
+                        <h3 id="config-format-heading">Format</h3>
+                        <p>Formatter-owned options saved at the top level of <code>gmloop.json</code>.</p>
+                    </div>
+                `}
+                .content=${html`
+                    <div class="config-form-grid">
+                        ${entries.map((entry) => this.#renderFormatControl(entry, draftConfig))}
+                    </div>
+                `}
+            ></gm-collapsible>
         `;
     }
 
@@ -559,36 +516,47 @@ ${draft.ok ? serializeConfigurationValue(draft.config) : this.#draftText}</pre
             typeof draftConfig.lintRuleset === "string" ? draftConfig.lintRuleset : catalog.lint.ruleset;
 
         return html`
-            <section class="config-builder-section" aria-labelledby="config-lint-heading">
-                <div class="config-section-heading config-section-heading--split">
-                    <div>
-                        <h3 id="config-lint-heading">Lint</h3>
-                        <p>Choose the base ruleset and override individual rule severities.</p>
+            <gm-collapsible
+                class="config-builder-section"
+                .labelledBy=${"config-lint-heading"}
+                .summary=${html`
+                    <div
+                        class="config-section-heading config-section-heading--split"
+                        @click=${(e: Event) => e.stopPropagation()}
+                    >
+                        <div>
+                            <h3 id="config-lint-heading">Lint</h3>
+                            <p>Choose the base ruleset and override individual rule severities.</p>
+                        </div>
+                        <label class="config-inline-field">
+                            <span>Ruleset</span>
+                            <select @change=${this.#setLintRuleset}>
+                                ${catalog.lint.rulesets.map(
+                                    (ruleset) => html`
+                                        <option value=${ruleset.name} ?selected=${selectedRuleset === ruleset.name}>
+                                            ${ruleset.name}
+                                        </option>
+                                    `
+                                )}
+                            </select>
+                        </label>
                     </div>
-                    <label class="config-inline-field">
-                        <span>Ruleset</span>
-                        <select @change=${this.#setLintRuleset}>
-                            ${catalog.lint.rulesets.map(
-                                (ruleset) => html`
-                                    <option value=${ruleset.name} ?selected=${selectedRuleset === ruleset.name}>
-                                        ${ruleset.name}
-                                    </option>
-                                `
-                            )}
-                        </select>
-                    </label>
-                </div>
-                ${this.#renderLintFilters(catalog)}
-                <div class="config-rule-table" role="table" aria-label="Lint rule configuration">
-                    <div class="config-rule-table-header" role="row">
-                        <span role="columnheader">Rule</span>
-                        <span role="columnheader">Severity</span>
+                `}
+                .content=${html`
+                    ${this.#renderLintFilters(catalog)}
+                    <div class="config-rule-table" role="table" aria-label="Lint rule configuration">
+                        <div class="config-rule-table-header" role="row">
+                            <span role="columnheader">Rule</span>
+                            <span role="columnheader">Severity</span>
+                        </div>
+                        ${
+                            filteredLintRules.length === 0
+                                ? html`<p class="config-empty">No lint rules match these filters.</p>`
+                                : filteredLintRules.map((entry) => this.#renderLintRuleRow(entry, draftConfig, catalog))
+                        }
                     </div>
-                    ${filteredLintRules.length === 0
-                        ? html`<p class="config-empty">No lint rules match these filters.</p>`
-                        : filteredLintRules.map((entry) => this.#renderLintRuleRow(entry, draftConfig))}
-                </div>
-            </section>
+                `}
+            ></gm-collapsible>
         `;
     }
 
@@ -641,8 +609,25 @@ ${draft.ok ? serializeConfigurationValue(draft.config) : this.#draftText}</pre
         `;
     }
 
-    #renderLintRuleRow(entry: GraphVisualizationProjectConfigurationLintRuleEntry, draftConfig: ConfigJsonObject) {
-        const effectiveLevel = readRawLintRuleLevel(draftConfig, entry.ruleId) ?? entry.level;
+    #renderLintRuleRow(
+        entry: GraphVisualizationProjectConfigurationLintRuleEntry,
+        draftConfig: ConfigJsonObject,
+        catalog: GraphVisualizationProjectConfigurationCatalog
+    ) {
+        const explicitLevel = readRawLintRuleLevel(draftConfig, entry.ruleId);
+        let rulesetLevel: LintLevel | null = null;
+        if (explicitLevel === null) {
+            const selectedRulesetName =
+                typeof draftConfig.lintRuleset === "string" ? draftConfig.lintRuleset : catalog.lint.ruleset;
+            if (selectedRulesetName !== null) {
+                const ruleset = catalog.lint.rulesets.find((rs) => rs.name === selectedRulesetName);
+                if (ruleset) {
+                    const level = ruleset.ruleLevels[entry.ruleId];
+                    rulesetLevel = level !== undefined && isLintLevel(level) ? level : null;
+                }
+            }
+        }
+        const effectiveLevel = explicitLevel ?? rulesetLevel ?? entry.level;
         const fixableBadgeLabel = getLintFixableBadgeLabel(entry.fixable);
         const hasOptions = Object.keys(entry.options).length > 0;
 
@@ -651,18 +636,28 @@ ${draft.ok ? serializeConfigurationValue(draft.config) : this.#draftText}</pre
                 <div class="config-rule-main" role="cell">
                     <div class="config-rule-title">
                         <strong>${entry.ruleId}</strong>
-                        ${fixableBadgeLabel === null
-                            ? nothing
-                            : html`<gm-badge
-                                  class="config-rule-fixable-badge"
-                                  .label=${fixableBadgeLabel}
-                                  .tone=${"neutral"}
-                              ></gm-badge>`}
+                        ${
+                            fixableBadgeLabel === null
+                                ? nothing
+                                : html`<gm-badge
+                                      class="config-rule-fixable-badge"
+                                      .label=${fixableBadgeLabel}
+                                      .tone=${"neutral"}
+                                  ></gm-badge>`
+                        }
                     </div>
                     <span class="config-rule-description">${entry.description}</span>
-                    ${hasOptions
-                        ? html`<pre class="config-inline-json">${serializeConfigurationValue(entry.options)}</pre>`
-                        : nothing}
+                    ${
+                        hasOptions
+                            ? html`<gm-json-viewer
+                                  class="config-inline-json"
+                                  .value=${entry.options}
+                                  copyAccessibleLabel=${`Copy ${entry.ruleId} options to clipboard`}
+                                  copyLabel="Copy JSON"
+                                  compact
+                              ></gm-json-viewer>`
+                            : nothing
+                    }
                 </div>
                 <div
                     class="gm-view-selector config-rule-level-selector"
@@ -673,9 +668,11 @@ ${draft.ok ? serializeConfigurationValue(draft.config) : this.#draftText}</pre
                         (level) => html`
                             <button
                                 type="button"
-                                class=${effectiveLevel === level
-                                    ? `gm-btn--chip active config-rule-level-${level}`
-                                    : `gm-btn--chip config-rule-level-${level}`}
+                                class=${
+                                    effectiveLevel === level
+                                        ? `gm-btn--chip active config-rule-level-${level}`
+                                        : `gm-btn--chip config-rule-level-${level}`
+                                }
                                 aria-pressed=${effectiveLevel === level}
                                 @click=${() => this.#setLintRuleLevel(entry.ruleId, level)}
                             >
@@ -690,15 +687,21 @@ ${draft.ok ? serializeConfigurationValue(draft.config) : this.#draftText}</pre
 
     #renderRefactorBuilder(catalog: GraphVisualizationProjectConfigurationCatalog, draftConfig: ConfigJsonObject) {
         return html`
-            <section class="config-builder-section" aria-labelledby="config-refactor-heading">
-                <div class="config-section-heading">
-                    <h3 id="config-refactor-heading">Refactor</h3>
-                    <p>Enable project codemods and inspect per-codemod JSON payloads.</p>
-                </div>
-                <div class="config-codemod-table">
-                    ${catalog.refactor.codemods.map((codemod) => this.#renderCodemodRow(codemod, draftConfig))}
-                </div>
-            </section>
+            <gm-collapsible
+                class="config-builder-section"
+                .labelledBy=${"config-refactor-heading"}
+                .summary=${html`
+                    <div class="config-section-heading">
+                        <h3 id="config-refactor-heading">Refactor</h3>
+                        <p>Enable project codemods and inspect per-codemod JSON payloads.</p>
+                    </div>
+                `}
+                .content=${html`
+                    <div class="config-codemod-table">
+                        ${catalog.refactor.codemods.map((codemod) => this.#renderCodemodRow(codemod, draftConfig))}
+                    </div>
+                `}
+            ></gm-collapsible>
         `;
     }
 
@@ -712,8 +715,9 @@ ${draft.ok ? serializeConfigurationValue(draft.config) : this.#draftText}</pre
             rawCodemodConfig === null || rawCodemodConfig === false ? (entry.config ?? {}) : rawCodemodConfig;
 
         return html`
-            <details class="config-codemod-row">
-                <summary>
+            <gm-collapsible
+                class="config-codemod-row"
+                .summary=${html`
                     <label class="config-toggle-label">
                         <input
                             type="checkbox"
@@ -737,21 +741,23 @@ ${draft.ok ? serializeConfigurationValue(draft.config) : this.#draftText}</pre
                             entry.requiresSemanticProjectIndex ? "warning" : "muted"
                         )}
                     </span>
-                </summary>
-                <label class="config-json-field">
-                    <span>${entry.id} config JSON</span>
-                    <textarea
-                        spellcheck="false"
-                        .value=${serializeConfigurationValue(configValue)}
-                        @change=${(event: Event) => {
-                            const target = event.target;
-                            if (target instanceof HTMLTextAreaElement) {
-                                this.#setCodemodConfig(entry.id, target.value);
-                            }
-                        }}
-                    ></textarea>
-                </label>
-            </details>
+                `}
+                .content=${html`
+                    <label class="config-json-field">
+                        <span>${entry.id} config JSON</span>
+                        <textarea
+                            spellcheck="false"
+                            .value=${serializeConfigurationValue(configValue)}
+                            @change=${(event: Event) => {
+                                const target = event.target;
+                                if (target instanceof HTMLTextAreaElement) {
+                                    this.#setCodemodConfig(entry.id, target.value);
+                                }
+                            }}
+                        ></textarea>
+                    </label>
+                `}
+            ></gm-collapsible>
         `;
     }
 
@@ -763,19 +769,14 @@ ${draft.ok ? serializeConfigurationValue(draft.config) : this.#draftText}</pre
                         <h3>Rendered Config</h3>
                         <p>Fix the JSON syntax in Raw JSON before using the visual editor.</p>
                     </section>
-                    ${this.#renderSavePanel(catalog, draft)}
                 </div>
             `;
         }
 
         return html`
             <div class="config-editor-layout">
-                <div class="config-builder-main">
-                    ${this.#renderFormatBuilder(catalog, draft.config)}
-                    ${this.#renderLintBuilder(catalog, draft.config)}
-                    ${this.#renderRefactorBuilder(catalog, draft.config)}
-                </div>
-                ${this.#renderSavePanel(catalog, draft)}
+                ${this.#renderFormatBuilder(catalog, draft.config)} ${this.#renderLintBuilder(catalog, draft.config)}
+                ${this.#renderRefactorBuilder(catalog, draft.config)}
             </div>
         `;
     }
@@ -785,10 +786,20 @@ ${draft.ok ? serializeConfigurationValue(draft.config) : this.#draftText}</pre
             <div class="config-editor-layout config-editor-layout--raw">
                 <section class="config-builder-section config-raw-editor">
                     <div class="config-section-heading">
-                        <h3>Raw JSON</h3>
-                        <p>
-                            Edit the exact <code>gmloop.json</code> payload. The rendered builder uses this same draft.
-                        </p>
+                        <div class="config-section-heading-text">
+                            <h3>Raw JSON</h3>
+                            <p>
+                                Edit the exact <code>gmloop.json</code> payload. The rendered builder uses this same
+                                draft.
+                            </p>
+                        </div>
+                        <gm-copy-button
+                            id="copy-config-raw-json"
+                            class="config-raw-copy-button"
+                            .value=${this.#draftText}
+                            accessibleLabel="Copy raw config JSON to clipboard"
+                            label="Copy JSON"
+                        ></gm-copy-button>
                     </div>
                     <textarea
                         id="config-raw-json"
@@ -806,7 +817,6 @@ ${draft.ok ? serializeConfigurationValue(draft.config) : this.#draftText}</pre
                         ${draft.ok ? "JSON is valid." : draft.error}
                     </p>
                 </section>
-                ${this.#renderSavePanel(catalog, draft)}
             </div>
         `;
     }
@@ -823,9 +833,11 @@ ${draft.ok ? serializeConfigurationValue(draft.config) : this.#draftText}</pre
         if (!configCatalog) {
             return html`
                 <section id="config-page" class=${configPageClassName}>
-                    ${this.state.configErrorMessage
-                        ? html`<gm-error-banner .message=${this.state.configErrorMessage}></gm-error-banner>`
-                        : nothing}
+                    ${
+                        this.state.configErrorMessage
+                            ? html`<gm-error-banner .message=${this.state.configErrorMessage}></gm-error-banner>`
+                            : nothing
+                    }
                     <p id="config-meta" class="docs-meta">Project settings are not available right now.</p>
                     <div id="config-content" class="config-stack"></div>
                 </section>
@@ -837,39 +849,44 @@ ${draft.ok ? serializeConfigurationValue(draft.config) : this.#draftText}</pre
 
         return html`
             <section id="config-page" class=${configPageClassName}>
-                ${this.state.configErrorMessage
-                    ? html`<gm-error-banner .message=${this.state.configErrorMessage}></gm-error-banner>`
-                    : nothing}
+                ${
+                    this.state.configErrorMessage
+                        ? html`<gm-error-banner .message=${this.state.configErrorMessage}></gm-error-banner>`
+                        : nothing
+                }
                 <div id="config-content" class="config-stack">
-                    ${configCatalog.gmloop.exists
-                        ? nothing
-                        : html`
-                              <div class="config-setup-banner">
-                                  <div>
-                                      <h3>Configure GMLoop for your project</h3>
-                                      <p>
-                                          Generate a default <code>gmloop.json</code>, or edit the draft below and save
-                                          it directly.
-                                      </p>
+                    ${
+                        configCatalog.gmloop.exists
+                            ? nothing
+                            : html`
+                                  <div class="config-setup-banner">
+                                      <div>
+                                          <h3>Configure GMLoop for your project</h3>
+                                          <p>
+                                              Generate a default <code>gmloop.json</code>, or edit the draft below and
+                                              save it directly.
+                                          </p>
+                                      </div>
+                                      <button
+                                          type="button"
+                                          class="gm-btn gm-btn--primary"
+                                          ?disabled=${this.state.isRegeneratePending}
+                                          aria-busy=${this.state.isRegeneratePending ? "true" : "false"}
+                                          @click=${this.#emitCreateConfig}
+                                      >
+                                          ${renderProcessButtonContent({
+                                              label: "Create Default Config",
+                                              pending: this.state.isRegeneratePending
+                                          })}
+                                      </button>
                                   </div>
-                                  <button
-                                      type="button"
-                                      class="gm-btn gm-btn--primary"
-                                      ?disabled=${this.state.isRegeneratePending}
-                                      @click=${this.#emitCreateConfig}
-                                  >
-                                      <span class="button-content">
-                                          ${this.state.isRegeneratePending
-                                              ? html`<span class="button-spinner" aria-hidden="true"></span>`
-                                              : nothing}
-                                          <span class="button-label">Create Default Config</span>
-                                      </span>
-                                  </button>
-                              </div>
-                          `}
-                    ${this.state.activeConfigView === "raw"
-                        ? this.#renderRawConfig(configCatalog, draft)
-                        : this.#renderRenderedConfig(configCatalog, draft)}
+                              `
+                    }
+                    ${
+                        this.state.activeConfigView === "raw"
+                            ? this.#renderRawConfig(configCatalog, draft)
+                            : this.#renderRenderedConfig(configCatalog, draft)
+                    }
                 </div>
             </section>
         `;

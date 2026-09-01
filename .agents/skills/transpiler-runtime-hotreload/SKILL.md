@@ -11,8 +11,8 @@ Use this skill when an agent is changing transpilation or hot-reload runtime beh
 
 The target state is a reliable live GameMaker development loop:
 
-- parse and semantically classify changed GML
-- transpile GML into correct JavaScript patches
+- parse and semantically classify changed GML, assets, shaders, and game properties
+- transpile GML (`.gml`) and metadata (`.yy`, `.yyp`) into correct JavaScript patches
 - inject patches into the running runtime without restarting the game
 - preserve GameMaker semantics for scope, dispatch, built-ins, assets, and shaders
 - expose predictable automation hooks for AI agents building and modifying GameMaker games
@@ -21,7 +21,7 @@ This skill covers both the transpiler and runtime wrapper because their contract
 
 ## Ownership
 
-The transpiler owns:
+The transpiler (`@gmloop/transpiler`) owns:
 
 - GML AST to JavaScript emission
 - patch object generation
@@ -29,7 +29,7 @@ The transpiler owns:
 - dependency impact needed for recompilation
 - source maps or provenance when required for debugging
 
-The runtime wrapper owns:
+The runtime wrapper (`@gmloop/runtime-wrapper`) owns:
 
 - browser-side patch loading
 - hot function and script registry behavior
@@ -37,7 +37,7 @@ The runtime wrapper owns:
 - runtime bridge APIs
 - safe application and rollback behavior for injected changes
 
-They do not own:
+They do **not** own:
 
 - parser grammar
 - formatter layout
@@ -50,19 +50,20 @@ They do not own:
 
 Before editing:
 
-1. Identify the GameMaker semantic behavior that must be preserved.
-2. Determine whether the change belongs in transpilation, runtime patching, CLI coordination, or semantic analysis.
-3. Search for existing emit, shim, registry, and patch behavior.
-4. Add tests for emitted JavaScript shape, runtime contract, and affected GameMaker edge cases.
+1. Identify the GameMaker semantic behavior that must be preserved
+2. Determine whether the change belongs in transpilation, runtime patching, CLI coordination, or semantic analysis
+3. Search for existing emit, shim, registry, and patch behavior
+4. Add tests for emitted JavaScript shape, runtime contract, and affected GameMaker edge cases
 
 Implementation should:
 
-- consume semantic facts instead of reimplementing symbol resolution
+- consume semantic facts via the shared semantic interface/system instead of reimplementing symbol resolution
 - keep emitted JavaScript deterministic
 - use established JavaScript tooling or runtime libraries where appropriate
 - avoid broad compatibility layers for old patch formats
 - keep runtime code small, explicit, and observable enough to debug
 - preserve source provenance for errors where practical
+- be as optimized and efficient as possible without sacrificing correctness or determinism
 
 ## GameMaker Semantics
 

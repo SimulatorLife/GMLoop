@@ -126,6 +126,17 @@ interface GameMakerLexerErrorListenerOptions {
     formatter?: SyntaxErrorFormatter;
 }
 
+// ANTLR's `ErrorListener` interface (see docs/antlr-regeneration.md#error-handling)
+// requires parsers to expose `reportAmbiguity`, `reportAttemptingFullContext`, and
+// `reportContextSensitivity` callbacks. GML's parsing strategy intentionally
+// ignores these notifications because the formatter, pre-typed browsers, and the
+// refactor workspace care only about hard syntax errors raised through
+// `syntaxError`; ambiguity and context-sensitivity traces are accepted as a
+// practical cost of reusing a single grammar pass. Removing or replacing these
+// stubs with throwing bodies would break `parser.removeErrorListener(...)` and
+// the listener wiring in `gml-parser.ts`, silently turning recoverable
+// notifications into fatal errors and corrupting downstream prettifying/codemod
+// batches that intentionally suppress them.
 function reportAmbiguity() {}
 
 function reportAttemptingFullContext() {}

@@ -33,6 +33,11 @@ export interface FixtureProjectConfigMetadata {
     kind: FixtureKind;
     assertion?: FixtureAssertion;
     comparison?: FixtureComparison;
+    /**
+     * Non-GML expected-output file for transform fixtures that need to preserve
+     * a protected legacy `expected.gml` alongside the current expectation.
+     */
+    expectedTextFile?: string;
     externalProject?: ExternalProjectFixtureDescriptor;
     profile?: {
         budgets?: FixtureProfileBudgets;

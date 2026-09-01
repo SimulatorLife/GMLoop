@@ -1,6 +1,6 @@
 import { FixtureRunner } from "@gmloop/fixture-runner";
 
-import { createRefactorFixtureSuiteDefinition } from "./fixture-suite-definition.js";
+import { createRefactorFixtureSuiteDefinition } from "./fixture-adapter.js";
 
 const fixtureSuite = createRefactorFixtureSuiteDefinition();
 

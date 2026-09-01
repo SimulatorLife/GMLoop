@@ -1,3 +1,12 @@
+/**
+ * Resolver lifecycle tests for `setLineCommentOptionsResolver` /
+ * `restoreDefaultLineCommentOptionsResolver`.
+ *
+ * The default-and-custom-resolver behaviour of `resolveLineCommentOptions` is
+ * exhaustively covered (with stricter identity assertions) in
+ * `comments/line-comment-options-normalization.test.ts`; this file focuses on
+ * the lifecycle entry points that have no peer there.
+ */
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
@@ -11,29 +20,6 @@ const {
 } = Core;
 
 void describe("line comment options resolver", () => {
-    void it("returns defaults when no resolver is installed", () => {
-        restoreDefaultLineCommentOptionsResolver();
-
-        const first = resolveLineCommentOptions();
-        const second = resolveLineCommentOptions();
-
-        assert.deepEqual(first, DEFAULT_LINE_COMMENT_OPTIONS);
-        assert.strictEqual(first, second);
-    });
-
-    void it("uses custom resolver when one is set", () => {
-        restoreDefaultLineCommentOptionsResolver();
-        const sqlPattern = /^SQL:/i;
-
-        setLineCommentOptionsResolver(() => ({
-            codeDetectionPatterns: [...DEFAULT_LINE_COMMENT_OPTIONS.codeDetectionPatterns, sqlPattern]
-        }));
-
-        const resolved = resolveLineCommentOptions();
-
-        assert.strictEqual(resolved.codeDetectionPatterns.at(-1), sqlPattern);
-    });
-
     void it("restores the default state after clearing the resolver", () => {
         restoreDefaultLineCommentOptionsResolver();
         const sqlPattern = /^SQL:/i;

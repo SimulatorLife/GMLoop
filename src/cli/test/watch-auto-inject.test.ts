@@ -74,7 +74,6 @@ void describe("Watch command auto-inject flag", () => {
         const configPath = path.join(html5OutputDir, ".gml-hot-reload", LIVE_RELOAD_BOOTSTRAP_CONFIG_RELATIVE_PATH);
 
         const watchPromise = runWatchCommand(testDir, {
-            extensions: [".gml"],
             verbose: false,
             quiet: true,
             websocketServer: false,
@@ -101,7 +100,7 @@ void describe("Watch command auto-inject flag", () => {
             assert.ok(indexContent.includes("gml-hot-reload:start"), "Should contain hot-reload marker start");
             assert.ok(indexContent.includes("gml-hot-reload:end"), "Should contain hot-reload marker end");
             assert.ok(
-                indexContent.includes("runtime-wrapper/browser/index.js"),
+                indexContent.includes("runtime-wrapper/src/browser/index.js"),
                 "Should reference the browser bootstrap entry"
             );
             assert.ok(
@@ -133,7 +132,6 @@ void describe("Watch command auto-inject flag", () => {
         const configPath = path.join(html5OutputDir, ".gml-hot-reload", LIVE_RELOAD_BOOTSTRAP_CONFIG_RELATIVE_PATH);
 
         const watchPromise = runWatchCommand(testDir, {
-            extensions: [".gml"],
             verbose: false,
             quiet: true,
             websocketServer: false,
@@ -179,7 +177,6 @@ void describe("Watch command auto-inject flag", () => {
         const abortController = new AbortController();
 
         const watchPromise = runWatchCommand(testDir, {
-            extensions: [".gml"],
             verbose: false,
             quiet: true,
             websocketServer: false,

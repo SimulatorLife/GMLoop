@@ -13,6 +13,8 @@ import {
     formatWithIndefiniteArticle,
     getNonEmptyString,
     isIdentifierBoundaryCharacter,
+    isIdentifierStartCharacter,
+    isLogicalNotOperatorAliasAt,
     isNonEmptyString,
     isNonEmptyTrimmedString,
     isWordChar,
@@ -216,6 +218,42 @@ void test("isIdentifierBoundaryCharacter treats non-word values as boundaries", 
     assert.strictEqual(isIdentifierBoundaryCharacter(null), true);
 });
 
+void test("isIdentifierStartCharacter matches valid identifier start characters", () => {
+    assert.strictEqual(isIdentifierStartCharacter("a"), true);
+    assert.strictEqual(isIdentifierStartCharacter("Z"), true);
+    assert.strictEqual(isIdentifierStartCharacter("_"), true);
+    assert.strictEqual(isIdentifierStartCharacter("0"), false);
+    assert.strictEqual(isIdentifierStartCharacter("-"), false);
+    assert.strictEqual(isIdentifierStartCharacter(""), false);
+    assert.strictEqual(isIdentifierStartCharacter(null), false);
+});
+
+void test("isLogicalNotOperatorAliasAt detects not as an operator vs identifier", () => {
+    assert.strictEqual(isLogicalNotOperatorAliasAt("not active", 0), true);
+    assert.strictEqual(isLogicalNotOperatorAliasAt("NOT (active)", 0), true);
+    assert.strictEqual(isLogicalNotOperatorAliasAt("not(active)", 0), false);
+    assert.strictEqual(isLogicalNotOperatorAliasAt("var not = 1;", 4), false);
+    assert.strictEqual(isLogicalNotOperatorAliasAt("obj.not = 1;", 4), false);
+    assert.strictEqual(isLogicalNotOperatorAliasAt("if (not) {", 4), false);
+    assert.strictEqual(isLogicalNotOperatorAliasAt("if not_active {", 3), false);
+
+    // Literal and unary expression starts
+    assert.strictEqual(isLogicalNotOperatorAliasAt("not 1", 0), true);
+    assert.strictEqual(isLogicalNotOperatorAliasAt("not 0.5", 0), true);
+    assert.strictEqual(isLogicalNotOperatorAliasAt("not .5", 0), true);
+    assert.strictEqual(isLogicalNotOperatorAliasAt("not $FF", 0), true);
+    assert.strictEqual(isLogicalNotOperatorAliasAt("not 0x10", 0), true);
+    assert.strictEqual(isLogicalNotOperatorAliasAt("not !value", 0), true);
+    assert.strictEqual(isLogicalNotOperatorAliasAt("not ~value", 0), true);
+    assert.strictEqual(isLogicalNotOperatorAliasAt('not "hello"', 0), true);
+    assert.strictEqual(isLogicalNotOperatorAliasAt("not [1, 2]", 0), true);
+    assert.strictEqual(isLogicalNotOperatorAliasAt("not {a: 1}", 0), true);
+
+    // Boundaries and adjacencies
+    assert.strictEqual(isLogicalNotOperatorAliasAt("not.field", 0), false);
+    assert.strictEqual(isLogicalNotOperatorAliasAt("not[0]", 0), false);
+});
+
 void test("assertNonEmptyString returns the validated value", () => {
     assert.strictEqual(assertNonEmptyString("value"), "value");
     assert.strictEqual(assertNonEmptyString("  padded  ", { trim: true }), "padded");
@@ -339,6 +377,24 @@ void test("formatWithIndefiniteArticle selects the correct article", () => {
 
 void test("describeValueForError can skip JSON serialization for complex values", () => {
     assert.strictEqual(describeValueForError({ example: true }, { stringifyUnknown: false }), "[object Object]");
+});
+
+void test("describeValueForError defers to a custom toString when one is provided", () => {
+    class TaggedValue {
+        constructor(private readonly label: string) {}
+
+        toString(): string {
+            return `tag:${this.label}`;
+        }
+    }
+
+    // The stringifyUnknown path still goes through JSON serialization, which
+    // ignores custom toString when own enumerable properties exist.
+    assert.strictEqual(describeValueForError(new TaggedValue("player")), '{"label":"player"}');
+
+    // With stringifyUnknown disabled, the helper falls back to toSafeString
+    // and honors the custom toString override.
+    assert.strictEqual(describeValueForError(new TaggedValue("enemy"), { stringifyUnknown: false }), "tag:enemy");
 });
 
 void test("stripStringQuotes removes matching single and double quotes", () => {

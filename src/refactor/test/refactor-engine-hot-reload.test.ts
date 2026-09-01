@@ -219,19 +219,11 @@ void test("computeHotReloadCascade returns empty for no changes", async () => {
     assert.ok(Array.isArray(result.order));
     assert.equal(result.order.length, 0);
 
-    // Verify metadata object
+    // Summary counters live on the metadata bag; the result no longer
+    // re-publishes them as top-level aliases.
     assert.equal(result.metadata.totalSymbols, 0);
     assert.equal(result.metadata.maxDistance, 0);
     assert.equal(result.metadata.hasCircular, false);
-
-    // Verify top-level convenience aliases (promoted from metadata to avoid
-    // four-segment property chains like `result.metadata.totalSymbols`)
-    assert.equal(result.totalSymbols, 0);
-    assert.equal(result.maxDistance, 0);
-    assert.equal(result.hasCircular, false);
-    assert.equal(result.totalSymbols, result.metadata.totalSymbols);
-    assert.equal(result.maxDistance, result.metadata.maxDistance);
-    assert.equal(result.hasCircular, result.metadata.hasCircular);
 });
 
 void test("computeHotReloadCascade handles single symbol with no dependents", async () => {
@@ -449,8 +441,6 @@ void test("computeHotReloadCascade detects circular dependencies", async () => {
 
     // Should detect the circular dependency
     assert.equal(result.metadata.hasCircular, true);
-    // Verify top-level alias matches metadata
-    assert.equal(result.hasCircular, result.metadata.hasCircular);
 
     // All symbols should still be in the order (possibly with cycles broken)
     assert.equal(result.order.length, 3);
@@ -691,7 +681,7 @@ void test("checkHotReloadSafety rejects same-name renames", async () => {
     assert.equal(result.requiresRestart, false);
 });
 
-void test("checkHotReloadSafety rejects reserved keywords", async () => {
+void test("checkHotReloadSafety rejects reserved GameMaker identifiers", async () => {
     const mockSemantic = {
         hasSymbol: () => true,
         getSymbolOccurrences: (name) => [{ path: "test.gml", start: 0, end: name.length, scopeId: "scope-1" }],
@@ -705,7 +695,7 @@ void test("checkHotReloadSafety rejects reserved keywords", async () => {
     });
 
     assert.equal(result.safe, false);
-    assert.ok(result.reason.includes("reserved keyword"));
+    assert.ok(result.reason.includes("reserved GameMaker identifier"));
     assert.equal(result.requiresRestart, true);
     assert.equal(result.canAutoFix, false);
 });

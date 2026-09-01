@@ -18,6 +18,8 @@ import {
     isVariableDeclaratorNode,
     rangeContainsCommentToken,
     resolveLocFromIndex,
+    rewriteSourceLines,
+    rewriteSourceText,
     sourceRangeContainsCommentToken,
     walkAstNodes
 } from "../../src/rules/gml/rule-base-helpers.js";
@@ -395,4 +397,148 @@ void test("resolveLocFromIndex falls back to manual scan when getLocFromIndex re
     const context = createStubRuleContext(source, () => ({ line: Number.NaN, column: 0 }));
     const loc = resolveLocFromIndex(context, source, 6);
     assert.deepEqual(loc, { line: 2, column: 0 });
+});
+
+// ── rewriteSourceLines tests ─────────────────────────────────────────
+
+void test("rewriteSourceLines maps every line through the transform callback", () => {
+    const sourceText = "alpha\nbeta\ngamma";
+
+    const rewritten = rewriteSourceLines(sourceText, (line) => line.toUpperCase());
+
+    assertEquals(rewritten, "ALPHA\nBETA\nGAMMA");
+});
+
+void test("rewriteSourceLines drops lines whose transform returns null", () => {
+    const sourceText = "keep-one\ndrop-me\nkeep-two";
+
+    const rewritten = rewriteSourceLines(sourceText, (line) => (line === "drop-me" ? null : line));
+
+    assertEquals(rewritten, "keep-one\nkeep-two");
+});
+
+void test("rewriteSourceLines preserves CRLF line endings when rewriting", () => {
+    const sourceText = "alpha\r\nbeta\r\ngamma";
+
+    const rewritten = rewriteSourceLines(sourceText, (line) => line.toUpperCase());
+
+    assertEquals(rewritten, "ALPHA\r\nBETA\r\nGAMMA");
+});
+
+void test("rewriteSourceLines preserves CRLF line endings when dropping lines", () => {
+    const sourceText = "alpha\r\ndrop-me\r\nbeta";
+
+    const rewritten = rewriteSourceLines(sourceText, (line) => (line === "drop-me" ? null : line));
+
+    assertEquals(rewritten, "alpha\r\nbeta");
+});
+
+void test("rewriteSourceLines preserves a trailing newline when no lines are dropped", () => {
+    const sourceText = "alpha\nbeta\n";
+
+    const rewritten = rewriteSourceLines(sourceText, (line) => line);
+
+    assertEquals(rewritten, "alpha\nbeta\n");
+});
+
+void test("rewriteSourceLines exposes the line index and full source array to the transform", () => {
+    const sourceText = "a\nb\nc";
+
+    const indicesSeen: Array<number> = [];
+    const linesSeen: Array<string> = [];
+    rewriteSourceLines(sourceText, (line, index, sourceLines) => {
+        indicesSeen.push(index);
+        linesSeen.push(line);
+        assertEquals(sourceLines.length, 3);
+        return line;
+    });
+
+    assert.deepEqual(indicesSeen, [0, 1, 2]);
+    assert.deepEqual(linesSeen, ["a", "b", "c"]);
+});
+
+void test("rewriteSourceLines returns the source text unchanged when the transform is the identity", () => {
+    const sourceText = "alpha\nbeta";
+
+    const rewritten = rewriteSourceLines(sourceText, (line) => line);
+
+    assertEquals(rewritten, sourceText);
+});
+
+void test("rewriteSourceLines defaults to LF for source text without any line endings", () => {
+    const sourceText = "no-newlines-here";
+
+    const rewritten = rewriteSourceLines(sourceText, (line) => `${line}!`);
+
+    assertEquals(rewritten, "no-newlines-here!");
+});
+
+// ── rewriteSourceText tests ──────────────────────────────────────────
+
+void test("rewriteSourceText applies the block transform to all source lines", () => {
+    const sourceText = "alpha\nbeta\ngamma";
+
+    const rewritten = rewriteSourceText(sourceText, (lines) => lines.map((line) => line.toUpperCase()));
+
+    assertEquals(rewritten, "ALPHA\nBETA\nGAMMA");
+});
+
+void test("rewriteSourceText lets the transform consume multiple lines at once", () => {
+    const sourceText = "first\nsecond\nthird";
+
+    const rewritten = rewriteSourceText(sourceText, (lines) => [lines.join(" | ")]);
+
+    assertEquals(rewritten, "first | second | third");
+});
+
+void test("rewriteSourceText lets the transform drop lines via filtering", () => {
+    const sourceText = "alpha\ndrop-me\nbeta";
+
+    const rewritten = rewriteSourceText(sourceText, (lines) => lines.filter((line) => line !== "drop-me"));
+
+    assertEquals(rewritten, "alpha\nbeta");
+});
+
+void test("rewriteSourceText preserves CRLF line endings when rewriting", () => {
+    const sourceText = "alpha\r\nbeta\r\ngamma";
+
+    const rewritten = rewriteSourceText(sourceText, (lines) => lines.map((line) => line.toUpperCase()));
+
+    assertEquals(rewritten, "ALPHA\r\nBETA\r\nGAMMA");
+});
+
+void test("rewriteSourceText preserves a trailing newline when the transform is the identity", () => {
+    const sourceText = "alpha\nbeta\n";
+
+    const rewritten = rewriteSourceText(sourceText, (lines) => lines);
+
+    assertEquals(rewritten, sourceText);
+});
+
+void test("rewriteSourceText returns the source text unchanged when the transform is the identity", () => {
+    const sourceText = "alpha\nbeta";
+
+    const rewritten = rewriteSourceText(sourceText, (lines) => lines);
+
+    assertEquals(rewritten, sourceText);
+});
+
+void test("rewriteSourceText exposes the full source array to the transform", () => {
+    const sourceText = "a\nb\nc";
+
+    let observedLength = 0;
+    rewriteSourceText(sourceText, (lines) => {
+        observedLength = lines.length;
+        return lines;
+    });
+
+    assertEquals(observedLength, 3);
+});
+
+void test("rewriteSourceText defaults to LF for source text without any line endings", () => {
+    const sourceText = "no-newlines-here";
+
+    const rewritten = rewriteSourceText(sourceText, (lines) => lines.map((line) => `${line}!`));
+
+    assertEquals(rewritten, "no-newlines-here!");
 });

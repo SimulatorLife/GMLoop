@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { getPatchKindMetadata, getSupportedPatchKinds, isSupportedPatchKind } from "../browser/runtime/patch-kind.js";
+import {
+    getPatchKindMetadata,
+    getSupportedPatchKinds,
+    isSupportedPatchKind
+} from "../src/browser/runtime/patch-kind.js";
 
 void describe("patch kind metadata", () => {
     void it("returns metadata for each supported patch kind", () => {
@@ -17,16 +21,21 @@ void describe("patch kind metadata", () => {
             registryCollectionKey: "closures",
             displayName: "Closure"
         });
+        assert.deepStrictEqual(getPatchKindMetadata("resource"), {
+            registryCollectionKey: "resources",
+            displayName: "Resource"
+        });
     });
 
     void it("returns all supported patch kinds in canonical order", () => {
-        assert.deepStrictEqual(getSupportedPatchKinds(), ["script", "event", "closure"]);
+        assert.deepStrictEqual(getSupportedPatchKinds(), ["script", "event", "closure", "resource"]);
     });
 
     void it("identifies valid and invalid patch kind values", () => {
         assert.strictEqual(isSupportedPatchKind("script"), true);
         assert.strictEqual(isSupportedPatchKind("event"), true);
         assert.strictEqual(isSupportedPatchKind("closure"), true);
+        assert.strictEqual(isSupportedPatchKind("resource"), true);
         assert.strictEqual(isSupportedPatchKind("unknown"), false);
     });
 });

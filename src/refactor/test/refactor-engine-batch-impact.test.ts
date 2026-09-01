@@ -8,6 +8,7 @@ import {
     type WorkspaceReadFile,
     type WorkspaceWriteFile
 } from "../index.js";
+import { workspaceEditChangeTracking } from "./test-helpers/workspace-edit-change-tracking.js";
 
 const { RefactorEngine: RefactorEngineClass, OccurrenceKind } = Refactor;
 
@@ -273,7 +274,8 @@ void test("planBatchRename coalesces staged metadata rewrites for the same file"
                 addMetadataEdit() {},
                 groupByFile() {
                     return new Map();
-                }
+                },
+                ...workspaceEditChangeTracking
             };
         },
         getSymbolOccurrences(name: string) {
@@ -490,7 +492,7 @@ void test("analyzeRenameImpact provides comprehensive summary", async () => {
     assert.equal(result.summary.hotReloadRequired, true);
 });
 
-void test("analyzeRenameImpact detects reserved keyword conflicts", async () => {
+void test("analyzeRenameImpact detects reserved GameMaker identifier conflicts", async () => {
     const mockSemantic = {
         hasSymbol: () => true,
         getSymbolOccurrences: () => [{ path: "test.gml", start: 0, end: 10, scopeId: "scope-1" }]

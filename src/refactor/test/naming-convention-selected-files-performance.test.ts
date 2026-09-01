@@ -6,6 +6,7 @@ import { Refactor } from "../index.js";
 import type { NamingConventionTarget, PartialSemanticAnalyzer, RefactorProjectConfig } from "../src/types.js";
 
 const FILE_COUNT = 4000;
+const SELECTED_FILE_COUNT = 100;
 const TARGETS_PER_FILE = 8;
 const PERFORMANCE_THRESHOLD_MS = 700;
 
@@ -53,6 +54,13 @@ function createSemanticStub(targetsByFile: Map<string, Array<NamingConventionTar
     };
 }
 
+function createSourceText(fileIndex: number): string {
+    return Array.from({ length: TARGETS_PER_FILE }, (_, index) => {
+        const name = `bad_name_${fileIndex}_${index}`;
+        return `${name}${" ".repeat(40 - name.length)}`;
+    }).join("");
+}
+
 void test("namingConvention codemod planning stays within selected-file threshold", async () => {
     const projectRoot = "/project";
     const gmlFilePaths = Array.from({ length: FILE_COUNT }, (_, index) => `scripts/s_${index}.gml`);
@@ -61,7 +69,7 @@ void test("namingConvention codemod planning stays within selected-file threshol
 
     for (const [fileIndex, filePath] of gmlFilePaths.entries()) {
         targetsByFile.set(filePath, createTargets(filePath, fileIndex));
-        sourceTextByFile.set(filePath, "var bad_name = 0;\nshow_debug_message(bad_name);\n");
+        sourceTextByFile.set(filePath, createSourceText(fileIndex));
     }
 
     const engine = new Refactor.RefactorEngine({ semantic: createSemanticStub(targetsByFile) });
@@ -80,7 +88,7 @@ void test("namingConvention codemod planning stays within selected-file threshol
     const execute = () =>
         engine.executeConfiguredCodemods({
             projectRoot,
-            targetPaths: gmlFilePaths.slice(0, 100),
+            targetPaths: gmlFilePaths.slice(0, SELECTED_FILE_COUNT),
             gmlFilePaths,
             config,
             readFile: async (filePath) => sourceTextByFile.get(filePath) ?? "",
@@ -93,7 +101,7 @@ void test("namingConvention codemod planning stays within selected-file threshol
     const durationMs = performance.now() - start;
 
     assert.equal(result.summaries[0]?.id, "namingConvention");
-    assert.equal(result.appliedFiles.size, FILE_COUNT);
+    assert.equal(result.appliedFiles.size, SELECTED_FILE_COUNT);
     assert.ok(
         durationMs <= PERFORMANCE_THRESHOLD_MS,
         `Expected namingConvention planning to complete within ${PERFORMANCE_THRESHOLD_MS}ms, observed ${durationMs.toFixed(2)}ms`

@@ -1,3 +1,6 @@
+import { writeFile } from "node:fs/promises";
+
+import { Refactor } from "@gmloop/refactor";
 import { Semantic } from "@gmloop/semantic";
 import { Command } from "commander";
 
@@ -5,6 +8,11 @@ import { applyStandardCommandOptions } from "../cli-core/command-standard-option
 import { handleCliError } from "../cli-core/errors.js";
 import { createConfigOption, createPathOption } from "../cli-core/shared-command-options.js";
 import { ensureProjectGraphIndex, printProjectPayload } from "../workflow/project-root.js";
+import {
+    buildCreateImageResultPayload,
+    type CreateImageRawOptions,
+    parseCreateImageOptions
+} from "./resource/create-image-options.js";
 
 type ResourceCommandSharedOptions = Readonly<{
     config?: string;
@@ -36,66 +44,17 @@ function addSharedOptions(command: Command): Command {
         .option("--json", "Emit JSON output.");
 }
 
-function resolveNodeIdFromQuery(
-    nameOrId: string,
-    options: ResourceCommandSharedOptions,
-    context: Awaited<ReturnType<typeof ensureProjectGraphIndex>>
-): string {
-    if (nameOrId.includes("::")) {
-        return nameOrId;
-    }
-    const search = Semantic.searchGraphIndex({
-        databasePath: options.databasePath,
-        limit: 1,
-        projectConfig: context.projectConfig,
-        projectRoot: context.projectRoot,
-        query: nameOrId,
-        toolsetRoot: options.toolsetRoot
-    });
-    const nodeId = search.results[0]?.id;
-    if (!nodeId) {
-        throw new Error(`Could not resolve resource '${nameOrId}'.`);
-    }
-    return nodeId;
-}
-
-async function runInspectResourceAction(nameOrId: string, options: ResourceCommandSharedOptions): Promise<void> {
-    const context = await ensureProjectGraphIndex(options);
-    const resolvedId = resolveNodeIdFromQuery(nameOrId, options, context);
-    const payload = Semantic.getGraphNode({
-        databasePath: options.databasePath,
-        nodeId: resolvedId,
-        projectConfig: context.projectConfig,
-        projectRoot: context.projectRoot,
-        toolsetRoot: options.toolsetRoot
-    });
-    printProjectPayload({ ok: payload !== null, payload });
-}
-
-async function runDepsResourceAction(nameOrId: string, options: ResourceCommandSharedOptions): Promise<void> {
-    const context = await ensureProjectGraphIndex(options);
-    const nodeId = resolveNodeIdFromQuery(nameOrId, options, context);
-    const neighbors = Semantic.getGraphNeighbors({
-        databasePath: options.databasePath,
-        nodeId,
-        projectConfig: context.projectConfig,
-        projectRoot: context.projectRoot,
-        toolsetRoot: options.toolsetRoot
-    });
-    printProjectPayload({ ok: true, payload: neighbors.filter((entry) => entry.direction === "outgoing") });
-}
-
-async function runDependentsResourceAction(nameOrId: string, options: ResourceCommandSharedOptions): Promise<void> {
-    const context = await ensureProjectGraphIndex(options);
-    const nodeId = resolveNodeIdFromQuery(nameOrId, options, context);
-    const usages = Semantic.getGraphUsages({
-        databasePath: options.databasePath,
-        nodeId,
-        projectConfig: context.projectConfig,
-        projectRoot: context.projectRoot,
-        toolsetRoot: options.toolsetRoot
-    });
-    printProjectPayload({ ok: true, payload: usages });
+/**
+ * Execute the `resource create-image` workflow as a sequence of delegation
+ * steps: parse the CLI request, render the PNG, write the file, and print
+ * the resulting payload. Each step is owned by a dedicated helper so this
+ * orchestrator focuses on sequencing rather than primitive bookkeeping.
+ */
+async function runCreateImageAction(outputPath: string, rawOptions: CreateImageRawOptions): Promise<void> {
+    const request = parseCreateImageOptions(rawOptions);
+    const imageBuffer = Refactor.createSolidColorPng(request);
+    await writeFile(outputPath, imageBuffer);
+    printProjectPayload(buildCreateImageResultPayload(request, outputPath));
 }
 
 /**
@@ -144,59 +103,20 @@ export function createResourceCommand(): Command {
         });
     });
 
-    const inspectCommand = addSharedOptions(
-        applyStandardCommandOptions(new Command("inspect"))
-            .description("Inspect one resource by id or query.")
-            .argument("<nameOrId>", "Resource name or graph node id.")
-    );
-    inspectCommand.action(async function resourceInspectCommandAction(nameOrId: string) {
-        await runResourceCommandAction(async () => {
-            await runInspectResourceAction(nameOrId, this.opts<ResourceCommandSharedOptions>());
-        });
-    });
+    const createImageCommand = applyStandardCommandOptions(new Command("create-image"))
+        .description("Create a PNG image of given dimensions and color/pattern.")
+        .argument("<output>", "Path to save the generated PNG image.")
+        .option("--width <number>", "Width of the image in pixels.", "64")
+        .option("--height <number>", "Height of the image in pixels.", "64")
+        .option("--color <color>", "Primary color (name or hex, e.g. 'red', '#FF0000').", "red")
+        .option("--color2 <color>", "Secondary color (only for checkerboard pattern).", "white")
+        .option("--pattern <pattern>", "Image pattern: solid or checkerboard.", "solid")
+        .option("--checker-size <number>", "Checkerboard square size in pixels.", "8")
+        .option("--json", "Emit JSON output.");
 
-    const depsCommand = addSharedOptions(
-        applyStandardCommandOptions(new Command("deps"))
-            .description("List outgoing dependencies for a resource.")
-            .argument("<nameOrId>", "Resource name or graph node id.")
-    );
-    depsCommand.action(async function resourceDepsCommandAction(nameOrId: string) {
+    createImageCommand.action(async function resourceCreateImageAction(outputPath: string) {
         await runResourceCommandAction(async () => {
-            await runDepsResourceAction(nameOrId, this.opts<ResourceCommandSharedOptions>());
-        });
-    });
-
-    const dependentsCommand = addSharedOptions(
-        applyStandardCommandOptions(new Command("dependents"))
-            .description("List incoming usages for a resource.")
-            .argument("<nameOrId>", "Resource name or graph node id.")
-    );
-    dependentsCommand.action(async function resourceDependentsCommandAction(nameOrId: string) {
-        await runResourceCommandAction(async () => {
-            await runDependentsResourceAction(nameOrId, this.opts<ResourceCommandSharedOptions>());
-        });
-    });
-
-    const auditCommand = addSharedOptions(
-        applyStandardCommandOptions(new Command("audit")).description("Run graph-backed resource audit summary.")
-    );
-    auditCommand.action(async function resourceAuditCommandAction() {
-        await runResourceCommandAction(async () => {
-            const options = this.opts<ResourceCommandSharedOptions>();
-            const context = await ensureProjectGraphIndex(options);
-            const everything = Semantic.searchGraphIndex({
-                databasePath: options.databasePath,
-                limit: 2000,
-                projectConfig: context.projectConfig,
-                projectRoot: context.projectRoot,
-                query: "",
-                toolsetRoot: options.toolsetRoot
-            });
-            const kindCounts = everything.results.reduce<Record<string, number>>((acc, entry) => {
-                acc[entry.kind] = (acc[entry.kind] ?? 0) + 1;
-                return acc;
-            }, {});
-            printProjectPayload({ ok: true, payload: { kindCounts, total: everything.results.length } });
+            await runCreateImageAction(outputPath, this.opts<CreateImageRawOptions>());
         });
     });
 
@@ -206,17 +126,16 @@ export function createResourceCommand(): Command {
             "",
             "Examples:",
             "  pnpm dlx gmloop resource list --path path/to/project",
-            "  pnpm dlx gmloop resource inspect scr_player --path path/to/project",
+            "  pnpm dlx gmloop resource find scr_player --path path/to/project",
+            "  pnpm dlx gmloop resource create-image tmp/placeholder.png --width 32 --height 32 --color '#ff0000'",
+            "  pnpm dlx gmloop resource create-image tmp/checker.png --width 64 --height 64 --pattern checkerboard --color gray --color2 white",
             '  pnpm dlx @gamemaker/gm-cli@latest resourcetool eval "resource list"'
         ].join("\n")
     );
 
     command.addCommand(listCommand);
     command.addCommand(findCommand);
-    command.addCommand(inspectCommand);
-    command.addCommand(depsCommand);
-    command.addCommand(dependentsCommand);
-    command.addCommand(auditCommand);
+    command.addCommand(createImageCommand);
 
     return command;
 }

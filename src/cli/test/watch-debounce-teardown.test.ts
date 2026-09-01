@@ -86,14 +86,16 @@ void describe("Watch debounce handler teardown (resource-leak regression)", () =
             await withTemporaryProperty(
                 process,
                 "exit",
-                // Prevent the watch command from actually exiting the test process.
-                (() => {
-                    // intentional no-op
-                }) as typeof process.exit,
+                // Keep SIGTERM cleanup observable to this test instead of terminating the
+                // Node test process. `runWatchCommand` resolves its promise before it
+                // invokes process.exit, so this replacement lets the assertion await the
+                // real teardown and detect retry timers that would otherwise keep the
+                // process alive after shutdown. Do not remove it or the regression test
+                // will terminate the runner before it can distinguish cancel from flush.
+                (() => {}) as typeof process.exit,
                 () =>
                     withTrackedRetrySetTimeout(retryTimerCounterState, TRANSIENT_RETRY_DELAY_MS, async () => {
                         const watchCmdPromise = runWatchCommand(root, {
-                            extensions: [".gml"],
                             quiet: true,
                             verbose: false,
                             runtimeServer: false,

@@ -37,6 +37,11 @@ export type IdentifierSinkRecord = {
 export interface IdentifierSink {
     append(record: IdentifierSinkRecord): void;
     readAll(collection: string, key: string, role: IdentifierSinkRole): Array<unknown>;
+    /**
+     * Read all records for a role and release the sink-owned tail/cache state
+     * for that role immediately after the read.
+     */
+    consumeAll(collection: string, key: string, role: IdentifierSinkRole): Array<unknown>;
     getRetainedEntriesPerKey(): number;
     getStats(): {
         recordsAppended: number;
@@ -52,7 +57,8 @@ export type LruCacheEntry = {
     records: Array<unknown>;
 };
 
-type TempFileIdentifierSinkOptions = Readonly<{
+/** Bounded spill and cache policy for project identifier aggregation. */
+export type IdentifierSinkOptions = Readonly<{
     enabled?: boolean;
     flushThreshold?: unknown;
     retainedEntriesPerKey?: unknown;
@@ -104,6 +110,33 @@ function parseJsonLines(rawContents: string): Array<unknown> {
 }
 
 /**
+ * Reject payloads that cannot be round-tripped through the JSONL spill file.
+ *
+ * The mechanism writes each record as one line of `JSON.stringify(record.payload)`.
+ * `JSON.stringify` returns `undefined` for `undefined`, functions, and `Symbol`,
+ * and throws on `BigInt` and circular references. Either outcome would corrupt the
+ * spill file: the literal text `undefined` would be appended as a non-JSON line,
+ * or an exception would abort `appendRecordsToFile` mid-write and leave the sink
+ * in a partially-mutated state. Validating at the API boundary keeps the failure
+ * mode cheap, explicit, and confined to the caller that supplied the bad payload.
+ */
+function assertJsonSerializable(payload: unknown, context: string): void {
+    let serialized: string | undefined;
+    try {
+        serialized = JSON.stringify(payload);
+    } catch (error) {
+        const reason = error instanceof Error ? error.message : String(error);
+        throw new TypeError(`${context} contains a non-JSON-serializable value: ${reason}`, { cause: error });
+    }
+
+    if (serialized === undefined) {
+        throw new TypeError(
+            `${context} contains a value that JSON-stringifies to undefined (function, Symbol, or undefined).`
+        );
+    }
+}
+
+/**
  * Temporary-file-backed identifier sink that keeps a bounded in-memory tail for
  * duplicate checks and spills historical records to JSONL files.
  */
@@ -122,7 +155,7 @@ export class TempFileIdentifierSink implements IdentifierSink {
     private cacheMisses = 0;
     private disposed = false;
 
-    constructor(options: TempFileIdentifierSinkOptions = {}) {
+    constructor(options: IdentifierSinkOptions = {}) {
         this.enabled = options.enabled ?? false;
         this.thresholds = normalizeSinkThresholds(options);
 
@@ -139,6 +172,14 @@ export class TempFileIdentifierSink implements IdentifierSink {
         if (!this.enabled || this.disposed) {
             return;
         }
+
+        // Fail fast on payloads that cannot be JSON-stringified. This must run
+        // before any state mutation so a rejected record leaves the sink
+        // untouched and the caller can see the offending identifier context.
+        assertJsonSerializable(
+            record.payload,
+            `IdentifierSink record for collection=${record.collection} key=${record.key} role=${record.role}`
+        );
 
         const recordKey = createRecordKey(record.collection, record.key, record.role);
         const tail = Core.getOrCreateMapEntry(this.inMemoryTailByKey, recordKey, () => []);
@@ -159,24 +200,11 @@ export class TempFileIdentifierSink implements IdentifierSink {
     }
 
     readAll(collection: string, key: string, role: IdentifierSinkRole): Array<unknown> {
-        if (this.disposed) {
-            return [];
-        }
+        return this.readRecords(collection, key, role, { releaseAfterRead: false });
+    }
 
-        const recordKey = createRecordKey(collection, key, role);
-        const tailRecords = this.inMemoryTailByKey.get(recordKey) ?? [];
-
-        if (!this.enabled) {
-            return [...tailRecords];
-        }
-
-        const filePath = this.filePathByKey.get(recordKey);
-        if (!filePath) {
-            return [...tailRecords];
-        }
-
-        const spilledRecords = this.readSpilledRecords(filePath);
-        return [...spilledRecords, ...tailRecords];
+    consumeAll(collection: string, key: string, role: IdentifierSinkRole): Array<unknown> {
+        return this.readRecords(collection, key, role, { releaseAfterRead: true });
     }
 
     getRetainedEntriesPerKey(): number {
@@ -207,6 +235,42 @@ export class TempFileIdentifierSink implements IdentifierSink {
         rmSync(this.tempRootPath, { recursive: true, force: true });
     }
 
+    private readRecords(
+        collection: string,
+        key: string,
+        role: IdentifierSinkRole,
+        options: { releaseAfterRead: boolean }
+    ): Array<unknown> {
+        if (this.disposed) {
+            return [];
+        }
+
+        const recordKey = createRecordKey(collection, key, role);
+        const tailRecords = this.inMemoryTailByKey.get(recordKey) ?? [];
+
+        if (!this.enabled) {
+            return [...tailRecords];
+        }
+
+        const filePath = this.filePathByKey.get(recordKey);
+        if (!filePath) {
+            const records = [...tailRecords];
+            if (options.releaseAfterRead) {
+                this.inMemoryTailByKey.delete(recordKey);
+            }
+            return records;
+        }
+
+        const spilledRecords = options.releaseAfterRead
+            ? this.readSpilledRecordsWithoutCaching(filePath)
+            : this.readSpilledRecords(filePath);
+        const records = [...spilledRecords, ...tailRecords];
+        if (options.releaseAfterRead) {
+            this.releaseRecordKey(recordKey, filePath);
+        }
+        return records;
+    }
+
     private appendRecordsToFile(recordKey: string, records: Array<unknown>): void {
         if (!this.enabled || this.disposed || records.length === 0 || !this.tempRootPath) {
             return;
@@ -228,6 +292,15 @@ export class TempFileIdentifierSink implements IdentifierSink {
         this.parsedReadCacheByPath.delete(filePath);
     }
 
+    private readSpilledRecordsWithoutCaching(filePath: string): Array<unknown> {
+        try {
+            return parseJsonLines(readFileSync(filePath, "utf8"));
+        } catch {
+            this.clearSpillPathMappings(filePath);
+            return [];
+        }
+    }
+
     private readSpilledRecords(filePath: string): Array<unknown> {
         const cached = this.parsedReadCacheByPath.get(filePath);
         if (cached) {
@@ -246,6 +319,13 @@ export class TempFileIdentifierSink implements IdentifierSink {
             this.clearSpillPathMappings(filePath);
             return [];
         }
+    }
+
+    private releaseRecordKey(recordKey: string, filePath: string): void {
+        this.inMemoryTailByKey.delete(recordKey);
+        this.filePathByKey.delete(recordKey);
+        this.recordKeyByFilePath.delete(filePath);
+        this.parsedReadCacheByPath.delete(filePath);
     }
 
     private clearSpillPathMappings(filePath: string): void {
@@ -290,7 +370,7 @@ export class TempFileIdentifierSink implements IdentifierSink {
     }
 }
 
-export function createIdentifierSink(options: TempFileIdentifierSinkOptions = {}): IdentifierSink {
+export function createIdentifierSink(options: IdentifierSinkOptions = {}): IdentifierSink {
     return new TempFileIdentifierSink({
         ...options,
         enabled: options.enabled ?? true

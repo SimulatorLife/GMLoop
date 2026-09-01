@@ -12,50 +12,35 @@ import {
     walkAstNodesWithParent
 } from "../rule-base-helpers.js";
 
-const {
-    convertLegacyReturnsDescriptionLinesToMetadata,
-    normalizeDocParamName,
-    promoteLeadingDocCommentTextToDescription,
-    resolveParameterName
-} = gmlRuleDocCommentServices;
+const { normalizeDocParamName, promoteLeadingDocCommentTextToDescription, resolveParameterName } =
+    gmlRuleDocCommentServices;
 
-const { applyJsDocTagAliasReplacements } = Core;
-
-const { getNodeStartIndex } = Core;
+const { applyJsDocTagAliasReplacements, getNodeStartIndex } = Core;
+const DOC_FUNCTION_TAG_LINE_PATTERN = /^\s*\/\/\/\s*@(?:func|funct|function|method)\b.*$/u;
 
 function normalizeDocCommentPrefixLine(line: string): string {
-    // support the "// /" notation used by some fixtures code
-    // but avoid matching "// //" which is just a normal comment starting with two
-    // slashes. we only want the single-slash variant.
-    const docSlashMatch = /^(\s*)\/\/\s*\/(?!\/)(.*)$/u.exec(line);
-    if (docSlashMatch) {
-        const content = docSlashMatch[2].trim();
+    const spacedSlashDocMatch = /^(\s*)\/\/\s*\/(?!\/)(.*)$/u.exec(line);
+    if (spacedSlashDocMatch) {
+        const content = spacedSlashDocMatch[2].trim();
         if (/^[=+\-*/%<>!&|^]/u.test(content)) {
             return line;
         }
-        if (content.length === 0) {
-            return `${docSlashMatch[1]}///`;
-        }
-        return `${docSlashMatch[1]}/// ${content}`;
+
+        return content.length === 0 ? `${spacedSlashDocMatch[1]}///` : `${spacedSlashDocMatch[1]}/// ${content}`;
     }
 
-    const tripleSlashMatch = /^(\s*)\/\/\/\s*@(.*)$/u.exec(line);
+    const doubleSlashTagMatch = /^(\s*)\/\/\s*@(.*)$/u.exec(line);
+    if (doubleSlashTagMatch) {
+        return `${doubleSlashTagMatch[1]}/// @${doubleSlashTagMatch[2].trim()}`;
+    }
+
+    const tripleSlashMatch = /^(\s*)\/\/\/\s*(.*)$/u.exec(line);
     if (tripleSlashMatch) {
-        return `${tripleSlashMatch[1]}/// @${tripleSlashMatch[2].trim()}`;
-    }
-
-    const doubleSlashAtMatch = /^(\s*)\/\/\s*@(.*)$/u.exec(line);
-    if (doubleSlashAtMatch) {
-        return `${doubleSlashAtMatch[1]}/// @${doubleSlashAtMatch[2].trim()}`;
-    }
-
-    const tripleSlashNoAtMatch = /^(\s*)\/\/\/\s*(.*)$/u.exec(line);
-    if (tripleSlashNoAtMatch) {
-        const content = tripleSlashNoAtMatch[2].trim();
-        if (content.length === 0) {
-            return `${tripleSlashNoAtMatch[1]}///`;
+        const content = tripleSlashMatch[2].trim();
+        if (content.startsWith("/")) {
+            return `${tripleSlashMatch[1]}/// ${content}`;
         }
-        return `${tripleSlashNoAtMatch[1]}/// ${content}`;
+        return content.length === 0 ? `${tripleSlashMatch[1]}///` : `${tripleSlashMatch[1]}/// ${content}`;
     }
 
     return line;
@@ -239,20 +224,8 @@ function extractParamsFromLine(line: string): Array<{ name: string; defaultVal?:
     });
 }
 
-function countNamedFunctionParameters(functionNode: AstNodeWithType): number {
-    const params = Reflect.get(functionNode, "params");
-    if (!Array.isArray(params)) {
-        return 0;
-    }
-
-    let count = 0;
-    for (const param of params) {
-        if (resolveParameterName(param) !== undefined) {
-            count += 1;
-        }
-    }
-
-    return count;
+function isSingleLineDefaultValueText(defaultValueText: string): boolean {
+    return !/[\r\n]/u.test(defaultValueText);
 }
 
 function extractDefaultParameterValueText(sourceText: string, parameterNode: AstNodeWithType): string | null {
@@ -265,7 +238,7 @@ function extractDefaultParameterValueText(sourceText: string, parameterNode: Ast
             const separatorOffset = parameterText.indexOf("=");
             if (separatorOffset !== -1) {
                 const defaultValueText = parameterText.slice(separatorOffset + 1).trim();
-                if (defaultValueText.length > 0) {
+                if (defaultValueText.length > 0 && isSingleLineDefaultValueText(defaultValueText)) {
                     return defaultValueText;
                 }
             }
@@ -289,7 +262,7 @@ function extractDefaultParameterValueText(sourceText: string, parameterNode: Ast
     }
 
     const defaultValueText = sourceText.slice(startOffset, endOffset).trim();
-    return defaultValueText.length > 0 ? defaultValueText : null;
+    return defaultValueText.length > 0 && isSingleLineDefaultValueText(defaultValueText) ? defaultValueText : null;
 }
 
 function alignDescriptionContinuationLines(docLines: ReadonlyArray<string>): ReadonlyArray<string> {
@@ -334,26 +307,10 @@ function formatOptionalParamDocName(parameterName: string, defaultValueText: str
     return `[${parameterName}=${defaultValueText}]`;
 }
 
-function normalizeUndefinedOptionalDefaultParamDocLine(line: string): string {
-    const normalized = /^(\s*\/\/\/\s*@param(?:\s+\{[^}]+\})?\s+)\[([A-Za-z0-9_]+)\s*=\s*undefined\](.*)$/u.exec(line);
-    if (!normalized) {
-        return line;
-    }
-
-    return `${normalized[1]}[${normalized[2]}]${normalized[3]}`;
-}
-
-function normalizeParamDescriptionSeparatorHyphen(line: string): string {
-    const normalized = /^(\s*\/\/\/\s*@param(?:\s+\{[^}]+\})?\s+(?:\[[^\]]+\]|[A-Za-z0-9_]+))\s+-\s+(.+)$/u.exec(line);
-    if (!normalized) {
-        return line;
-    }
-
-    return `${normalized[1]} ${normalized[2]}`;
-}
-
 function normalizeParamDescriptionSpacing(line: string): string {
-    const normalized = /^(\s*\/\/\/\s*@param(?:\s+\{[^}]+\})?\s+(?:\[[^\]]+\]|[A-Za-z0-9_]+))\s{2,}(\S.*)$/u.exec(line);
+    const normalized = /^(\s*\/\/\/\s*@param(?:\s+\{[^}]+\})?\s+(?:\[[^\]]+\]|\*?[A-Za-z0-9_]+))\s{2,}(\S.*)$/u.exec(
+        line
+    );
     if (!normalized) {
         return line;
     }
@@ -367,12 +324,12 @@ type DocCommentParamMetadata = Readonly<{
 }>;
 
 function rewriteDocCommentParamLineName(line: string, replacementName: string): string {
-    const optionalMatch = /^(\s*\/\/\/\s*@param(?:\s+\{[^}]+\})?\s+)\[([A-Za-z0-9_]+)([^\]]*)\](.*)$/u.exec(line);
+    const optionalMatch = /^(\s*\/\/\/\s*@param(?:\s+\{[^}]+\})?\s+)\[(\*?[A-Za-z0-9_]+)([^\]]*)\](.*)$/u.exec(line);
     if (optionalMatch) {
         return `${optionalMatch[1]}${replacementName}${optionalMatch[4]}`;
     }
 
-    const requiredMatch = /^(\s*\/\/\/\s*@param(?:\s+\{[^}]+\})?\s+)([A-Za-z0-9_]+)(.*)$/u.exec(line);
+    const requiredMatch = /^(\s*\/\/\/\s*@param(?:\s+\{[^}]+\})?\s+)(\*?[A-Za-z0-9_]+)(.*)$/u.exec(line);
     if (requiredMatch) {
         return `${requiredMatch[1]}${replacementName}${requiredMatch[3]}`;
     }
@@ -434,7 +391,7 @@ function remapUnmatchedParamDocLinesToFunctionOrder(
 }
 
 function parseDocCommentParamMetadata(line: string): DocCommentParamMetadata | null {
-    const paramMatch = /^\s*\/\/\/\s*@param(?:\s+\{([^}]+)\})?\s+\[?([A-Za-z0-9_]+)(?:=[^\]]*)?\]?/u.exec(line);
+    const paramMatch = /^\s*\/\/\/\s*@param(?:\s+\{([^}]+)\})?\s+\[?(\*?[A-Za-z0-9_]+)(?:=[^\]]*)?\]?/u.exec(line);
     if (!paramMatch) {
         return null;
     }
@@ -447,12 +404,12 @@ function parseDocCommentParamMetadata(line: string): DocCommentParamMetadata | n
 }
 
 function normalizeDocParamLineParameterName(line: string): string {
-    const optionalMatch = /^(\s*\/\/\/\s*@param(?:\s+\{[^}]+\})?\s+)\[([A-Za-z0-9_]+)([^\]]*)\](.*)$/u.exec(line);
+    const optionalMatch = /^(\s*\/\/\/\s*@param(?:\s+\{[^}]+\})?\s+)\[(\*?[A-Za-z0-9_]+)([^\]]*)\](.*)$/u.exec(line);
     if (optionalMatch) {
         return `${optionalMatch[1]}[${normalizeDocParamName(optionalMatch[2])}${optionalMatch[3]}]${optionalMatch[4]}`;
     }
 
-    const requiredMatch = /^(\s*\/\/\/\s*@param(?:\s+\{[^}]+\})?\s+)([A-Za-z0-9_]+)(.*)$/u.exec(line);
+    const requiredMatch = /^(\s*\/\/\/\s*@param(?:\s+\{[^}]+\})?\s+)(\*?[A-Za-z0-9_]+)(.*)$/u.exec(line);
     if (requiredMatch) {
         return `${requiredMatch[1]}${normalizeDocParamName(requiredMatch[2])}${requiredMatch[3]}`;
     }
@@ -1006,7 +963,7 @@ function synthesizeFunctionDocCommentBlock(
     for (let i = block.length - 1; i >= 0; i--) {
         if (
             name.length > 0 &&
-            new RegExp(String.raw`^\s*///\s*@description\s+${Core.escapeRegExp(name)}\s*$`).test(block[i])
+            new RegExp(String.raw`^\s*///\s*@(desc|description)\s+${Core.escapeRegExp(name)}\s*$`).test(block[i])
         ) {
             block.splice(i, 1);
         }
@@ -1047,12 +1004,17 @@ function synthesizeFunctionDocCommentBlock(
     const params = (functionNode as any).params || [];
     for (const param of params) {
         const paramName = resolveParameterName(param);
+        let hasDefaultParameter = false;
         let defaultVal: string | undefined;
 
         if (param.type === "DefaultParameter" || param.type === "AssignmentPattern") {
+            const rightNode = Reflect.get(param, "right");
+            hasDefaultParameter = Boolean(rightNode && typeof rightNode === "object");
             const extractedDefault = extractDefaultParameterValueText(sourceText, param);
             if (extractedDefault !== null) {
                 defaultVal = extractedDefault;
+            } else if (isFunctionInitializerNode(rightNode)) {
+                defaultVal = "function";
             }
         }
 
@@ -1060,7 +1022,11 @@ function synthesizeFunctionDocCommentBlock(
         const cleanName = normalizeDocParamName(paramName);
         if (existingParams.has(cleanName)) {
             if (defaultVal === undefined) {
-                updateExistingParamDocWithoutDefault(block, cleanName);
+                if (hasDefaultParameter) {
+                    updateExistingParamDocAsOptionalWithoutDefault(block, cleanName);
+                } else {
+                    updateExistingParamDocWithoutDefault(block, cleanName);
+                }
             } else {
                 updateExistingParamDocWithDefault(block, cleanName, defaultVal);
             }
@@ -1068,7 +1034,7 @@ function synthesizeFunctionDocCommentBlock(
         }
 
         if (defaultVal === undefined) {
-            block.push(`${indentation}/// @param ${cleanName}`);
+            block.push(`${indentation}/// @param ${hasDefaultParameter ? `[${cleanName}]` : cleanName}`);
         } else if (isFunctionDefaultValueText(defaultVal)) {
             block.push(`${indentation}/// @param {function} [${cleanName}]`);
         } else {
@@ -1134,7 +1100,16 @@ function synthesizeFunctionDocCommentBlock(
     }
 
     const alignedBlock = alignDescriptionContinuationLines(block);
-    return Array.from(reorderFunctionDocLinesForCanonicalTagLayout(alignedBlock));
+    const result = Array.from(reorderFunctionDocLinesForCanonicalTagLayout(alignedBlock));
+    return canonicalizeDescriptionToDesc(result);
+}
+
+function canonicalizeDescriptionToDesc(block: ReadonlyArray<string>): ReadonlyArray<string> {
+    return block.map((line) => line.replace(/^(\s*\/+\s*)@description\b/iu, "$1@desc"));
+}
+
+function canonicalizeDescToDescription(block: ReadonlyArray<string>): ReadonlyArray<string> {
+    return block.map((line) => line.replace(/^(\s*\/+\s*)@desc\b/iu, "$1@description"));
 }
 
 function processDocBlock(blockLines: Array<string>): Array<string> {
@@ -1142,7 +1117,7 @@ function processDocBlock(blockLines: Array<string>): Array<string> {
         return [];
     }
 
-    const emptyDescriptionPattern = /^(\s*)\/\/\/\s*@description\s*$/u;
+    const emptyDescriptionPattern = /^(\s*)\/\/\/\s*@(description|desc)\s*$/u;
     const hasOverrideTag = blockLines
         .map((line) => normalizeDocCommentPrefixLine(line))
         .map((line) => applyJsDocTagAliasLine(line))
@@ -1150,24 +1125,17 @@ function processDocBlock(blockLines: Array<string>): Array<string> {
     const normalizedBlock = blockLines
         .filter((line) => !emptyDescriptionPattern.test(line))
         .map((line) => normalizeDocCommentPrefixLine(line))
-        // canonicalize any alias tags such as @arg/@argument/@params/@desc, and
-        // remove legacy @function markers entirely. this ensures downstream
-        // logic can assume only the canonical forms remain.
         .map((line) => applyJsDocTagAliasLine(line))
+        .filter((line) => !DOC_FUNCTION_TAG_LINE_PATTERN.test(line))
         .map((line) => (hasOverrideTag ? line : normalizeReturnDocLineType(line)))
         .map((line) => normalizeDocParamLineParameterName(line))
-        .map((line) => normalizeUndefinedOptionalDefaultParamDocLine(line))
-        .map((line) => normalizeParamDescriptionSeparatorHyphen(line))
         .map((line) => normalizeParamDescriptionSpacing(line))
         .filter((line) => !emptyDescriptionPattern.test(line))
-        .filter((line) => line.trimStart() !== "///")
-        .filter((line): line is string => !/^\s*\/\/\/\s*@function\b/.test(line));
+        .filter((line) => line.trimStart() !== "///");
 
     const promotedBlock = promoteLeadingDocCommentTextToDescription(normalizedBlock, [], true);
 
-    const returnsNormalizedBlock = convertLegacyReturnsDescriptionLinesToMetadata(promotedBlock);
-
-    const dedupedReturnsBlock = dedupeReturnDocLines(returnsNormalizedBlock);
+    const dedupedReturnsBlock = dedupeReturnDocLines(promotedBlock);
 
     return Array.from(alignDescriptionContinuationLines(dedupedReturnsBlock));
 }
@@ -1268,7 +1236,12 @@ function flushDetachedDocCommentBlock(
         return;
     }
 
-    rewrittenLines.push(...normalizedDetachedDocBlock, ...pendingGapLines);
+    const isTopOfFile = rewrittenLines.every((line) => /^\s*$/u.test(line));
+    const finalBlock = isTopOfFile
+        ? canonicalizeDescToDescription(normalizedDetachedDocBlock)
+        : canonicalizeDescriptionToDesc(normalizedDetachedDocBlock);
+
+    rewrittenLines.push(...finalBlock, ...pendingGapLines);
 }
 
 function applyJsDocTagAliasLine(line: string): string {
@@ -1296,9 +1269,13 @@ function updateExistingParamDocWithDefault(docBlock: Array<string>, parameterNam
         : formatOptionalParamDocName(parameterName, defaultVal);
     for (const [index, line] of docBlock.entries()) {
         const optionalParamMatch = new RegExp(
-            String.raw`^(\s*///\s*@param)(\s+\{[^}]+\})?(\s+)\[${escapedParameterName}(?:=[^\]]*)?\]*(.*)$`
+            String.raw`^(\s*///\s*@param)(\s+\{[^}]+\})?(\s+)\[\*?${escapedParameterName}(?:=[^\]]*)?\]*(.*)$`
         ).exec(line);
         if (optionalParamMatch) {
+            if (isUndefinedDefaultValueText(defaultVal)) {
+                return;
+            }
+
             const typeAnnotation =
                 optionalParamMatch[2] ?? (isFunctionDefaultValueText(defaultVal) ? " {function}" : "");
             docBlock[index] =
@@ -1307,7 +1284,7 @@ function updateExistingParamDocWithDefault(docBlock: Array<string>, parameterNam
         }
 
         const requiredParamMatch = new RegExp(
-            String.raw`^(\s*///\s*@param)(\s+\{[^}]+\})?(\s+)${escapedParameterName}\b(.*)$`
+            String.raw`^(\s*///\s*@param)(\s+\{[^}]+\})?(\s+)\*?${escapedParameterName}\b(.*)$`
         ).exec(line);
         if (requiredParamMatch) {
             const typeAnnotation =
@@ -1319,11 +1296,34 @@ function updateExistingParamDocWithDefault(docBlock: Array<string>, parameterNam
     }
 }
 
+function updateExistingParamDocAsOptionalWithoutDefault(docBlock: Array<string>, parameterName: string): void {
+    const escapedParameterName = Core.escapeRegExp(parameterName);
+    for (const [index, line] of docBlock.entries()) {
+        const optionalParamMatch = new RegExp(
+            String.raw`^(\s*///\s*@param)(\s+\{[^}]+\})?(\s+)\[\*?${escapedParameterName}(?:=[^\]]*)?\](.*)$`
+        ).exec(line);
+        if (optionalParamMatch) {
+            docBlock[index] =
+                `${optionalParamMatch[1]}${optionalParamMatch[2] ?? ""}${optionalParamMatch[3]}[${parameterName}]${optionalParamMatch[4]}`;
+            return;
+        }
+
+        const requiredParamMatch = new RegExp(
+            String.raw`^(\s*///\s*@param)(\s+\{[^}]+\})?(\s+)\*?${escapedParameterName}\b(.*)$`
+        ).exec(line);
+        if (requiredParamMatch) {
+            docBlock[index] =
+                `${requiredParamMatch[1]}${requiredParamMatch[2] ?? ""}${requiredParamMatch[3]}[${parameterName}]${requiredParamMatch[4]}`;
+            return;
+        }
+    }
+}
+
 function updateExistingParamDocWithoutDefault(docBlock: Array<string>, parameterName: string): void {
     const escapedParameterName = Core.escapeRegExp(parameterName);
     for (const [index, line] of docBlock.entries()) {
         const optionalParamMatch = new RegExp(
-            String.raw`^(\s*///\s*@param)(\s+\{[^}]+\})?(\s+)\[${escapedParameterName}(?:=[^\]]*)?\](.*)$`
+            String.raw`^(\s*///\s*@param)(\s+\{[^}]+\})?(\s+)\[\*?${escapedParameterName}(?:=[^\]]*)?\](.*)$`
         ).exec(line);
         if (optionalParamMatch) {
             docBlock[index] =
@@ -1517,7 +1517,8 @@ function synthesizeTextFallbackDocCommentBlock({
     }
 
     const alignedBlock = alignDescriptionContinuationLines(fallbackBlock);
-    return Array.from(reorderFunctionDocLinesForCanonicalTagLayout(alignedBlock));
+    const result = Array.from(reorderFunctionDocLinesForCanonicalTagLayout(alignedBlock));
+    return canonicalizeDescriptionToDesc(result);
 }
 
 export function createNormalizeDocCommentsRule(definition: GmlRuleDefinition): Rule.RuleModule {
@@ -1532,12 +1533,10 @@ export function createNormalizeDocCommentsRule(definition: GmlRuleDefinition): R
                     const lineStartOffsets = computeLineStartOffsets(text);
                     const functionNodesByLineIndex = collectFunctionNodesByStartLine(programNode, lineStartOffsets);
                     const rewrittenLines: Array<string> = [];
-                    const deferredDocBlocksByLineIndex = new Map<number, Array<string>>();
 
                     let pendingDocBlock: Array<string> = [];
                     let pendingGapLinesAfterDocBlock: Array<string> = [];
                     for (const [lineIndex, line] of lines.entries()) {
-                        // accumulate any doc-like lines until we hit actual code
                         if (
                             /^\s*\/\/\//u.test(line) ||
                             /^\s*\/\/\s*@/u.test(line) ||
@@ -1570,9 +1569,8 @@ export function createNormalizeDocCommentsRule(definition: GmlRuleDefinition): R
                         // simple regex to recognize function headers in that case.
                         const isTextualFunctionDeclaration = isTextualNamedFunctionDeclarationLine(line);
                         const hasLeadingIndentation = /^\s+/u.test(line);
-                        const isTextualFunctionAssignment = /^\s*(?:var|static)\s+[A-Za-z_]\w*\s*=\s*function\b/u.test(
-                            line
-                        );
+                        const isTextualFunctionAssignment =
+                            /^\s*(?:var\s+|static\s+)?(?:[A-Za-z_]\w*\.)?[A-Za-z_]\w*\s*=\s*function\b/u.test(line);
                         const isTextualFunction =
                             isTextualFunctionDeclaration ||
                             (isTextualFunctionAssignment && (pendingDocBlock.length > 0 || !hasLeadingIndentation));
@@ -1604,18 +1602,8 @@ export function createNormalizeDocCommentsRule(definition: GmlRuleDefinition): R
                                       lineIndex
                                   });
 
-                            const deferredSynthesisHandled = handleDeferredDocSynthesis(
-                                astFunctionCandidate,
-                                synthesized ?? [],
-                                text,
-                                hasLeadingIndentation,
-                                processedBlock,
-                                lineStartOffsets,
-                                deferredDocBlocksByLineIndex
-                            );
-
                             if (synthesized !== null) {
-                                if (synthesized.length > 0 && !deferredSynthesisHandled) {
+                                if (synthesized.length > 0) {
                                     if (
                                         shouldSeparateTopLevelSynthesizedDocBlock(
                                             rewrittenLines,
@@ -1628,7 +1616,7 @@ export function createNormalizeDocCommentsRule(definition: GmlRuleDefinition): R
                                     rewrittenLines.push(...synthesized);
                                 }
                             } else if (processedBlock.length > 0) {
-                                rewrittenLines.push(...processedBlock);
+                                rewrittenLines.push(...canonicalizeDescriptionToDesc(processedBlock));
                             }
                             pendingDocBlock = [];
                             pendingGapLinesAfterDocBlock = [];
@@ -1644,10 +1632,6 @@ export function createNormalizeDocCommentsRule(definition: GmlRuleDefinition): R
                         }
 
                         rewrittenLines.push(normalizeDocCommentPrefixLine(line));
-                        const deferredDocBlock = deferredDocBlocksByLineIndex.get(lineIndex);
-                        if (deferredDocBlock && deferredDocBlock.length > 0) {
-                            rewrittenLines.push(...deferredDocBlock);
-                        }
                     }
 
                     if (pendingDocBlock.length > 0) {
@@ -1754,92 +1738,19 @@ function determineIfShouldSynthesizeReturnLine({
     );
 }
 
-function handleDeferredDocSynthesis(
-    astFunctionCandidate: any,
-    synthesized: ReadonlyArray<string>,
-    text: string,
-    hasLeadingIndentation: boolean,
-    processedBlock: ReadonlyArray<string>,
-    lineStartOffsets: number[],
-    deferredDocBlocksByLineIndex: Map<number, Array<string>>
-): boolean {
-    if (
-        astFunctionCandidate &&
-        synthesized &&
-        synthesized.length > 0 &&
-        astFunctionCandidate.assignmentStyle &&
-        !hasLeadingIndentation &&
-        processedBlock.length === 0 &&
-        countNamedFunctionParameters(astFunctionCandidate.functionNode) > 0
-    ) {
-        const assignmentReturnSummary = inferReturnDocTypeFromFunctionNode(
-            astFunctionCandidate.functionNode,
-            new Set<string>(),
-            new Map<string, string>()
-        );
-        if (!assignmentReturnSummary.hasReturnStatement) {
-            const assignmentStartIndex = getNodeStartIndex(astFunctionCandidate.sourceNode);
-            const assignmentEndIndex = Core.getNodeEndIndex(astFunctionCandidate.sourceNode);
-            if (
-                typeof assignmentStartIndex === "number" &&
-                typeof assignmentEndIndex === "number" &&
-                assignmentEndIndex > assignmentStartIndex
-            ) {
-                let assignmentSliceEndIndex = assignmentEndIndex;
-                if (text[assignmentSliceEndIndex] === ";") {
-                    assignmentSliceEndIndex += 1;
-                }
-
-                const assignmentText = text.slice(assignmentStartIndex, assignmentSliceEndIndex);
-                const assignmentLines = assignmentText.split(/\r?\n/u);
-                const assignmentEndLineIndex = getLineIndexForOffset(lineStartOffsets, assignmentEndIndex - 1);
-                const deferredLines = ["", ...synthesized, ...assignmentLines];
-                if (
-                    hasMaterializedDeferredDocumentedAssignmentAfterSourceText(
-                        text,
-                        assignmentSliceEndIndex,
-                        synthesized,
-                        assignmentLines
-                    )
-                ) {
-                    return true;
-                }
-                const existingDeferredLines = deferredDocBlocksByLineIndex.get(assignmentEndLineIndex) ?? [];
-                existingDeferredLines.push(...deferredLines);
-                deferredDocBlocksByLineIndex.set(assignmentEndLineIndex, existingDeferredLines);
-                return true;
-            }
-        }
-    }
-    return false;
-}
-
-function hasMaterializedDeferredDocumentedAssignmentAfterSourceText(
-    sourceText: string,
-    assignmentSliceEndIndex: number,
-    synthesizedDocLines: ReadonlyArray<string>,
-    assignmentLines: ReadonlyArray<string>
-): boolean {
-    const followingLines = sourceText.slice(assignmentSliceEndIndex).split(/\r?\n/u);
-    let lineIndex = 0;
-    while (lineIndex < followingLines.length && followingLines[lineIndex].trim().length === 0) {
-        lineIndex += 1;
-    }
-
-    if (lineIndex === 0) {
-        return false;
-    }
-
-    const expectedLines = [...synthesizedDocLines, ...assignmentLines];
-    if (followingLines.length - lineIndex < expectedLines.length) {
-        return false;
-    }
-
-    for (const [expectedIndex, expectedLine] of expectedLines.entries()) {
-        if (followingLines[lineIndex + expectedIndex] !== expectedLine) {
-            return false;
-        }
-    }
-
-    return true;
-}
+// NOTE: This rule previously deferred doc-comment synthesis for top-level,
+// unindented `var name = function (...) {...};` assignments that had named
+// params but no return statement (see the removed `handleDeferredDocSynthesis`
+// / `hasMaterializedDeferredDocumentedAssignmentAfterSourceText` helpers).
+// That mechanism captured the synthesized `/// @param`/`/// @returns` lines
+// together with a *second copy* of the entire assignment's source text and
+// re-inserted that combined block immediately after the original,
+// unmodified declaration. The net effect was that GMLoop's autofix silently
+// duplicated the function declaration in the source file every time this
+// rule ran against such a function (see the `burst_confetti` regression
+// covered by the fixtures/tests for `normalize-doc-comments`). There was no
+// scenario where duplicating the declaration was actually desired, so the
+// mechanism was removed outright: these functions now go through the same
+// code path as every other function candidate, which synthesizes the doc
+// comment block once and inserts it directly above the existing
+// declaration in place.

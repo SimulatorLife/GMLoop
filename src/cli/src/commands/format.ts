@@ -14,8 +14,8 @@ import { fileURLToPath } from "node:url";
 
 import { Core } from "@gmloop/core";
 import { Command, InvalidArgumentError, Option } from "commander";
-import type { Options as PrettierOptions } from "prettier";
 
+import { isHelpRequest } from "../cli-core/cli-argument-normalization.js";
 import { wrapInvalidArgumentResolver } from "../cli-core/command-parsing.js";
 import { applyStandardCommandOptions } from "../cli-core/command-standard-options.js";
 import { CliUsageError, formatCliError } from "../cli-core/errors.js";
@@ -27,18 +27,24 @@ import {
     createVerboseOption,
     createWriteOption
 } from "../cli-core/shared-command-options.js";
-import {
-    hasRegisteredIgnorePath,
-    registerIgnorePath,
-    resetRegisteredIgnorePaths
-} from "../format-runtime/ignore-path-registry.js";
-import { importFormatModule, resolveFormatEntryPoint as resolveCliFormatEntryPoint } from "../format-runtime/index.js";
+import { resolveFormatEntryPoint as resolveCliFormatEntryPoint, resolveFormatModule } from "../format-runtime/index.js";
 import { tryAddSample } from "../modules/formatting/bounded-sample-collector.js";
 import {
+    PERIODIC_CLEANUP_CACHE_RETAINED_ENTRIES,
+    PERIODIC_CLEANUP_INTERVAL
+} from "../modules/formatting/format-memory-constants.js";
+import {
+    getDefaultMaxInMemorySnapshots,
+    setDefaultMaxInMemorySnapshots
+} from "../modules/formatting/format-memory-options.js";
+import {
     hasNegatedIgnoreRules,
+    hasRegisteredIgnorePath,
     markNegatedIgnoreRulesDetected,
-    resetNegatedIgnoreRulesFlag
-} from "../modules/formatting/ignore-rules-negation-tracker.js";
+    registerIgnorePath,
+    resetNegatedIgnoreRulesFlag,
+    resetRegisteredIgnorePaths
+} from "../modules/formatting/ignore-tracking.js";
 import {
     clearFormattingCache,
     createFormattingCacheKey,
@@ -49,19 +55,10 @@ import {
     trimFormattingCache
 } from "../modules/formatting/index.js";
 import {
-    isHelpRequest,
     resolveTargetPathFromInput,
     resolveTargetStats,
     validateTargetPathInput
 } from "../modules/formatting/target-path-resolution.js";
-import {
-    PERIODIC_CLEANUP_CACHE_RETAINED_ENTRIES,
-    PERIODIC_CLEANUP_INTERVAL
-} from "../runtime-options/format-memory-constants.js";
-import {
-    getDefaultMaxInMemorySnapshots,
-    setDefaultMaxInMemorySnapshots
-} from "../runtime-options/format-memory-snapshots.js";
 import {
     getDefaultIgnoredFileSampleLimit,
     getDefaultSkippedDirectorySampleLimit,
@@ -70,13 +67,13 @@ import {
     resolveSkippedDirectorySampleLimit,
     resolveUnsupportedExtensionSampleLimit
 } from "../runtime-options/sample-limits.js";
+import { createThrottledCounterLogger } from "../shared/throttled-counter-logger.js";
 import {
     calculateElapsedNanoseconds,
-    formatElapsedNanosecondsAsMilliseconds,
-    readMonotonicNanoseconds
+    formatElapsedNanosecondsAsMilliseconds
 } from "../shared/timing/verbose-timing.js";
 import { formatPathForDisplay } from "../workflow/display-path.js";
-import { resolveExistingGmloopConfigPath } from "../workflow/project-root.js";
+import { resolveExistingGmloopConfigPath, resolveWorkflowTargetPath } from "../workflow/project-root.js";
 import {
     buildNoMatchingFilesMessage,
     buildSkippedDirectorySummaryMessage,
@@ -99,7 +96,6 @@ const {
     mergeUniqueValues,
     readTextFile,
     toArray,
-    toNormalizedLowerCaseSet,
     uniqueArray,
     walkAncestorDirectories,
     withObjectLike
@@ -111,6 +107,28 @@ const IGNORE_PATH = path.resolve(WRAPPER_DIRECTORY, ".prettierignore");
 
 const GML_EXTENSION = ".gml";
 
+/**
+ * Canonical Prettier log levels accepted by the `format` command's
+ * `--log-level` flag and the `PRETTIER_PLUGIN_GML_LOG_LEVEL` environment
+ * override.
+ *
+ * Centralised as a frozen enum object so every call site shares a single
+ * source of truth: the {@link PrettierLogLevelValue} union is derived from
+ * its keys, {@link VALID_PRETTIER_LOG_LEVELS} is derived from its values,
+ * and the {@link logLevelOption} helper validates inputs against the same
+ * set. Adding a new level is a one-line change here rather than a sweep of
+ * ad-hoc `=== "silent"` / `=== "debug"` branches scattered through the
+ * file.
+ */
+export const PrettierLogLevel = Object.freeze({
+    DEBUG: "debug",
+    INFO: "info",
+    WARN: "warn",
+    ERROR: "error",
+    SILENT: "silent"
+});
+export type PrettierLogLevelValue = (typeof PrettierLogLevel)[keyof typeof PrettierLogLevel];
+
 const ParseErrorAction = Object.freeze({
     REVERT: "revert",
     SKIP: "skip",
@@ -119,7 +137,7 @@ const ParseErrorAction = Object.freeze({
 type ParseErrorActionValue = (typeof ParseErrorAction)[keyof typeof ParseErrorAction];
 
 const VALID_PARSE_ERROR_ACTIONS = new Set(Object.values(ParseErrorAction));
-const VALID_PRETTIER_LOG_LEVELS = new Set(["debug", "info", "warn", "error", "silent"]);
+const VALID_PRETTIER_LOG_LEVELS: ReadonlySet<PrettierLogLevelValue> = new Set(Object.values(PrettierLogLevel));
 
 const parseErrorActionOption = createEnumeratedOptionHelpers(VALID_PARSE_ERROR_ACTIONS, {
     formatError: (list) => `Must be one of: ${list}`
@@ -128,12 +146,11 @@ const logLevelOption = createEnumeratedOptionHelpers(VALID_PRETTIER_LOG_LEVELS, 
     formatError: (list) => `Must be one of: ${list}`
 });
 
-const FORMAT_COMMAND_CLI_EXAMPLE = "pnpm dlx gmloop format path/to/project";
+const FORMAT_COMMAND_CLI_EXAMPLE = "pnpm dlx gmloop format --path path/to/project";
 const FORMAT_COMMAND_WORKSPACE_EXAMPLE = "pnpm run format:gml -- path/to/project";
 const FORMAT_COMMAND_FIX_EXAMPLE = `pnpm dlx gmloop format --write --path path/to/script${GML_EXTENSION}`;
 
 const PRETTIER_MODULE_ID = process.env.PRETTIER_PLUGIN_GML_PRETTIER_MODULE ?? "prettier";
-const TARGET_EXTENSIONS = Object.freeze([GML_EXTENSION]);
 
 type ModuleWithDefault<TValue> = TValue & {
     default?: unknown;
@@ -254,21 +271,29 @@ let formatOutputNormalizerPromise: Promise<null | ((formatted: string, source: s
 
 function resolvePrettier() {
     if (!prettierModulePromise) {
-        prettierModulePromise = import(PRETTIER_MODULE_ID).then(resolveModuleDefaultExport).catch((error) => {
-            if (isMissingPrettierDependency(error)) {
-                const instructions = [
-                    "Prettier v3 must be installed alongside gmloop.",
-                    "Install it with:",
-                    "  pnpm add -D prettier@^3"
-                ].join("\n");
-                const cliError = new CliUsageError(instructions);
-                if (isErrorLike(error)) {
-                    cliError.cause = error;
+        prettierModulePromise = import(PRETTIER_MODULE_ID)
+            .then(resolveModuleDefaultExport)
+            .then((moduleValue) => {
+                if (!isCliPrettierModule(moduleValue)) {
+                    throw new CliUsageError("Resolved Prettier module does not provide the required format APIs.");
                 }
-                throw cliError;
-            }
-            throw error;
-        });
+                return moduleValue;
+            })
+            .catch((error) => {
+                if (isMissingPrettierDependency(error)) {
+                    const instructions = [
+                        "Prettier v3 must be installed alongside gmloop.",
+                        "Install it with:",
+                        "  pnpm add -D prettier@^3"
+                    ].join("\n");
+                    const cliError = new CliUsageError(instructions);
+                    if (isErrorLike(error)) {
+                        cliError.cause = error;
+                    }
+                    throw cliError;
+                }
+                throw error;
+            });
     }
 
     return prettierModulePromise;
@@ -276,15 +301,17 @@ function resolvePrettier() {
 
 function resolveFormatOutputNormalizer(): Promise<null | ((formatted: string, source: string) => string)> {
     if (formatOutputNormalizerPromise === null) {
-        formatOutputNormalizerPromise = importFormatModule()
-            .then((moduleValue) => {
+        formatOutputNormalizerPromise = resolveFormatModule()
+            .then((formatModule) => {
                 // `normalizeFormattedOutput` is part of the `Format` namespace per the
                 // workspace-root single-namespace contract (target-state.md §2.1).
-                const formatNamespace = (moduleValue as { Format?: { normalizeFormattedOutput?: unknown } }).Format;
-                const normalizer = formatNamespace?.normalizeFormattedOutput;
-                return typeof normalizer === "function"
-                    ? (normalizer as (formatted: string, source: string) => string)
-                    : null;
+                // The CLI depends on the typed `FormatModuleContract` rather than
+                // reaching into the dynamic-import shape directly.
+                const normalizer = formatModule.Format?.normalizeFormattedOutput;
+                if (typeof normalizer !== "function") {
+                    return null;
+                }
+                return (formatted: string, _source: string) => normalizer(formatted);
             })
             .catch(() => null);
     }
@@ -309,7 +336,7 @@ async function normalizeFormattedOutputWithFormat(formatted: string, source: str
 const DEFAULT_PARSE_ERROR_ACTION: ParseErrorActionValue = ParseErrorAction.ABORT;
 
 const DEFAULT_PRETTIER_LOG_LEVEL =
-    logLevelOption.normalize(process.env.PRETTIER_PLUGIN_GML_LOG_LEVEL, "warn") ?? "warn";
+    logLevelOption.normalize(process.env.PRETTIER_PLUGIN_GML_LOG_LEVEL, PrettierLogLevel.WARN) ?? PrettierLogLevel.WARN;
 
 // Save the original console.debug, console.error, console.warn, console.log
 // and console.info so we can
@@ -371,8 +398,8 @@ export function isDiagnosticStdoutMessage(message) {
  * @param logLevel - The Prettier log level (debug|info|warn|error|silent)
  */
 function configureConsoleMethods(logLevel: string): void {
-    const silent = logLevel === "silent";
-    const debug = logLevel === "debug";
+    const silent = logLevel === PrettierLogLevel.SILENT;
+    const debug = logLevel === PrettierLogLevel.DEBUG;
 
     // Disable console.debug unless the log level is explicitly set to debug.
     // This ensures internal tracing and diagnostic output is hidden by default.
@@ -413,23 +440,18 @@ function configureConsoleMethods(logLevel: string): void {
 
 // Initialize console methods based on the environment or default log level.
 // This ensures console.debug is disabled early on if requested.
-configureConsoleMethods(process.env.PRETTIER_PLUGIN_GML_LOG_LEVEL ?? DEFAULT_PRETTIER_LOG_LEVEL);
+configureConsoleMethods(
+    logLevelOption.normalize(process.env.PRETTIER_PLUGIN_GML_LOG_LEVEL, PrettierLogLevel.WARN) ?? PrettierLogLevel.WARN
+);
 
 export function createFormatCommand({ name = "gmloop" } = {}) {
-    const { option: skippedDirectorySampleLimitOption, parseLimit: parseSkippedDirectoryLimit } =
-        createConfiguredSampleLimitOption({
-            flag: "--ignored-directory-sample-limit <count>",
-            description: (defaultLimit) =>
-                `Max ignored directories shown in summary. Default: ${defaultLimit}, use 0 to hide`,
-            getDefaultLimit: getDefaultSkippedDirectorySampleLimit,
-            resolveLimit: resolveSkippedDirectorySampleLimit
-        });
-    const skippedDirectorySamplesAliasOption = new Option(
-        "--ignored-directory-samples <count>",
-        "Alias for --ignored-directory-sample-limit <count>"
-    )
-        .argParser(wrapInvalidArgumentResolver(parseSkippedDirectoryLimit))
-        .hideHelp();
+    const { option: skippedDirectorySampleLimitOption } = createConfiguredSampleLimitOption({
+        flag: "--skipped-directory-sample-limit <count>",
+        description: (defaultLimit) =>
+            `Max ignored directories shown in summary. Default: ${defaultLimit}, use 0 to hide`,
+        getDefaultLimit: getDefaultSkippedDirectorySampleLimit,
+        resolveLimit: resolveSkippedDirectorySampleLimit
+    });
 
     const { option: ignoredFileSampleLimitOption } = createConfiguredSampleLimitOption({
         flag: "--ignored-file-sample-limit <count>",
@@ -457,7 +479,6 @@ export function createFormatCommand({ name = "gmloop" } = {}) {
         .addOption(createWriteOption())
         .addOption(createListOption())
         .addOption(skippedDirectorySampleLimitOption)
-        .addOption(skippedDirectorySamplesAliasOption)
         .addOption(ignoredFileSampleLimitOption)
         .addOption(unsupportedExtensionSampleLimitOption)
         .option(
@@ -485,22 +506,8 @@ export function createFormatCommand({ name = "gmloop" } = {}) {
         );
 }
 
-/**
- * Create a lookup set for extension comparisons while formatting.
- *
- * @param {readonly string[]} extensions
- * @returns {Set<string>}
- */
-function createTargetExtensionSet(extensions) {
-    return toNormalizedLowerCaseSet(extensions);
-}
-
-const targetExtensionSet = createTargetExtensionSet(TARGET_EXTENSIONS);
-const placeholderExtension = TARGET_EXTENSIONS[0] ?? GML_EXTENSION;
-
 function shouldFormatFile(filePath) {
-    const fileExtension = path.extname(filePath).toLowerCase();
-    return targetExtensionSet.has(fileExtension);
+    return path.extname(filePath).toLowerCase() === GML_EXTENSION;
 }
 
 /**
@@ -513,6 +520,35 @@ const options = {
     ignorePath: IGNORE_PATH,
     noErrorOnUnmatchedPattern: true
 };
+
+interface CliPrettierOptions {
+    parser: string;
+    plugins: unknown[];
+    logLevel: string;
+    ignorePath: string;
+    noErrorOnUnmatchedPattern: boolean;
+    filepath: string;
+}
+
+interface CliPrettierModule {
+    format(data: string, options: CliPrettierOptions): Promise<string>;
+    getFileInfo(
+        filePath: string,
+        options: { ignorePath: string | readonly string[]; plugins: readonly unknown[]; resolveConfig: boolean }
+    ): Promise<{ ignored: boolean }>;
+    resolveConfig(filePath: string, options: { editorconfig: boolean }): Promise<Partial<CliPrettierOptions> | null>;
+}
+
+function isCliPrettierModule(value: unknown): value is CliPrettierModule {
+    return withObjectLike(
+        value,
+        (candidate) =>
+            typeof candidate.format === "function" &&
+            typeof candidate.getFileInfo === "function" &&
+            typeof candidate.resolveConfig === "function",
+        false
+    );
+}
 
 function configurePrettierOptions({
     logLevel
@@ -649,6 +685,14 @@ let inMemorySnapshotCount = 0;
 // Track processed files for periodic cache cleanup.
 let processedFileCount = 0;
 
+// Track GML files for progress reporting. The counter itself is exposed via
+// `getCount()` so `finalizeFormattingRun` can still surface the final total
+// without re-introducing a parallel bookkeeping variable.
+const formatProgressReporter = createThrottledCounterLogger({
+    intervalMs: 1000,
+    formatMessage: (count) => `[format] Checking GML files... (${count} processed)`
+});
+
 function ensureRevertSnapshotDirectory() {
     if (revertSnapshotDirectory) {
         return revertSnapshotDirectory;
@@ -755,9 +799,20 @@ async function discardFormattedFileOriginalContents() {
  * Release old snapshots when the in-memory snapshot count exceeds the limit.
  * This prevents unbounded memory growth when disk writes fail and snapshots
  * must be kept in memory.
+ *
+ * A limit of `0` is treated as "disabled" to match the documented contract
+ * (`--max-in-memory-snapshots 0` / `PRETTIER_PLUGIN_GML_MAX_IN_MEMORY_SNAPSHOTS=0`
+ * both advertise "Provide 0 to disable the limit"). Without this guard, a `0`
+ * limit would force every inline snapshot to be evicted on the next call,
+ * silently breaking the `--on-parse-error=revert` safety net that this limit
+ * exists to protect.
  */
 async function enforceSnapshotMemoryLimit() {
     const maxInMemorySnapshots = getDefaultMaxInMemorySnapshots();
+
+    if (maxInMemorySnapshots === 0) {
+        return;
+    }
 
     if (inMemorySnapshotCount <= maxInMemorySnapshots) {
         return;
@@ -852,6 +907,7 @@ async function resetFormattingSession(onParseError: ParseErrorActionValue) {
     clearFormattingCache();
     inMemorySnapshotCount = 0;
     processedFileCount = 0;
+    formatProgressReporter.reset();
 }
 
 /**
@@ -1072,7 +1128,7 @@ async function shouldSkipDirectory(directory, activeIgnorePaths = []) {
         return false;
     }
 
-    const placeholderPath = path.join(directory, `__prettier_plugin_gml_ignore_test__${placeholderExtension}`);
+    const placeholderPath = path.join(directory, `__prettier_plugin_gml_ignore_test__${GML_EXTENSION}`);
 
     const prettier = await resolvePrettier();
 
@@ -1311,6 +1367,11 @@ async function formatDirectoryEntry(filePath, currentIgnorePaths) {
     }
 
     if (stats.isDirectory()) {
+        const dirName = path.basename(filePath);
+        if (Core.DEFAULT_PROJECT_EXCLUDES.directoryNames.includes(dirName)) {
+            recordSkippedDirectory(filePath);
+            return;
+        }
         if (await shouldSkipDirectory(filePath, currentIgnorePaths)) {
             return;
         }
@@ -1355,7 +1416,7 @@ async function formatDirectoryRecursively(directory, inheritedIgnorePaths = []) 
     await formatAllDirectoryEntries(directory, files, effectiveIgnorePaths);
 }
 
-async function resolveFormattingOptions(filePath): Promise<PrettierOptions> {
+async function resolveFormattingOptions(filePath): Promise<CliPrettierOptions> {
     const prettier = await resolvePrettier();
     let resolvedConfig = null;
 
@@ -1368,18 +1429,18 @@ async function resolveFormattingOptions(filePath): Promise<PrettierOptions> {
         console.warn(`Unable to resolve Prettier config for ${filePath}: ${message}`);
     }
 
-    const mergedOptions: PrettierOptions = {
+    const mergedOptions = {
         ...options,
         ...resolvedConfig,
         filepath: filePath
-    } as PrettierOptions;
+    } satisfies CliPrettierOptions;
 
     const basePlugins = toArray(options.plugins);
     const resolvedPlugins = toArray(resolvedConfig?.plugins);
     const combinedPlugins = uniqueArray([...basePlugins, ...resolvedPlugins]);
 
     if (combinedPlugins.length > 0) {
-        mergedOptions.plugins = combinedPlugins as PrettierOptions["plugins"];
+        mergedOptions.plugins = combinedPlugins;
     }
 
     mergedOptions.parser = options.parser;
@@ -1400,24 +1461,21 @@ async function resolveProjectFormatOverrides(
     const projectRoot = targetStats.isDirectory() ? path.resolve(targetPath) : path.dirname(path.resolve(targetPath));
     const resolvedConfigPath = await resolveExistingGmloopConfigPath(projectRoot, normalizedConfigPath);
     const projectConfig = await loadGmloopProjectConfig(resolvedConfigPath);
-    const formatModule = await importFormatModule();
-    const formatNamespace = (formatModule as { Format?: { extractProjectFormatOptions?: unknown } }).Format;
-    const extractProjectFormatOptions = formatNamespace?.extractProjectFormatOptions;
+    const formatModule = await resolveFormatModule();
+    const extractProjectFormatOptions = formatModule.Format?.extractProjectFormatOptions;
     if (typeof extractProjectFormatOptions !== "function") {
         return {};
     }
 
     const extractedOptions = extractProjectFormatOptions(projectConfig);
-    return typeof extractedOptions === "object" && extractedOptions !== null
-        ? (extractedOptions as Record<string, unknown>)
-        : {};
+    return typeof extractedOptions === "object" && extractedOptions !== null ? extractedOptions : {};
 }
 
 async function formatSingleFile(filePath, activeIgnorePaths = []) {
     if (abortRequested) {
         return;
     }
-    const formatFileStartedAtNanoseconds = readMonotonicNanoseconds();
+    const formatFileStartedAtNanoseconds = process.hrtime.bigint();
     try {
         const formattingOptions = await resolveFormattingOptions(filePath);
         const prettier = await resolvePrettier();
@@ -1442,6 +1500,8 @@ async function formatSingleFile(filePath, activeIgnorePaths = []) {
         encounteredFormattableFile = true;
         timedFormattableFileCount += 1;
 
+        formatProgressReporter.tick();
+
         const data = await readTextFile(filePath);
         const cacheKey = createFormattingCacheKey(data, formattingOptions);
         let formatted = getFormattingCacheEntry(cacheKey);
@@ -1458,7 +1518,7 @@ async function formatSingleFile(filePath, activeIgnorePaths = []) {
                 phase: "checked",
                 elapsedNanoseconds: calculateElapsedNanoseconds({
                     startedAtNanoseconds: formatFileStartedAtNanoseconds,
-                    completedAtNanoseconds: readMonotonicNanoseconds()
+                    completedAtNanoseconds: process.hrtime.bigint()
                 })
             });
             return;
@@ -1471,7 +1531,7 @@ async function formatSingleFile(filePath, activeIgnorePaths = []) {
                 phase: "would-format",
                 elapsedNanoseconds: calculateElapsedNanoseconds({
                     startedAtNanoseconds: formatFileStartedAtNanoseconds,
-                    completedAtNanoseconds: readMonotonicNanoseconds()
+                    completedAtNanoseconds: process.hrtime.bigint()
                 })
             });
             if (!verboseTimingEnabled) {
@@ -1488,7 +1548,7 @@ async function formatSingleFile(filePath, activeIgnorePaths = []) {
             phase: "formatted",
             elapsedNanoseconds: calculateElapsedNanoseconds({
                 startedAtNanoseconds: formatFileStartedAtNanoseconds,
-                completedAtNanoseconds: readMonotonicNanoseconds()
+                completedAtNanoseconds: process.hrtime.bigint()
             })
         });
         if (!verboseTimingEnabled) {
@@ -1533,7 +1593,7 @@ async function prepareFormattingRun({
     await resetFormattingSession(normalizedParseErrorAction);
     configureDryRunMode(dryRunMode);
     verboseTimingEnabled = verbose;
-    formattingRunStartedAtNanoseconds = readMonotonicNanoseconds();
+    formattingRunStartedAtNanoseconds = process.hrtime.bigint();
 }
 
 /**
@@ -1615,6 +1675,10 @@ async function formatResolvedTarget({ targetPath, targetIsDirectory, projectRoot
  * @param {{ targetPath: string, targetIsDirectory: boolean }} params
  */
 function finalizeFormattingRun({ targetPath, targetIsDirectory, targetPathProvided }) {
+    const processedGmlFilesCount = formatProgressReporter.getCount();
+    if (processedGmlFilesCount > 0) {
+        console.log(`[format] Checking GML files... (${processedGmlFilesCount} processed)`);
+    }
     if (encounteredFormattableFile) {
         if (dryRunModeEnabled) {
             logDryRunModeSummary();
@@ -1630,8 +1694,7 @@ function finalizeFormattingRun({ targetPath, targetIsDirectory, targetPathProvid
         logNoMatchingFiles({
             targetPath,
             targetIsDirectory,
-            targetPathProvided,
-            extensions: TARGET_EXTENSIONS
+            targetPathProvided
         });
     }
 
@@ -1646,7 +1709,7 @@ function finalizeFormattingRun({ targetPath, targetIsDirectory, targetPathProvid
     if (verboseTimingEnabled) {
         const elapsedNanoseconds = calculateElapsedNanoseconds({
             startedAtNanoseconds: formattingRunStartedAtNanoseconds,
-            completedAtNanoseconds: readMonotonicNanoseconds()
+            completedAtNanoseconds: process.hrtime.bigint()
         });
         const label = timedFormattableFileCount === 1 ? "file" : "files";
         console.log(
@@ -1736,7 +1799,14 @@ export async function runFormatCommand(command) {
 
     validateTargetPathInput(commandOptions);
 
-    const targetPath = resolveTargetPathFromInput(targetPathInput, {
+    const resolvedTargetPathInput =
+        typeof targetPathInput === "string"
+            ? targetPathInput
+            : await resolveWorkflowTargetPath({
+                  fallbackPath: process.cwd(),
+                  scope: "file"
+              });
+    const targetPath = resolveTargetPathFromInput(resolvedTargetPathInput, {
         rawTargetPathInput
     });
     const projectFormatOverrides = await resolveProjectFormatOverrides(configPath, targetPath);
@@ -1767,13 +1837,12 @@ export async function runFormatCommand(command) {
     }
 }
 
-function logNoMatchingFiles({ targetPath, targetIsDirectory, targetPathProvided, extensions }) {
+function logNoMatchingFiles({ targetPath, targetIsDirectory, targetPathProvided }) {
     const ignoredFilesSkipped = skippedFileSummary.ignored > 0;
     const message = buildNoMatchingFilesMessage({
         targetPath,
         targetIsDirectory,
         targetPathProvided,
-        extensions,
         ignoredFilesSkipped,
         gmlExtension: GML_EXTENSION,
         cliExample: FORMAT_COMMAND_CLI_EXAMPLE,
@@ -1934,5 +2003,9 @@ export const __formatTest__ = Object.freeze({
     },
     collectInlineSnapshotsForEvictionForTests: collectInlineSnapshotsForEviction,
     enforceSnapshotMemoryLimitForTests: enforceSnapshotMemoryLimit,
-    performPeriodicMemoryCleanupForTests: performPeriodicMemoryCleanup
+    performPeriodicMemoryCleanupForTests: performPeriodicMemoryCleanup,
+    configureConsoleMethodsForTests: configureConsoleMethods,
+    getDefaultPrettierLogLevelForTests: () => DEFAULT_PRETTIER_LOG_LEVEL,
+    prettierLogLevelForTests: PrettierLogLevel,
+    prettierLogLevelOptionForTests: logLevelOption
 });

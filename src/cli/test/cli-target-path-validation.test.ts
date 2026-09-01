@@ -75,6 +75,34 @@ void test("resolveTargetPathFromInput prefers the raw value when both paths exis
     }
 });
 
+void test("resolveTargetPathFromInput falls back to the sanitized path when only it exists", async () => {
+    const targetPaths = await prepareTargetPathFixture({
+        createSanitizedDirectory: true
+    });
+
+    try {
+        const resolved = resolveTargetPathFromInputForTests(targetPaths.sanitizedName, {
+            rawTargetPathInput: targetPaths.rawName
+        });
+        assert.strictEqual(resolved, targetPaths.sanitizedPath);
+    } finally {
+        await targetPaths.cleanup();
+    }
+});
+
+void test("resolveTargetPathFromInput returns the sanitized path when neither candidate exists", async () => {
+    const targetPaths = await prepareTargetPathFixture({});
+
+    try {
+        const resolved = resolveTargetPathFromInputForTests(targetPaths.sanitizedName, {
+            rawTargetPathInput: targetPaths.rawName
+        });
+        assert.strictEqual(resolved, targetPaths.sanitizedPath);
+    } finally {
+        await targetPaths.cleanup();
+    }
+});
+
 async function prepareTargetPathFixture({
     createRawDirectory = false,
     createSanitizedDirectory = false

@@ -6,7 +6,6 @@ import {
     collectLocalVariables,
     createSemanticOracle,
     type EmitOptions,
-    ensureStatementTerminated,
     type FunctionDeclarationNode,
     GmlToJsEmitter,
     type IdentifierAnalyzer,
@@ -17,7 +16,13 @@ import {
     StringBuilder
 } from "../emitter/index.js";
 import { EventContextOracle } from "../event-context/index.js";
+import { expandProjectMacros, type MacroDefinition } from "../macro-expansion.js";
 import { TranspilerError, TranspilerErrorCode } from "./errors.js";
+
+const SCRIPT_REQUEST_CONTEXT = "script request";
+const EXPRESSION_REQUEST_CONTEXT = "expression request";
+const EVENT_REQUEST_CONTEXT = "event request";
+const CLOSURE_REQUEST_CONTEXT = "closure request";
 
 export interface TranspileScriptRequest {
     /**
@@ -33,6 +38,8 @@ export interface TranspileScriptRequest {
      * This eliminates redundant parsing when the caller has already parsed the source.
      */
     readonly ast?: unknown;
+    /** Project macro definitions to expand before script emission. */
+    readonly macroDefinitions?: ReadonlyMap<string, MacroDefinition>;
 }
 
 export interface TranspileEventRequest {
@@ -53,6 +60,8 @@ export interface TranspileEventRequest {
      * Defaults to `"self"` when not provided.
      */
     readonly thisName?: string;
+    /** Project macro definitions to expand before event emission. */
+    readonly macroDefinitions?: ReadonlyMap<string, MacroDefinition>;
 }
 
 export interface PatchMetadata {
@@ -122,6 +131,8 @@ export interface TranspileClosureRequest {
      * Eliminates redundant parsing when the caller already has the AST.
      */
     readonly ast?: unknown;
+    /** Project macro definitions to expand before closure emission. */
+    readonly macroDefinitions?: ReadonlyMap<string, MacroDefinition>;
 }
 
 export interface TranspilerDependencies {
@@ -169,23 +180,41 @@ export class GmlTranspiler {
             );
         }
 
-        const astRecord = request.ast as Record<string, unknown>;
-        if (astRecord.type !== "Program") {
+        if (!Core.isProgramNode(request.ast)) {
             throw this.createTranspileError(
                 "request",
-                new TypeError("transpile request requires ast.type to be 'Program' when ast is provided"),
-                TranspilerErrorCode.REQUEST_ERROR
-            );
-        }
-        if (!Array.isArray(astRecord.body)) {
-            throw this.createTranspileError(
-                "request",
-                new TypeError("transpile request requires ast.body to be an array when ast is provided"),
+                new TypeError(
+                    "transpile request requires ast to satisfy the ProgramNode contract (type: 'Program' and an array body) when ast is provided"
+                ),
                 TranspilerErrorCode.REQUEST_ERROR
             );
         }
 
+        // The transpiler's local `ProgramNode` narrows the body to a
+        // `ReadonlyArray<GmlNode>` for downstream consumers. The structural
+        // contract is established by `Core.isProgramNode`; the local cast
+        // only re-asserts the transpiler-specific body element type without
+        // re-running the discriminator and `Array.isArray` checks.
         return request.ast as ProgramNode;
+    }
+
+    private resolveExpandedProgramAst(
+        request: TranspileScriptRequest | TranspileEventRequest | TranspileClosureRequest
+    ): ProgramNode {
+        const ast = this.resolveProgramAst(request);
+        const macroDefinitions = request.macroDefinitions;
+        if (macroDefinitions === undefined || macroDefinitions.size === 0) {
+            return ast;
+        }
+
+        const expandedAst = expandProjectMacros(ast, macroDefinitions, request.sourcePath ?? "<inline>");
+        if (!Core.isProgramNode(expandedAst)) {
+            throw new TypeError("macro expansion must return a Program AST");
+        }
+
+        // See `resolveProgramAst` for why the local cast is necessary after
+        // the contract has already been validated by `Core.isProgramNode`.
+        return expandedAst as ProgramNode;
     }
 
     private emitFunctionParameterUnpacking(func: FunctionDeclarationNode, emitter: GmlToJsEmitter): string {
@@ -205,7 +234,7 @@ export class GmlTranspiler {
             } else if (isDefaultParameterNode(parameter) && isIdentifierNode(parameter.left)) {
                 const name = parameter.left.name;
                 if (parameter.right) {
-                    const defaultValue = emitter.emit(parameter.right);
+                    const defaultValue = emitter.emitFragment(parameter.right);
                     line = `var ${name} = args[${index}] === undefined ? ${defaultValue} : args[${index}];`;
                 } else {
                     line = `var ${name} = args[${index}];`;
@@ -224,20 +253,10 @@ export class GmlTranspiler {
 
     private emitUnwrappedFunctionBody(body: ProgramNode["body"][number], emitter: GmlToJsEmitter): string {
         if (!isBlockStatementNode(body)) {
-            return emitter.emit(body).trim();
+            return emitter.emitFunctionBody(body).trim();
         }
 
-        const builder = new StringBuilder(body.body.length);
-        for (const statement of body.body) {
-            const code = emitter.emit(statement);
-            if (!code) {
-                continue;
-            }
-
-            builder.append(ensureStatementTerminated(code));
-        }
-
-        return builder.toString("\n");
+        return emitter.emitFunctionBody({ type: "Program", body: body.body });
     }
 
     private createTranspileError(contextLabel: string, error: unknown, code?: TranspilerErrorCode): TranspilerError {
@@ -252,6 +271,10 @@ export class GmlTranspiler {
                 cause
             }
         );
+    }
+
+    private createRequestError(contextLabel: string, message: string): TranspilerError {
+        return this.createTranspileError(contextLabel, new TypeError(message), TranspilerErrorCode.REQUEST_ERROR);
     }
 
     /**
@@ -299,22 +322,25 @@ export class GmlTranspiler {
 
     transpileScript(request: TranspileScriptRequest): ScriptPatch {
         if (!request || typeof request !== "object") {
-            throw new TypeError("transpileScript requires a request object");
+            throw this.createRequestError(SCRIPT_REQUEST_CONTEXT, "transpileScript requires a request object");
         }
         const { sourceText, symbolId } = request;
         const sourcePath = request.sourcePath;
         if (typeof sourceText !== "string" || sourceText.length === 0) {
-            throw new TypeError("transpileScript requires a sourceText string");
+            throw this.createRequestError(SCRIPT_REQUEST_CONTEXT, "transpileScript requires a sourceText string");
         }
         if (typeof symbolId !== "string" || symbolId.length === 0) {
-            throw new TypeError("transpileScript requires a symbolId string");
+            throw this.createRequestError(SCRIPT_REQUEST_CONTEXT, "transpileScript requires a symbolId string");
         }
         if (sourcePath !== undefined && (typeof sourcePath !== "string" || sourcePath.length === 0)) {
-            throw new TypeError("transpileScript requires sourcePath to be a non-empty string when provided");
+            throw this.createRequestError(
+                SCRIPT_REQUEST_CONTEXT,
+                "transpileScript requires sourcePath to be a non-empty string when provided"
+            );
         }
 
         try {
-            const ast = this.resolveProgramAst(request);
+            const ast = this.resolveExpandedProgramAst(request);
             const emitter = new GmlToJsEmitter(this.getSemanticAnalyzers(), this.emitterOptions);
             let jsBody = "";
 
@@ -350,7 +376,10 @@ export class GmlTranspiler {
 
     transpileExpression(sourceText: string): string {
         if (typeof sourceText !== "string" || sourceText.length === 0) {
-            throw new TypeError("transpileExpression requires a sourceText string");
+            throw this.createRequestError(
+                EXPRESSION_REQUEST_CONTEXT,
+                "transpileExpression requires a sourceText string"
+            );
         }
 
         try {
@@ -392,32 +421,38 @@ export class GmlTranspiler {
      */
     transpileEvent(request: TranspileEventRequest): EventPatch {
         if (!request || typeof request !== "object") {
-            throw new TypeError("transpileEvent requires a request object");
+            throw this.createRequestError(EVENT_REQUEST_CONTEXT, "transpileEvent requires a request object");
         }
         const { sourceText, symbolId } = request;
         const sourcePath = request.sourcePath;
         if (typeof sourceText !== "string" || sourceText.length === 0) {
-            throw new TypeError("transpileEvent requires a sourceText string");
+            throw this.createRequestError(EVENT_REQUEST_CONTEXT, "transpileEvent requires a sourceText string");
         }
         if (typeof symbolId !== "string" || symbolId.length === 0) {
-            throw new TypeError("transpileEvent requires a symbolId string");
+            throw this.createRequestError(EVENT_REQUEST_CONTEXT, "transpileEvent requires a symbolId string");
         }
         if (sourcePath !== undefined && (typeof sourcePath !== "string" || sourcePath.length === 0)) {
-            throw new TypeError("transpileEvent requires sourcePath to be a non-empty string when provided");
+            throw this.createRequestError(
+                EVENT_REQUEST_CONTEXT,
+                "transpileEvent requires sourcePath to be a non-empty string when provided"
+            );
         }
         if (request.thisName !== undefined && (typeof request.thisName !== "string" || request.thisName.length === 0)) {
-            throw new TypeError("transpileEvent requires thisName to be a non-empty string when provided");
+            throw this.createRequestError(
+                EVENT_REQUEST_CONTEXT,
+                "transpileEvent requires thisName to be a non-empty string when provided"
+            );
         }
 
         try {
-            const ast = this.resolveProgramAst(request);
+            const ast = this.resolveExpandedProgramAst(request);
 
             // Pre-collect var-declared locals before building the oracle so the
             // EventContextOracle can distinguish them from instance fields.
             const localVars = collectLocalVariables(ast);
             const eventOracle = new EventContextOracle(this.getSemanticAnalyzers(), localVars);
             const emitter = new GmlToJsEmitter(eventOracle, this.emitterOptions);
-            const jsBody = emitter.emit(ast);
+            const jsBody = emitter.emitFunctionBody(ast);
 
             const timestamp = Date.now();
             const patch: EventPatch = {
@@ -460,22 +495,25 @@ export class GmlTranspiler {
      */
     transpileClosure(request: TranspileClosureRequest): ClosurePatch {
         if (!request || typeof request !== "object") {
-            throw new TypeError("transpileClosure requires a request object");
+            throw this.createRequestError(CLOSURE_REQUEST_CONTEXT, "transpileClosure requires a request object");
         }
         const { sourceText, symbolId } = request;
         const sourcePath = request.sourcePath;
         if (typeof sourceText !== "string" || sourceText.length === 0) {
-            throw new TypeError("transpileClosure requires a sourceText string");
+            throw this.createRequestError(CLOSURE_REQUEST_CONTEXT, "transpileClosure requires a sourceText string");
         }
         if (typeof symbolId !== "string" || symbolId.length === 0) {
-            throw new TypeError("transpileClosure requires a symbolId string");
+            throw this.createRequestError(CLOSURE_REQUEST_CONTEXT, "transpileClosure requires a symbolId string");
         }
         if (sourcePath !== undefined && (typeof sourcePath !== "string" || sourcePath.length === 0)) {
-            throw new TypeError("transpileClosure requires sourcePath to be a non-empty string when provided");
+            throw this.createRequestError(
+                CLOSURE_REQUEST_CONTEXT,
+                "transpileClosure requires sourcePath to be a non-empty string when provided"
+            );
         }
 
         try {
-            const ast = this.resolveProgramAst(request);
+            const ast = this.resolveExpandedProgramAst(request);
             const emitter = new GmlToJsEmitter(this.getSemanticAnalyzers(), this.emitterOptions);
             let jsBody = "";
 

@@ -5,10 +5,12 @@ import path from "node:path";
 import test from "node:test";
 
 import { runCliTestCommand } from "../src/cli.js";
+import { resolveGameMakerCliMcpProjectPath } from "../src/commands/game-maker-cli.js";
 import {
-    resolveGameMakerCliMcpProjectPath,
+    readGameMakerCliActiveProjectState,
+    resolveGameMakerCliActiveTargetPath,
     writeGameMakerCliActiveProjectState
-} from "../src/commands/game-maker-cli.js";
+} from "../src/workflow/project-root.js";
 
 void test("gm-cli mcp help documents active project path resolution", async () => {
     const result = await runCliTestCommand({
@@ -19,6 +21,38 @@ void test("gm-cli mcp help documents active project path resolution", async () =
     assert.match(result.stdout, /Start the official gm-cli ResourceTool MCP server/u);
     assert.match(result.stdout, /GMLOOP_GM_CLI_PROJECT_PATH/u);
     assert.match(result.stdout, /gm-cli-active-project\.json/u);
+});
+
+void test("gm-cli capability-audit emits boundary classifications without exposing gm-cli through MCP", async () => {
+    const result = await runCliTestCommand({
+        argv: ["gm-cli", "capability-audit", "--json"]
+    });
+
+    assert.equal(result.exitCode, 0);
+    const payload = JSON.parse(result.stdout) as {
+        ok: boolean;
+        payload: {
+            capabilities: Array<{
+                classification: string;
+                gmloopMcpTool: string | null;
+                operation: string;
+                status: string;
+            }>;
+            official: { available: boolean };
+        };
+    };
+    assert.equal(payload.ok, true);
+    assert.equal(payload.payload.official.available, false);
+
+    const resourceAdd = payload.payload.capabilities.find((entry) => entry.operation === "resource add");
+    assert.ok(resourceAdd);
+    assert.equal(resourceAdd.classification, "direct_gm_cli_mcp");
+    assert.equal(resourceAdd.gmloopMcpTool, null);
+
+    const objectEventList = payload.payload.capabilities.find((entry) => entry.operation === "object event list");
+    assert.ok(objectEventList);
+    assert.equal(objectEventList.classification, "gmloop_companion");
+    assert.equal(objectEventList.status, "gmloop_available");
 });
 
 void test("gm-cli active-project state stores a resolved .yyp path", async () => {
@@ -44,6 +78,43 @@ void test("gm-cli active-project state stores a resolved .yyp path", async () =>
                 statePathOption: statePath
             }),
             projectPath
+        );
+    } finally {
+        await rm(temporaryDirectory, { force: true, recursive: true });
+    }
+});
+
+void test("active-project state round-trips an optional active GML file path", async () => {
+    const temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "gmloop-gm-cli-active-file-"));
+    const projectDirectory = path.join(temporaryDirectory, "Game");
+    const projectPath = path.join(projectDirectory, "Game.yyp");
+    const activeFilePath = path.join(projectDirectory, "scripts", "player.gml");
+    const statePath = path.join(temporaryDirectory, "state", "active-project.json");
+
+    try {
+        await mkdir(path.dirname(activeFilePath), { recursive: true });
+        await writeFile(projectPath, "{}\n", "utf8");
+        await writeFile(activeFilePath, "function player() {}\n", "utf8");
+
+        const result = await writeGameMakerCliActiveProjectState({
+            activeFilePath,
+            env: {},
+            projectPath,
+            statePathOption: statePath
+        });
+
+        assert.deepEqual(result, { activeFilePath, projectPath, statePath });
+        assert.deepEqual(await readGameMakerCliActiveProjectState({ statePath }), {
+            activeFilePath,
+            projectPath
+        });
+        assert.equal(
+            await resolveGameMakerCliActiveTargetPath({
+                env: {},
+                scope: "file",
+                statePathOption: statePath
+            }),
+            activeFilePath
         );
     } finally {
         await rm(temporaryDirectory, { force: true, recursive: true });

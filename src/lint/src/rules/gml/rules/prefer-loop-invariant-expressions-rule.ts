@@ -23,7 +23,6 @@ type LoopNode = AstNodeWithType &
     Readonly<{
         type: "ForStatement" | "WhileStatement" | "RepeatStatement" | "DoUntilStatement";
         body: unknown;
-        update?: unknown;
     }>;
 
 type LoopContainerContext = Readonly<{
@@ -184,6 +183,7 @@ const NON_DETERMINISTIC_IDENTIFIER_NAMES = new Set<string>([
 
 const SAFE_INDEX_ACCESSORS = new Set<string>(["[", "[@"]);
 const GENERATED_HOIST_IDENTIFIER_PATTERN = /^cached_(?:value|condition|text)(?:_\d+)?$/u;
+const COMPOUND_ASSIGNMENT_OPERATOR_PATTERN = /^(?:\?\?=|[+\-*/%|&^]=)/u;
 
 function normalizeIdentifierName(identifierName: string): string {
     return Core.toNormalizedLowerCaseString(identifierName);
@@ -369,10 +369,7 @@ function collectLoopMutationSummary(loopNode: LoopNode): LoopMutationSummary {
         }
     };
 
-    walkAstNodes(loopNode.body, inspectNode);
-    if (isAstNodeRecord(loopNode.update)) {
-        walkAstNodes(loopNode.update, inspectNode);
-    }
+    walkAstNodes(loopNode, inspectNode);
 
     return Object.freeze({
         declaredInsideLoop,
@@ -380,6 +377,46 @@ function collectLoopMutationSummary(loopNode: LoopNode): LoopMutationSummary {
         mutatedMemberRoots,
         hasImpureCall
     });
+}
+
+function sourceSegmentContainsCompoundAssignment(sourceSegment: string): boolean {
+    const scanState = Core.createStringCommentScanState();
+    let index = 0;
+    while (index < sourceSegment.length) {
+        const scannedIndex = Core.advanceStringCommentScan(sourceSegment, sourceSegment.length, index, scanState, true);
+        if (scannedIndex !== index) {
+            index = scannedIndex;
+            continue;
+        }
+
+        if (COMPOUND_ASSIGNMENT_OPERATOR_PATTERN.test(sourceSegment.slice(index))) {
+            return true;
+        }
+
+        index += 1;
+    }
+
+    return false;
+}
+
+function loopControlSourceContainsCompoundAssignment(loopNode: LoopNode, sourceText: string): boolean {
+    const loopStart = Core.getNodeStartIndex(loopNode);
+    const loopEnd = Core.getNodeEndIndex(loopNode);
+    const bodyStart = Core.getNodeStartIndex(loopNode.body);
+    const bodyEnd = Core.getNodeEndIndex(loopNode.body);
+    if (
+        typeof loopStart !== "number" ||
+        typeof loopEnd !== "number" ||
+        typeof bodyStart !== "number" ||
+        typeof bodyEnd !== "number"
+    ) {
+        return true;
+    }
+
+    return (
+        sourceSegmentContainsCompoundAssignment(sourceText.slice(loopStart, bodyStart)) ||
+        sourceSegmentContainsCompoundAssignment(sourceText.slice(bodyEnd, loopEnd))
+    );
 }
 
 function isDisallowedContextForReplacement(parent: AstNodeWithType | null, parentKey: string | null): boolean {
@@ -779,7 +816,12 @@ function collectLoopCandidateAnalysis(parameters: {
 }
 
 function pushChildNodesForLoopCandidateTraversal(stack: ParentVisitContext[], node: AstNodeWithType): void {
-    if (isLoopNode(node)) {
+    if (
+        isLoopNode(node) ||
+        Core.isFunctionLikeNode(node) ||
+        node.type === "WithStatement" ||
+        node.type === "TryStatement"
+    ) {
         return;
     }
 
@@ -820,11 +862,26 @@ function pushChildNodesForLoopCandidateTraversal(stack: ParentVisitContext[], no
 
 function collectEquivalentLoopReplacementTargets(
     replacementCandidates: ReadonlyArray<LoopCandidate>,
-    targetExpressionNode: AstNodeWithType
+    targetExpressionNode: AstNodeWithType,
+    sourceText: string
 ): ReadonlyArray<LoopReplacementTarget> {
     const replacementTargets: LoopReplacementTarget[] = [];
+    const targetStart = Core.getNodeStartIndex(targetExpressionNode);
+    const targetEnd = Core.getNodeEndIndex(targetExpressionNode);
+    const shouldUseTextGate =
+        replacementCandidates.length > 100 && typeof targetStart === "number" && typeof targetEnd === "number";
+    const targetLength = shouldUseTextGate ? targetEnd - targetStart : 0;
+    const targetText = shouldUseTextGate ? sourceText.slice(targetStart, targetEnd) : "";
 
     for (const candidate of replacementCandidates) {
+        if (shouldUseTextGate && candidate.expressionEnd - candidate.expressionStart !== targetLength) {
+            continue;
+        }
+
+        if (shouldUseTextGate && sourceText.slice(candidate.expressionStart, candidate.expressionEnd) !== targetText) {
+            continue;
+        }
+
         if (!Core.areExpressionNodesEquivalentIgnoringParentheses(candidate.expressionNode, targetExpressionNode)) {
             continue;
         }
@@ -882,6 +939,10 @@ export function createPreferLoopInvariantExpressionsRule(definition: GmlRuleDefi
                             : 3;
 
                     for (const loopContext of loopContexts) {
+                        if (loopControlSourceContainsCompoundAssignment(loopContext.loopNode, sourceText)) {
+                            continue;
+                        }
+
                         const mutationSummary = collectLoopMutationSummary(loopContext.loopNode);
                         const assessmentCache = new WeakMap<AstNodeRecord, ExpressionAssessment | null>();
                         const candidateAnalysis = collectLoopCandidateAnalysis({
@@ -920,7 +981,8 @@ export function createPreferLoopInvariantExpressionsRule(definition: GmlRuleDefi
                         );
                         const replacementTargets = collectEquivalentLoopReplacementTargets(
                             candidateAnalysis.replacementCandidates,
-                            bestCandidate.expressionNode
+                            bestCandidate.expressionNode,
+                            sourceText
                         );
                         const declarationText =
                             `${indentation}var ${hoistIdentifierName} = ${expressionText};` + `${lineEnding}`;

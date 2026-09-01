@@ -1276,6 +1276,112 @@ void test("quality report prioritizes lint errors before test regression status"
     assert.match(markdown, /❌ Lint errors detected on gate target \(Merged\): 1\./u);
 });
 
+void test("quality report preserves lint counts when a target only has checkstyle XML", () => {
+    const baseDir = path.join(workspace, "base/reports");
+    const headDir = path.join(workspace, "head/reports");
+    const mergeDir = path.join(workspace, "merge/reports");
+    const reportFile = path.join(workspace, "reports/summary-report.md");
+    fs.mkdirSync(path.dirname(reportFile), { recursive: true });
+
+    writeXml(
+        baseDir,
+        "suite",
+        `<testsuites><testsuite name="sample"><testcase name="stable" classname="suite" /></testsuite></testsuites>`
+    );
+    writeXml(
+        headDir,
+        "suite",
+        `<testsuites><testsuite name="sample"><testcase name="stable" classname="suite" /></testsuite></testsuites>`
+    );
+    writeXml(
+        mergeDir,
+        "eslint-checkstyle",
+        `<checkstyle version="1.0">
+          <file name="src/example.ts">
+            <error line="1" column="1" severity="warning" message="lint warning" source="lint" />
+            <error line="2" column="1" severity="error" message="lint error" source="lint" />
+            <error line="3" column="1" severity="error" message="another lint error" source="lint" />
+          </file>
+        </checkstyle>`
+    );
+
+    assert.throws(
+        () =>
+            runGenerateQualityReport({
+                command: createMockCommand({
+                    base: baseDir,
+                    head: headDir,
+                    merge: mergeDir,
+                    reportFile
+                })
+            }),
+        isCliUsageError
+    );
+    process.exitCode = undefined;
+
+    const merged = readTestResults([mergeDir], { workspace });
+    assert.strictEqual(merged.lint?.warnings, 1);
+    assert.strictEqual(merged.lint?.errors, 2);
+
+    const markdown = fs.readFileSync(reportFile, "utf8");
+    assert.match(markdown, /\| Merged \| 1 \| 2 \|/u);
+    assert.match(markdown, /❌ Lint errors detected on gate target \(Merged\): 2\./u);
+});
+
+void test("quality report diff counts do not treat same-file suite drift as removals or renames", () => {
+    const baseDir = path.join(workspace, "base/reports");
+    const headDir = path.join(workspace, "head/reports");
+    const mergeDir = path.join(workspace, "merge/reports");
+    const reportFile = path.join(workspace, "reports/summary-report.md");
+    fs.mkdirSync(path.dirname(reportFile), { recursive: true });
+
+    writeXml(
+        baseDir,
+        "tests",
+        `<testsuites>
+          <testsuite name="base root">
+            <testcase name="first stable test" classname="suite" file="/repo/src/cli/dist/test/shared.test.js" />
+            <testcase name="second stable test" classname="suite" file="/repo/src/cli/dist/test/shared.test.js" />
+          </testsuite>
+        </testsuites>`
+    );
+    writeXml(
+        headDir,
+        "tests",
+        `<testsuites>
+          <testsuite name="base root">
+            <testcase name="first stable test" classname="suite" file="/repo/src/cli/dist/test/shared.test.js" />
+            <testcase name="second stable test" classname="suite" file="/repo/src/cli/dist/test/shared.test.js" />
+          </testsuite>
+        </testsuites>`
+    );
+    writeXml(
+        mergeDir,
+        "tests",
+        `<testsuites>
+          <undefined name="wrapper drift">
+            <testsuite name="base root">
+              <testcase name="first stable test" classname="suite" file="/repo/src/cli/dist/test/shared.test.js" />
+              <testcase name="second stable test" classname="suite" file="/repo/src/cli/dist/test/shared.test.js" />
+            </testsuite>
+          </undefined>
+        </testsuites>`
+    );
+
+    const exitCode = runGenerateQualityReport({
+        command: createMockCommand({
+            base: baseDir,
+            head: headDir,
+            merge: mergeDir,
+            reportFile
+        })
+    });
+
+    assert.strictEqual(exitCode, 0);
+    const markdown = fs.readFileSync(reportFile, "utf8");
+    assert.match(markdown, /\| Merged \| 2 \| 2 \| 0 \| 0 \| 0 \| 0 \| 0 \| 0 \| 0 \|/u);
+});
+
 void test("command accepts options without positional arguments", async () => {
     const command = createGenerateQualityReportCommand();
 

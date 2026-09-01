@@ -1,14 +1,18 @@
 import type {
+    GraphVisualizationAutoGamePipelineModel,
     GraphVisualizationData,
     GraphVisualizationDocumentationCatalogs,
+    GraphVisualizationEdgeRecord,
     GraphVisualizationLastFixRun,
     GraphVisualizationLiveReloadModel,
     GraphVisualizationLoadedTarget,
     GraphVisualizationMcpServerStatus,
+    GraphVisualizationNodeRecord,
     GraphVisualizationProjectConfigurationCatalog,
+    GraphVisualizationProjectWorkflow,
     GraphVisualizationRenderOptions,
     GraphVisualizationStartupState
-} from "../graph/types.js";
+} from "../graph/index.js";
 
 export type GraphVisualizationFixRunResult = Readonly<{
     logLines: ReadonlyArray<string>;
@@ -21,6 +25,7 @@ export type GraphVisualizationFixProgressSnapshot = Readonly<{
 
 export type GraphVisualizationFixRunOptions = Readonly<{
     onProgress: (progress: GraphVisualizationFixProgressSnapshot) => void;
+    workflow: GraphVisualizationProjectWorkflow;
 }>;
 
 export type GraphVisualizationHostMutationResult = Readonly<{
@@ -31,6 +36,7 @@ export type GraphVisualizationHostMutationResult = Readonly<{
  * Normalized model consumed by the Lit graph visualization UI shell.
  */
 export type GraphVisualizationUiModel = Readonly<{
+    autoGamePipeline: GraphVisualizationAutoGamePipelineModel | null;
     data: GraphVisualizationData;
     documentationCatalogs: GraphVisualizationDocumentationCatalogs | null;
     isServerMode: boolean;
@@ -49,19 +55,26 @@ export type GraphVisualizationUiModel = Readonly<{
 export type GraphVisualizationUiCallbacks = Readonly<{
     onOpenProject: () => void | Promise<void>;
     onRegenerate: () =>
-        | GraphVisualizationHostMutationResult
-        | void
-        | Promise<GraphVisualizationHostMutationResult | void>;
+        GraphVisualizationHostMutationResult | void | Promise<GraphVisualizationHostMutationResult | void>;
     onCreateConfig?: () => void | Promise<void>;
     onSaveConfig: (config: Readonly<Record<string, unknown>>) => void | Promise<void>;
     onRunFix: (
-        options?: GraphVisualizationFixRunOptions
+        options: GraphVisualizationFixRunOptions
     ) => GraphVisualizationFixRunResult | Promise<GraphVisualizationFixRunResult>;
+    onCancelFix?: () => void | Promise<void>;
     onStartLiveReload: () =>
-        | GraphVisualizationLiveReloadModel
-        | null
-        | Promise<GraphVisualizationLiveReloadModel | null>;
+        GraphVisualizationLiveReloadModel | null | Promise<GraphVisualizationLiveReloadModel | null>;
     onStopLiveReload: () => void | Promise<void>;
+
+    onInitializeAutoGameAgentPack?: (options: GraphVisualizationAgentPackInitializationOptions) => void | Promise<void>;
+    onSetAutoGameSkillEnabled?: (name: string, enabled: boolean) => void | Promise<void>;
+}>;
+
+/** Options selected when initializing or updating project-scoped Auto-Game resources. */
+export type GraphVisualizationAgentPackInitializationOptions = Readonly<{
+    agentTargets: ReadonlyArray<"codex" | "gemini" | "qwen">;
+    includeGitIgnore: boolean;
+    includeVSCode: boolean;
 }>;
 
 /**
@@ -72,6 +85,7 @@ export function createGraphVisualizationUiModel(
     options: GraphVisualizationRenderOptions
 ): GraphVisualizationUiModel {
     return {
+        autoGamePipeline: options.autoGamePipeline ?? null,
         data,
         documentationCatalogs: options.documentationCatalogs ?? null,
         isServerMode: options.isServerMode ?? false,
@@ -95,28 +109,54 @@ export function createNoopGraphVisualizationUiCallbacks(): GraphVisualizationUiC
         onCreateConfig: () => {},
         onSaveConfig: () => {},
         onRunFix: () => ({ logLines: ["Fix workflow is unavailable in this host."], status: "success" }),
+        onCancelFix: () => {},
         onStartLiveReload: () => null,
-        onStopLiveReload: () => {}
+        onStopLiveReload: () => {},
+
+        onInitializeAutoGameAgentPack: () => {},
+        onSetAutoGameSkillEnabled: () => {}
     };
+}
+
+/**
+ * Return graph nodes from the UI model without forcing components to traverse the nested data payload.
+ */
+export function readGraphVisualizationNodes(
+    model: GraphVisualizationUiModel
+): ReadonlyArray<GraphVisualizationNodeRecord> {
+    return model.data.nodes;
+}
+
+/**
+ * Return graph edges from the UI model without forcing components to traverse the nested data payload.
+ */
+export function readGraphVisualizationEdges(
+    model: GraphVisualizationUiModel
+): ReadonlyArray<GraphVisualizationEdgeRecord> {
+    return model.data.edges;
 }
 
 /**
  * Return whether the current UI model includes graph data that can be explored.
  */
 export function hasLoadedGraphIndex(model: GraphVisualizationUiModel): boolean {
-    return model.data.nodes.length > 0;
+    return readGraphVisualizationNodes(model).length > 0;
 }
 
 /**
  * Return whether the current UI model includes graph edges that can be visualised.
  */
 export function hasGraphEdges(model: GraphVisualizationUiModel): boolean {
-    return model.data.edges.length > 0;
+    return readGraphVisualizationEdges(model).length > 0;
 }
 
 /**
- * Return whether the current UI model is associated with a loaded project target.
+ * Return whether the current UI model is ready for project-dependent actions.
+ *
+ * The host publishes a selected target before semantic loading completes so
+ * the header can show the path immediately. That target is not considered
+ * loaded until its startup state settles.
  */
 export function hasLoadedGraphProject(model: GraphVisualizationUiModel): boolean {
-    return model.loadedTarget !== null;
+    return model.loadedTarget !== null && model.startupState === null;
 }

@@ -1,18 +1,24 @@
 {
   "printWidth": 120,
   "tabWidth": 4,
+  "useTabs": false,
   "semi": true,
   "allowInlineControlFlowBlocks": true,
   "logicalOperatorsStyle": "keywords",
   "lintRuleset": "recommended",
   "lintRules": {
+    "gml/remove-doc-function-tags": "error",
+    "gml/normalize-doc-comment-tags": "error",
     "gml/normalize-doc-comments": "error",
+    "gml/normalize-doc-param-undefined-defaults": "error",
+    "gml/normalize-doc-param-separators": "error",
     "gml/prefer-hoistable-loop-accessors": "error",
+    "gml/no-boolean-literal-comparisons": "error",
     "gml/optimize-logical-flow": "error"
   },
   "refactor": {
     "codemods": {
-      "docCommentAlignment": {},
+      "globalvarToGlobal": {},
       "loopLengthHoisting": {},
       "namingConvention": {
         "rules": {
@@ -83,7 +89,10 @@
           "tile_": "tilesetResourceName",
           "ps_": "particleSystemResourceName"
         }
-      }
+      },
+      "repairArgumentSeparators": {},
+      "repairLogicalNot": {},
+      "scientificNotation": {}
     }
   },
   "runtime": {

@@ -1,0 +1,264 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "GameMaker Language",
+  "scopeName": "source.gml",
+  "fileTypes": ["gml"],
+  "patterns": [
+    { "include": "#jsdoc" },
+    { "include": "#comments" },
+    { "include": "#directives" },
+    { "include": "#templateStrings" },
+    { "include": "#verbatimStrings" },
+    { "include": "#strings" },
+    { "include": "#constructorDeclarations" },
+    { "include": "#functionDeclarations" },
+    { "include": "#variableDeclarations" },
+    { "include": "#enumDeclarations" },
+    { "include": "#memberCalls" },
+    { "include": "#keywords" },
+    { "include": "#constants" },
+    { "include": "#wordOperators" },
+    { "include": "#functionCalls" },
+    { "include": "#symbolOperators" },
+    { "include": "#accessors" },
+    { "include": "#numbers" },
+    { "include": "#properties" },
+    { "include": "#identifiers" }
+  ],
+  "repository": {
+    "jsdoc": {
+      "patterns": [
+        {
+          "name": "comment.line.documentation.gml",
+          "begin": "///",
+          "end": "$",
+          "patterns": [
+            { "name": "storage.type.class.jsdoc.gml", "match": "@[a-zA-Z]+\\b" },
+            { "name": "entity.name.type.gml", "match": "(?<=\\{)[$_\\p{L}][$_\\p{L}\\p{Mn}\\p{Nd}\\p{Pc}]*(?=\\})" }
+          ]
+        }
+      ]
+    },
+    "comments": {
+      "patterns": [
+        { "name": "comment.gml.line", "begin": "//", "end": "$" },
+        { "name": "comment.gml.block", "begin": "/\\*", "end": "\\*/" }
+      ]
+    },
+    "directives": {
+      "patterns": [
+        {
+          "name": "meta.preprocessor.macro.gml",
+          "match": "(?<![$_\\p{L}\\p{Mn}\\p{Nd}\\p{Pc}])(#macro)\\s+([$_\\p{L}][$_\\p{L}\\p{Mn}\\p{Nd}\\p{Pc}]*)",
+          "captures": {
+            "1": { "name": "keyword.control.directive.gml" },
+            "2": { "name": "entity.name.constant.gml" }
+          }
+        },
+        {
+          "name": "meta.preprocessor.gml",
+          "match": "(?<![$_\\p{L}\\p{Mn}\\p{Nd}\\p{Pc}])#(?:define|endregion|macro|region)\\b",
+          "captures": { "0": { "name": "keyword.control.directive.gml" } }
+        }
+      ]
+    },
+    "templateStrings": {
+      "patterns": [
+        {
+          "name": "string.quoted.gml.template",
+          "begin": "\\$\"",
+          "end": "\"",
+          "patterns": [
+            { "name": "constant.character.escape.gml", "match": "\\\\." },
+            {
+              "name": "meta.interpolation.gml",
+              "begin": "\\{",
+              "end": "\\}",
+              "patterns": [{ "include": "$self" }]
+            }
+          ]
+        }
+      ]
+    },
+    "verbatimStrings": {
+      "patterns": [
+        { "name": "string.quoted.gml.verbatim", "begin": "@\"", "end": "\"(?!\")" },
+        { "name": "string.quoted.gml.verbatim", "begin": "@'", "end": "'(?!')" }
+      ]
+    },
+    "strings": {
+      "patterns": [
+        {
+          "name": "string.quoted.gml.double",
+          "begin": "\"",
+          "end": "\"",
+          "patterns": [{ "name": "constant.character.escape.gml", "match": "\\\\." }]
+        },
+        {
+          "name": "string.quoted.gml.single",
+          "begin": "'",
+          "end": "'",
+          "patterns": [{ "name": "constant.character.escape.gml", "match": "\\\\." }]
+        }
+      ]
+    },
+    "constructorDeclarations": {
+      "patterns": [
+        {
+          "begin": "\\b(function)\\s+([$_\\p{L}][$_\\p{L}\\p{Mn}\\p{Nd}\\p{Pc}]*)\\s*(\\()(?=[^)]*\\)\\s*(?::\\s*[$_\\p{L}][$_\\p{L}\\p{Mn}\\p{Nd}\\p{Pc}]*\\s*(?:\\(\\s*\\))?\\s*)?constructor\\b)",
+          "beginCaptures": {
+            "1": { "name": "keyword.control.gml" },
+            "2": { "name": "entity.name.type.gml" },
+            "3": { "name": "punctuation.definition.parameters.begin.gml" }
+          },
+          "end": "(\\))",
+          "endCaptures": { "1": { "name": "punctuation.definition.parameters.end.gml" } },
+          "patterns": [
+            { "name": "variable.parameter.gml", "match": "[$_\\p{L}][$_\\p{L}\\p{Mn}\\p{Nd}\\p{Pc}]*" },
+            { "include": "#numbers" },
+            { "include": "#strings" }
+          ]
+        },
+        {
+          "match": "(:)\\s*([$_\\p{L}][$_\\p{L}\\p{Mn}\\p{Nd}\\p{Pc}]*)(?:\\(\\s*\\))?(?=\\s*constructor\\b)",
+          "captures": {
+            "1": { "name": "punctuation.separator.inheritance.gml" },
+            "2": { "name": "entity.other.inherited-class.gml" }
+          }
+        }
+      ]
+    },
+    "functionDeclarations": {
+      "patterns": [
+        {
+          "begin": "\\b(function)(?:\\s+)([$_\\p{L}][$_\\p{L}\\p{Mn}\\p{Nd}\\p{Pc}]*)\\s*(\\()",
+          "beginCaptures": {
+            "1": { "name": "keyword.control.gml" },
+            "2": { "name": "entity.name.function.gml" },
+            "3": { "name": "punctuation.definition.parameters.begin.gml" }
+          },
+          "end": "(\\))",
+          "endCaptures": { "1": { "name": "punctuation.definition.parameters.end.gml" } },
+          "patterns": [
+            { "name": "variable.parameter.gml", "match": "[$_\\p{L}][$_\\p{L}\\p{Mn}\\p{Nd}\\p{Pc}]*" },
+            { "include": "#numbers" },
+            { "include": "#strings" }
+          ]
+        }
+      ]
+    },
+    "variableDeclarations": {
+      "patterns": [
+        {
+          "match": "\\b(var|globalvar|static)\\s+([$_\\p{L}][$_\\p{L}\\p{Mn}\\p{Nd}\\p{Pc}]*)",
+          "captures": {
+            "1": { "name": "storage.type.variable.gml" },
+            "2": { "name": "variable.other.readwrite.gml" }
+          }
+        }
+      ]
+    },
+    "enumDeclarations": {
+      "patterns": [
+        {
+          "name": "meta.enum.gml",
+          "begin": "\\b(enum)\\s+([$_\\p{L}][$_\\p{L}\\p{Mn}\\p{Nd}\\p{Pc}]*)\\s*(\\{)",
+          "beginCaptures": {
+            "1": { "name": "keyword.control.gml" },
+            "2": { "name": "entity.name.enum.gml" },
+            "3": { "name": "punctuation.section.block.begin.gml" }
+          },
+          "end": "\\}",
+          "endCaptures": { "0": { "name": "punctuation.section.block.end.gml" } },
+          "patterns": [
+            { "name": "variable.other.enummember.gml", "match": "[$_\\p{L}][$_\\p{L}\\p{Mn}\\p{Nd}\\p{Pc}]*" },
+            { "include": "#numbers" },
+            { "include": "#strings" },
+            { "include": "#comments" },
+            { "include": "#symbolOperators" }
+          ]
+        }
+      ]
+    },
+    "memberCalls": {
+      "patterns": [
+        {
+          "match": "(\\.)\\s*([$_\\p{L}][$_\\p{L}\\p{Mn}\\p{Nd}\\p{Pc}]*)\\s*(?=\\()",
+          "captures": {
+            "1": { "name": "punctuation.accessor.gml" },
+            "2": { "name": "entity.name.function.member.gml" }
+          }
+        }
+      ]
+    },
+    "functionCalls": {
+      "patterns": [
+        {
+          "match": "\\b(?!(?:begin|break|case|catch|constructor|continue|default|delete|do|else|end|enum|exit|finally|for|function|globalvar|if|new|repeat|return|static|switch|then|throw|try|until|var|while|with)\\b)([$_\\p{L}][$_\\p{L}\\p{Mn}\\p{Nd}\\p{Pc}]*)\\s*(?=\\()",
+          "captures": { "1": { "name": "entity.name.function.gml" } }
+        }
+      ]
+    },
+    "keywords": {
+      "patterns": [
+        {
+          "name": "keyword.control.flow.gml",
+          "match": "\\b(?:break|case|catch|continue|default|do|else|exit|finally|for|if|repeat|return|switch|then|throw|try|until|while|with)\\b"
+        },
+        {
+          "name": "keyword.control.gml",
+          "match": "\\b(?:begin|constructor|delete|end|enum|function|globalvar|new|static|var)\\b"
+        }
+      ]
+    },
+    "constants": {
+      "patterns": [
+        {
+          "name": "constant.language.gml",
+          "match": "\\b(?:NaN|all|false|global|infinity|noone|other|pi|pointer_invalid|pointer_null|self|true|undefined)\\b"
+        }
+      ]
+    },
+    "wordOperators": {
+      "patterns": [
+        { "name": "keyword.operator.gml", "match": "\\b(?:and|div|mod|not|or|xor)\\b" }
+      ]
+    },
+    "symbolOperators": {
+      "patterns": [
+        {
+          "name": "keyword.operator.gml",
+          "match": "\\?\\?=|<<=|>>=|\\*\\*|\\+\\+|--|:=|\\?\\?|<<|>>|<=|>=|==|!=|<>|&&|\\|\\||\\^\\^|\\*=|/=|\\+=|-=|%=|&=|\\^=|\\|=|[+\\-~!*/%<>=&^|?]"
+        }
+      ]
+    },
+    "accessors": {
+      "patterns": [
+        { "name": "punctuation.gml", "match": "\\[(?:[|?#@$])" }
+      ]
+    },
+    "numbers": {
+      "patterns": [
+        { "name": "constant.numeric.gml", "match": "(?<![$_\\p{L}\\p{Mn}\\p{Nd}\\p{Pc}])(?:0x|[$#])[_0-9a-fA-F]*[0-9a-fA-F]" },
+        { "name": "constant.numeric.gml", "match": "\\b0b(?:_*[01])+\\b" },
+        { "name": "constant.numeric.gml", "match": "(?<![$_\\p{L}\\p{Mn}\\p{Nd}\\p{Pc}])(?:[0-9][0-9_]*(?:\\.[0-9_]*)?|\\.[0-9][0-9_]*)" }
+      ]
+    },
+    "properties": {
+      "patterns": [
+        {
+          "match": "(\\.)\\s*([$_\\p{L}][$_\\p{L}\\p{Mn}\\p{Nd}\\p{Pc}]*)",
+          "captures": {
+            "1": { "name": "punctuation.accessor.gml" },
+            "2": { "name": "variable.other.property.gml" }
+          }
+        }
+      ]
+    },
+    "identifiers": {
+      "patterns": [
+        { "name": "variable.other.gml", "match": "[$_\\p{L}][$_\\p{L}\\p{Mn}\\p{Nd}\\p{Pc}]*" }
+      ]
+    }
+  }
+}

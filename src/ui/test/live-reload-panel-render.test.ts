@@ -1,15 +1,15 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { GmAppShell, GmGraphToolbar, GmLiveReloadPanel } from "../src/app/components/index.js";
+import type { GraphVisualizationFixRunResult, GraphVisualizationUiModel } from "../src/app/contracts.js";
 import {
-    GmAppShell,
-    GmGraphToolbar,
-    GmLiveReloadPanel,
+    GRAPH_UI_EVENT_CLEAR_PAGE_ERROR,
+    GRAPH_UI_EVENT_LIVE_RELOAD_STATUS_CHANGED,
     GRAPH_UI_EVENT_TRIGGER_FIX,
     GRAPH_UI_EVENT_TRIGGER_START_LIVE_RELOAD,
     GRAPH_UI_EVENT_TRIGGER_STOP_LIVE_RELOAD
-} from "../src/app/components/index.js";
-import type { GraphVisualizationFixRunResult, GraphVisualizationUiModel } from "../src/app/contracts.js";
+} from "../src/app/events/events.js";
 import { createInitialGraphVisualizationUiState } from "../src/app/state/reducer.js";
 import type { GraphVisualizationUiState } from "../src/app/state/types.js";
 import type { GraphVisualizationLiveReloadStatusSnapshot } from "../src/graph/types.js";
@@ -73,8 +73,17 @@ function createStatusSnapshot(): GraphVisualizationLiveReloadStatusSnapshot {
     };
 }
 
+function createScanningStatusSnapshot(): GraphVisualizationLiveReloadStatusSnapshot {
+    return {
+        ...createStatusSnapshot(),
+        scanComplete: false,
+        watcherStatus: "scanning"
+    };
+}
+
 function createMockModel(statusSnapshot: GraphVisualizationLiveReloadStatusSnapshot | null): GraphVisualizationUiModel {
     return {
+        autoGamePipeline: null,
         data: {
             edges: [],
             generatedAt: "2026-01-01T00:00:00.000Z",
@@ -136,6 +145,12 @@ void test("GmLiveReloadPanel renders configured live-reload dashboard sections",
     assert.match(rendered, /Clients/u);
     assert.match(rendered, /Patches/u);
     assert.match(rendered, /Average/u);
+    assert.match(rendered, /Session Status/u);
+    assert.match(rendered, /Live reload session status/u);
+    assert.match(rendered, /Watcher/u);
+    assert.match(rendered, /Running/u);
+    assert.match(rendered, /Scan complete/u);
+    assert.match(rendered, /1m 05s/u);
     assert.match(rendered, /Pipeline Overview/u);
     assert.match(rendered, /File Watcher/u);
     assert.match(rendered, /Runtime Wrapper/u);
@@ -147,6 +162,90 @@ void test("GmLiveReloadPanel renders configured live-reload dashboard sections",
     assert.match(rendered, /Connection Details/u);
     assert.match(rendered, /http:\/\/127\.0\.0\.1:17891\/status/u);
     assert.match(rendered, /ws:\/\/127\.0\.0\.1:17890/u);
+});
+
+void test("GmAppShell shares polled live-reload status with the toolbar and panel", () => {
+    const shell = new TestableGmAppShell();
+    shell.model = createMockModel(createScanningStatusSnapshot());
+    shell.connectedCallback();
+
+    const completedStatus = createStatusSnapshot();
+    shell.dispatchEvent(
+        new CustomEvent(GRAPH_UI_EVENT_LIVE_RELOAD_STATUS_CHANGED, {
+            bubbles: true,
+            composed: true,
+            detail: { status: completedStatus }
+        })
+    );
+
+    assert.equal(shell.model?.liveReload?.statusSnapshot, completedStatus);
+
+    const toolbar = new TestableGmGraphToolbar();
+    toolbar.model = shell.model;
+    toolbar.state = createMockState();
+    assert.match(renderTemplateValue(toolbar.renderForTest()), /Uptime 1m 05s with scan complete\./u);
+
+    const panel = new TestableGmLiveReloadPanel();
+    panel.model = shell.model;
+    panel.state = createMockState();
+    assert.match(renderTemplateValue(panel.renderForTest()), /Scan complete/u);
+
+    shell.disconnectedCallback();
+});
+
+void test("GmLiveReloadPanel offers accessible copy controls for configured endpoints", () => {
+    const panel = new TestableGmLiveReloadPanel();
+    panel.model = createMockModel(createStatusSnapshot());
+    panel.state = createMockState();
+
+    const rendered = renderTemplateValue(panel.renderForTest());
+
+    assert.match(rendered, /class="live-reload-endpoint-copy"/u);
+    assert.match(rendered, /accessibleLabel=Copy status endpoint to clipboard/u);
+    assert.match(rendered, /accessibleLabel=Copy websocket endpoint to clipboard/u);
+    assert.match(rendered, /accessibleLabel=Copy runtime endpoint to clipboard/u);
+    assert.match(rendered, /label="Copy"/u);
+    assert.match(rendered, /hideLabel/u);
+});
+
+void test("GmLiveReloadPanel offers an accessible copy control for each recent error", () => {
+    const panel = new TestableGmLiveReloadPanel();
+    panel.model = createMockModel(createStatusSnapshot());
+    panel.state = createMockState();
+
+    const rendered = renderTemplateValue(panel.renderForTest());
+
+    assert.match(rendered, /class="live-reload-error-copy"/u);
+    assert.match(rendered, /accessibleLabel=Copy error details for scripts\/scr_error\.gml/u);
+    assert.match(
+        rendered,
+        /value=File: scripts\/scr_error\.gml\nError: Unexpected symbol\nRecovery hint: Check the changed line\.\nTime: /u
+    );
+});
+
+void test("GmLiveReloadPanel omits endpoint copy controls when endpoint values are not configured", () => {
+    const panel = new TestableGmLiveReloadPanel();
+    const model = createMockModel(createStatusSnapshot());
+    panel.model = {
+        ...model,
+        liveReload:
+            model.liveReload === null
+                ? null
+                : {
+                      ...model.liveReload,
+                      endpoints: {
+                          runtimeUrl: null,
+                          statusUrl: null,
+                          websocketUrl: null
+                      }
+                  }
+    };
+    panel.state = createMockState();
+
+    const rendered = renderTemplateValue(panel.renderForTest());
+
+    assert.equal(countOccurrences(rendered, "Not configured"), 3);
+    assert.doesNotMatch(rendered, /live-reload-endpoint-copy/u);
 });
 
 void test("GmLiveReloadPanel renders single inactive setup state when host does not provide live-reload config", () => {
@@ -163,6 +262,7 @@ void test("GmLiveReloadPanel renders single inactive setup state when host does 
     assert.match(rendered, /Start live reload to watch project files/u);
     assert.doesNotMatch(rendered, /Connection Details/u);
     assert.doesNotMatch(rendered, /Not configured/u);
+    assert.doesNotMatch(rendered, /Session Status/u);
     assert.doesNotMatch(rendered, /No patches yet\./u);
     assert.doesNotMatch(rendered, /Runtime details unavailable\./u);
 });
@@ -194,7 +294,7 @@ void test("GmLiveReloadPanel preserves action labels while start is pending", ()
     const rendered = renderTemplateValue(toolbar.renderForTest());
 
     assert.match(rendered, /id="start-live-reload"[\s\S]*aria-busy=true/u);
-    assert.match(rendered, /live-reload-btn-spinner/u);
+    assert.match(rendered, /button-spinner/u);
     assert.match(rendered, /title=Starting Live Reload/u);
     assert.doesNotMatch(rendered, /Building & Starting/u);
     assert.doesNotMatch(rendered, /Refreshing\.\.\./u);
@@ -375,6 +475,22 @@ void test("GmGraphToolbar stop button is disabled while start is pending", () =>
     assert.match(rendered, /id="stop-live-reload"[\s\S]*disabled/u);
 });
 
+void test("GmGraphToolbar disables Live Reload stop and shows the shared spinner while stopping", () => {
+    const toolbar = new TestableGmGraphToolbar();
+    toolbar.model = createMockModel(createStatusSnapshot());
+    toolbar.state = {
+        ...createMockState(),
+        isLiveReloadStopPending: true
+    };
+
+    const rendered = renderTemplateValue(toolbar.renderForTest());
+
+    assert.match(rendered, /id="stop-live-reload"[\s\S]*\?disabled=true/u);
+    assert.match(rendered, /id="stop-live-reload"[\s\S]*aria-busy=true/u);
+    assert.match(rendered, /id="stop-live-reload"[\s\S]*class="button-spinner"/u);
+    assert.match(rendered, /id="stop-live-reload"[\s\S]*Stop Live Reload/u);
+});
+
 void test("GmAppShell routes live-reload stop events through the host callback", async () => {
     const shell = new TestableGmAppShell();
     let stopCount = 0;
@@ -479,6 +595,7 @@ void test("GmLiveReloadPanel renders inactive after live reload is stopped", () 
 
 void test("GmAppShell forwards live fix progress snapshots while a fix run is pending", async () => {
     const shell = new TestableGmAppShell();
+    let requestedWorkflow: string | null = null;
     let resolveFixRun: ((result: GraphVisualizationFixRunResult) => void) | null = null;
     const runFixPromise = new Promise<GraphVisualizationFixRunResult>((resolve) => {
         resolveFixRun = resolve;
@@ -498,6 +615,7 @@ void test("GmAppShell forwards live fix progress snapshots while a fix run is pe
         onRegenerate: () => {},
         onSaveConfig: () => {},
         onRunFix: (options) => {
+            requestedWorkflow = options?.workflow ?? null;
             options?.onProgress({ logLines: ["[1/3 Refactor Codemods]"] });
             return runFixPromise;
         },
@@ -506,11 +624,17 @@ void test("GmAppShell forwards live fix progress snapshots while a fix run is pe
     };
 
     shell.connectedCallback();
-    shell.dispatchEvent(new CustomEvent(GRAPH_UI_EVENT_TRIGGER_FIX, { bubbles: true }));
+    shell.dispatchEvent(
+        new CustomEvent(GRAPH_UI_EVENT_TRIGGER_FIX, {
+            bubbles: true,
+            detail: { workflow: "refactor" }
+        })
+    );
     await Promise.resolve();
 
     const pendingRender = renderTemplateValue(shell.renderForTest());
     assert.match(pendingRender, /\[1\/3 Refactor Codemods\]/u);
+    assert.equal(requestedWorkflow, "refactor");
 
     if (!resolveFixRun) {
         assert.fail("Expected fix workflow completion callback to be captured.");
@@ -518,4 +642,75 @@ void test("GmAppShell forwards live fix progress snapshots while a fix run is pe
     resolveFixRun({ logLines: ["Success!"], status: "success" });
     await Promise.resolve();
     shell.disconnectedCallback();
+});
+
+void test("GmLiveReloadPanel no longer overrides connectedCallback, disconnectedCallback, or updated", () => {
+    // The panel used to override all three Lit lifecycle hooks to wire up the
+    // gm-error-banner-dismiss listener and the polling controller. The
+    // composition refactor moved that wiring into an EventBusManager and the
+    // LiveReloadPollingController's hostUpdate() hook. Verify the host no
+    // longer declares its own overrides so future contributors do not
+    // reintroduce the duplication. Reading own properties (not the prototype
+    // chain) keeps this assertion stable against inherited LitElement hooks.
+    const prototype = GmLiveReloadPanel.prototype as unknown as Record<string, unknown>;
+    const hasOwn = Object.prototype.hasOwnProperty;
+
+    assert.equal(
+        hasOwn.call(prototype, "connectedCallback"),
+        false,
+        "Expected GmLiveReloadPanel to drop its connectedCallback override."
+    );
+    assert.equal(
+        hasOwn.call(prototype, "disconnectedCallback"),
+        false,
+        "Expected GmLiveReloadPanel to drop its disconnectedCallback override."
+    );
+    assert.equal(hasOwn.call(prototype, "updated"), false, "Expected GmLiveReloadPanel to drop its updated override.");
+});
+
+void test("GmLiveReloadPanel still propagates gm-error-banner-dismiss without overriding lifecycle hooks", () => {
+    // With the composition refactor the EventBusManager registered in the
+    // constructor is responsible for wiring the gm-error-banner-dismiss
+    // listener. The panel must still translate the dismissed event into a
+    // GRAPH_UI_EVENT_CLEAR_PAGE_ERROR custom event so the surrounding app
+    // shell can clear the live-reload error state. Invoking the inherited
+    // LitElement connectedCallback/disconnectedCallback drives the
+    // LifecycleParticipantsController in the same way the DOM would, so the
+    // event bus subscriptions are installed and torn down without the host
+    // declaring its own overrides. The test installs a minimal `document`
+    // stub so the polling controller's `visibilitychange` hook can run
+    // without a real DOM.
+    const originalDocumentDescriptor = Object.getOwnPropertyDescriptor(globalThis, "document");
+    const stubDocument = {
+        addEventListener: () => undefined,
+        removeEventListener: () => undefined
+    };
+    Object.defineProperty(globalThis, "document", {
+        configurable: true,
+        value: stubDocument
+    });
+
+    try {
+        const panel = new GmLiveReloadPanel();
+        let observedPage: string | null = null;
+        const listener = (event: Event): void => {
+            const customEvent = event as CustomEvent<{ page: string }>;
+            if (customEvent.detail?.page !== undefined) {
+                observedPage = customEvent.detail.page;
+            }
+        };
+        panel.addEventListener(GRAPH_UI_EVENT_CLEAR_PAGE_ERROR, listener);
+        panel.connectedCallback();
+        panel.dispatchEvent(new CustomEvent("gm-error-banner-dismiss", { bubbles: true }));
+        panel.disconnectedCallback();
+        panel.removeEventListener(GRAPH_UI_EVENT_CLEAR_PAGE_ERROR, listener);
+
+        assert.equal(observedPage, "live-reload");
+    } finally {
+        if (originalDocumentDescriptor === undefined) {
+            Reflect.deleteProperty(globalThis, "document");
+        } else {
+            Object.defineProperty(globalThis, "document", originalDocumentDescriptor);
+        }
+    }
 });

@@ -1,37 +1,61 @@
+import { createHash } from "node:crypto";
 import path from "node:path";
 
-import { Core } from "@gmloop/core";
+import { Core, type GameMakerAstNode } from "@gmloop/core";
+import { Parser } from "@gmloop/parser";
 
+import { annotateSemanticBindings } from "../scopes/semantic-binding.js";
 import { loadBuiltInIdentifiers } from "../symbols/built-in-identifiers.js";
 import { createProjectIndexAbortGuard, PROJECT_INDEX_BUILD_ABORT_MESSAGE } from "./abort-guard.js";
-import { getDefaultProjectIndexCacheMaxSize, loadProjectIndexCache, saveProjectIndexCache } from "./cache.js";
-import { clampConcurrency } from "./concurrency.js";
+import type { ProjectIndexBuildOptions } from "./build-options.js";
+import { clampConcurrency, clampWorkerConcurrency } from "./concurrency.js";
+import { PROJECT_INDEX_SLL_PREDICTION_MAX_SOURCE_LENGTH } from "./constants.js";
+import { collectConstructorMemberAnalysis, type ConstructorMemberAnalysis } from "./constructor-members.js";
 import { createProjectIndexCoordinator as createProjectIndexCoordinatorCore } from "./coordinator.js";
 import { type ProjectIndexFsFacade, runWithMissingPathFallback } from "./fs-facade.js";
-import { resolveProjectIndexParser } from "./gml-parser-facade.js";
+import { isGmlParallelPoolEligible, runProjectGmlFilesWithWorkerPool } from "./gml-parallel-pool.js";
 import { assertValidIdentifierRole, IdentifierRole } from "./identifier-roles.js";
 import { createIdentifierSink, type IdentifierSink, type IdentifierSinkRole } from "./identifier-sink.js";
 import { createProjectIndexMetrics, finalizeProjectIndexMetrics } from "./metrics.js";
 import { logProjectIndexDebug, type ProjectIndexLogger } from "./project-index-logger.js";
 import { scanProjectTree } from "./project-tree.js";
 import { analyseResourceFiles, createFileScopeDescriptor } from "./resource-analysis.js";
+import { buildSemanticFileManifest, updateSemanticFileManifest } from "./semantic-manifest.js";
+import { createSemanticSnapshotFromProjectIndex } from "./semantic-snapshot-codec.js";
+import {
+    getSemanticIndexDatabasePath,
+    openSemanticIndexStore,
+    publishSemanticTwoTierSnapshot
+} from "./semantic-store.js";
+import { parseGmlSymbolDocumentation } from "./symbol-documentation.js";
+import { formatProjectIndexSyntaxError } from "./syntax-error-formatter.js";
 
 type BuildProjectIndexFunction = (
     projectRoot: string,
     fsFacade?: ProjectIndexFsFacade,
-    options?: Record<string, unknown>
-) => Promise<unknown>;
+    options?: ProjectIndexBuildOptions
+) => Promise<Record<string, unknown>>;
 
 type ProjectIndexCoordinatorOptions = {
     fsFacade?: ProjectIndexFsFacade | null;
-    loadCache?: typeof loadProjectIndexCache;
-    saveCache?: typeof saveProjectIndexCache;
+    loadCache?: typeof loadSemanticStoreIndex;
+    saveCache?: typeof saveSemanticStoreIndex;
     buildIndex?: BuildProjectIndexFunction;
-    cacheMaxSizeBytes?: number | null;
-    getDefaultCacheMaxSize?: typeof getDefaultProjectIndexCacheMaxSize;
 };
 
 const IDENTIFIER_DECLARATION_LOCATION_KEYS = Symbol("identifierDeclarationLocationKeys");
+const PROJECT_INDEX_PARSE_OPTIONS = Object.freeze({
+    asJSON: false,
+    astFormat: "gml",
+    attachFunctionDocComments: true,
+    getComments: true,
+    getLocations: true,
+    simplifyLocations: false,
+    // Medium-sized GameMaker scripts are common and are substantially faster
+    // through ANTLR's SLL prediction path. Larger sources still use the
+    // parser's conservative LL path, avoiding an unbounded prediction cache.
+    sllPredictionMaxSourceLength: PROJECT_INDEX_SLL_PREDICTION_MAX_SOURCE_LENGTH
+});
 
 const IDENTIFIER_COLLECTION_NAMES = Object.freeze({
     scripts: "scripts",
@@ -40,6 +64,7 @@ const IDENTIFIER_COLLECTION_NAMES = Object.freeze({
     macros: "macros",
     enums: "enums",
     enumMembers: "enumMembers",
+    constructorStaticMembers: "constructorStaticMembers",
     globalVariables: "globalVariables",
     instanceVariables: "instanceVariables",
     localVariables: "localVariables",
@@ -59,20 +84,86 @@ function cloneEntryCollections(entry, ...keys) {
 export function createProjectIndexCoordinator(options: ProjectIndexCoordinatorOptions = {}) {
     const {
         fsFacade = Core.defaultFsFacade,
-        loadCache = loadProjectIndexCache,
-        saveCache = saveProjectIndexCache,
-        buildIndex = buildProjectIndex,
-        cacheMaxSizeBytes,
-        getDefaultCacheMaxSize = getDefaultProjectIndexCacheMaxSize
+        loadCache = loadSemanticStoreIndex,
+        saveCache = saveSemanticStoreIndex,
+        buildIndex = buildProjectIndex
     } = options;
     return createProjectIndexCoordinatorCore({
         fsFacade,
         loadCache,
         saveCache,
-        buildIndex,
-        cacheMaxSizeBytes,
-        getDefaultCacheMaxSize
+        buildIndex
     });
+}
+
+async function loadSemanticStoreIndex(
+    descriptor: { projectRoot: string },
+    fsFacade: ProjectIndexFsFacade,
+    options: { signal: AbortSignal }
+) {
+    const store = openSemanticIndexStore(descriptor.projectRoot);
+    try {
+        const storedManifest = store.readSemanticManifest("full") ?? store.readSemanticManifest("definitions");
+        const manifest = await buildSemanticFileManifest(descriptor.projectRoot, fsFacade, [], storedManifest);
+        Core.throwIfAborted(options.signal, PROJECT_INDEX_BUILD_ABORT_MESSAGE);
+        const activeSlots = store.readActiveSemanticSlots();
+        const storedManifestFull = store.readSemanticManifest("full");
+        const projectIndex = store.readSemanticNavigationProjection("full");
+        const matchesCurrentRevision =
+            activeSlots.hasMatchingFull &&
+            storedManifestFull?.sourceRevision === manifest.sourceRevision &&
+            activeSlots.full?.sourceSignature === manifest.sourceRevision;
+        return projectIndex && matchesCurrentRevision
+            ? {
+                  status: "hit" as const,
+                  cacheFilePath: getSemanticIndexDatabasePath(descriptor.projectRoot),
+                  manifest,
+                  projectIndex
+              }
+            : {
+                  status: "miss" as const,
+                  cacheFilePath: getSemanticIndexDatabasePath(descriptor.projectRoot),
+                  manifest,
+                  reason: { type: projectIndex ? ("revision-mismatch" as const) : ("not-found" as const) }
+              };
+    } finally {
+        await store.close();
+    }
+}
+
+async function saveSemanticStoreIndex(descriptor: {
+    manifest: Awaited<ReturnType<typeof buildSemanticFileManifest>>;
+    projectRoot: string;
+    projectIndex: Record<string, unknown>;
+}) {
+    const { manifest } = descriptor;
+    const store = openSemanticIndexStore(descriptor.projectRoot);
+    try {
+        const publication = publishSemanticTwoTierSnapshot(store, {
+            definitionsSnapshot: createSemanticSnapshotFromProjectIndex(
+                descriptor.projectIndex,
+                "definitions",
+                manifest.sourceRevision
+            ),
+            fullSnapshot: createSemanticSnapshotFromProjectIndex(
+                descriptor.projectIndex,
+                "full",
+                manifest.sourceRevision
+            ),
+            manifest,
+            navigationProjection: descriptor.projectIndex,
+            sourceRevision: manifest.sourceRevision
+        });
+        if (publication.status === "superseded") {
+            throw new Error(`Semantic coordinator publication was superseded for ${descriptor.projectRoot}.`);
+        }
+        return {
+            status: "written",
+            cacheFilePath: getSemanticIndexDatabasePath(descriptor.projectRoot)
+        };
+    } finally {
+        await store.close();
+    }
 }
 function cloneIdentifierDeclaration(declaration) {
     if (!Core.isObjectLike(declaration)) {
@@ -87,6 +178,7 @@ function cloneIdentifierDeclaration(declaration) {
 type IdentifierDeclarationRecord = ReturnType<typeof cloneIdentifierDeclaration>;
 type ProjectIdentifierRecord = {
     name: string | null;
+    documentation?: ReturnType<typeof parseGmlSymbolDocumentation>;
     start: ReturnType<typeof Core.cloneLocation>;
     end: ReturnType<typeof Core.cloneLocation>;
     scopeId: string | null;
@@ -130,8 +222,10 @@ function cloneIdentifierForCollections(record, filePath) {
 function ensureCollectionEntry(map, key, initializer) {
     return Core.getOrCreateMapEntry(map, key, initializer);
 }
-function ensureIdentifierCollectionEntry({ collection, key, identifierId, initializer }) {
-    return ensureCollectionEntry(collection, key, () => {
+const CLONED_MARKER = Symbol("cloned");
+
+function ensureIdentifierCollectionEntry({ collection, key, identifierId, initializer }: any) {
+    const entry = ensureCollectionEntry(collection, key, () => {
         const initializerValue = typeof initializer === "function" ? initializer() : initializer;
         const {
             declarations: initialDeclarations,
@@ -147,6 +241,25 @@ function ensureIdentifierCollectionEntry({ collection, key, identifierId, initia
             ...rest
         };
     });
+
+    // Copy-on-write if the entry was retrieved from the cached map and not yet cloned in this build
+    if (entry && !entry[CLONED_MARKER]) {
+        const clonedEntry = {
+            ...entry,
+            declarationKinds: [...(entry.declarationKinds || [])],
+            declarations: [...(entry.declarations || [])],
+            references: [...(entry.references || [])]
+        };
+        Object.defineProperty(clonedEntry, CLONED_MARKER, {
+            value: true,
+            writable: true,
+            enumerable: false,
+            configurable: true
+        });
+        collection.set(key, clonedEntry);
+        return clonedEntry;
+    }
+    return entry;
 }
 function recordIdentifierCollectionRole({
     entry,
@@ -250,7 +363,7 @@ function assignIdentifierEntryMetadata(entry, metadata) {
     }
     return entry;
 }
-function createIdentifierCollections() {
+export function createIdentifierCollections() {
     return {
         scripts: new Map(),
         functions: new Map(),
@@ -258,6 +371,7 @@ function createIdentifierCollections() {
         macros: new Map(),
         enums: new Map(),
         enumMembers: new Map(),
+        constructorStaticMembers: new Map(),
         globalVariables: new Map(),
         instanceVariables: new Map(),
         localVariables: new Map(),
@@ -330,6 +444,27 @@ function findIdentifierLocation({ source, name, searchStart, searchEnd, lineOffs
     }
     return null;
 }
+
+function extractAttachedDeclarationDocumentation(node: unknown): string {
+    if (!Core.isObjectLike(node)) {
+        return "";
+    }
+    const docComments = Object.getOwnPropertyDescriptor(node, "docComments")?.value;
+    if (!Array.isArray(docComments)) {
+        return "";
+    }
+    const lines = docComments.flatMap((comment) => {
+        if (!Core.isObjectLike(comment) || typeof comment.value !== "string") {
+            return [];
+        }
+        return [comment.value.replace(/^\/\s?/u, "").trim()];
+    });
+    return lines.join("\n");
+}
+
+function extractDeclarationDocumentation(node: unknown) {
+    return parseGmlSymbolDocumentation(extractAttachedDeclarationDocumentation(node));
+}
 function removeSyntheticScriptDeclarations(collection, { name, scopeId }) {
     if (!Array.isArray(collection)) {
         return;
@@ -390,37 +525,26 @@ function createFunctionLikeIdentifierRecord({ node, scopeRecord, fileRecord, cla
         },
         isBuiltIn: false,
         isSynthetic: false,
-        filePath: fileRecord.filePath
+        filePath: fileRecord.filePath,
+        documentation: extractDeclarationDocumentation(node)
     };
 }
 function createEnumLookup(ast, filePath) {
     const enumDeclarations = new Map();
     const memberDeclarations = new Map();
-    const visitStack = [ast];
-    const seen = new Set();
-    while (visitStack.length > 0) {
-        const node = visitStack.pop();
-        if (!Core.isObjectLike(node)) {
-            continue;
-        }
-        if (seen.has(node)) {
-            continue;
-        }
-        seen.add(node);
-        if (node.type === "EnumDeclaration") {
-            const enumData = collectEnumDeclarationData(node, filePath);
-            if (enumData) {
-                enumDeclarations.set(enumData.enumEntry.key, enumData.enumEntry);
-                for (const memberEntry of enumData.memberEntries) {
-                    memberDeclarations.set(memberEntry.key, memberEntry);
+    Core.traverseAst(ast, {
+        enter(node) {
+            if (node.type === "EnumDeclaration") {
+                const enumData = collectEnumDeclarationData(node, filePath);
+                if (enumData) {
+                    enumDeclarations.set(enumData.enumEntry.key, enumData.enumEntry);
+                    for (const memberEntry of enumData.memberEntries) {
+                        memberDeclarations.set(memberEntry.key, memberEntry);
+                    }
                 }
             }
         }
-        const values = Object.values(node);
-        for (const value of values) {
-            pushNodeValueChildren(visitStack, value);
-        }
-    }
+    });
     return { enumDeclarations, memberDeclarations };
 }
 
@@ -442,9 +566,20 @@ function collectEnumDeclarationData(node: any, filePath: string | null) {
     };
 
     const memberEntries = [];
+    let previousValue: string | null = null;
     for (const member of Core.asArray(node.members)) {
         const memberEntry = buildEnumMemberEntry(member, enumKey, filePath);
         if (memberEntry) {
+            if (memberEntry.value === null) {
+                const previousNumber = previousValue === null ? null : Number(previousValue);
+                memberEntry.value =
+                    previousValue === null
+                        ? "0"
+                        : Number.isFinite(previousNumber)
+                          ? String(previousNumber + 1)
+                          : `(${previousValue}) + 1`;
+            }
+            previousValue = memberEntry.value;
             memberEntries.push(memberEntry);
         }
     }
@@ -472,7 +607,14 @@ function buildEnumMemberEntry(member: unknown, enumKey: string, filePath: string
         key: memberKey,
         name: memberIdentifier.name ?? null,
         enumKey,
-        filePath: filePath ?? null
+        filePath: filePath ?? null,
+        order:
+            typeof memberIdentifier.start === "number"
+                ? memberIdentifier.start
+                : typeof memberIdentifier.start?.index === "number"
+                  ? memberIdentifier.start.index
+                  : 0,
+        value: typeof memberNode.initializer === "string" ? memberNode.initializer : null
     };
 }
 function ensureScriptEntry(identifierCollections, descriptor) {
@@ -543,6 +685,9 @@ function registerFunctionLikeSymbolDeclaration({
         displayName: declarationRecord.name,
         scopeId: declarationRecord.scopeId ?? null
     });
+    if (declarationRecord.documentation.normalizedText.length > 0) {
+        entry.documentation = declarationRecord.documentation;
+    }
 
     recordIdentifierCollectionRole({
         entry,
@@ -595,6 +740,9 @@ function registerScriptDeclaration({ identifierCollections, descriptor, declarat
         displayName: descriptor?.displayName ?? null,
         resourcePath: descriptor?.resourcePath ?? null
     });
+    if (declarationRecord?.documentation?.normalizedText.length > 0) {
+        entry.documentation = declarationRecord.documentation;
+    }
     if (!declarationRecord) {
         return;
     }
@@ -830,6 +978,8 @@ function registerEnumMemberOccurrence({
             enumName: memberInfo?.enumKey
                 ? (enumLookup?.enumDeclarations?.get(memberInfo.enumKey)?.name ?? null)
                 : null,
+            value: memberInfo?.value ?? null,
+            order: memberInfo?.order ?? 0,
             filePath: memberInfo?.filePath ?? filePath ?? null
         }),
         metadata: {
@@ -839,6 +989,96 @@ function registerEnumMemberOccurrence({
         identifierRecord,
         filePath,
         role: validatedRole,
+        identifierSink
+    });
+}
+function createConstructorStaticMemberKey(constructorName, memberName) {
+    if (!constructorName || !memberName) {
+        return null;
+    }
+
+    return `${constructorName}.${memberName}`;
+}
+function registerConstructorStaticMemberDeclaration({
+    identifierCollections,
+    identifierRecord,
+    filePath,
+    constructorName,
+    memberName,
+    identifierSink,
+    documentation
+}) {
+    const key = createConstructorStaticMemberKey(constructorName, memberName);
+    if (!identifierCollections || !key || !identifierRecord?.name) {
+        return;
+    }
+
+    const identifierId = buildIdentifierId("constructor-static-member", key);
+    const entry = ensureIdentifierEntryWithRole({
+        collection: identifierCollections.constructorStaticMembers,
+        key,
+        collectionName: IDENTIFIER_COLLECTION_NAMES.constructorStaticMembers,
+        identifierId,
+        initializer: () => ({
+            key,
+            name: memberName,
+            constructorName,
+            displayName: key,
+            filePath: filePath ?? null
+        }),
+        metadata: {
+            identifierId,
+            name: memberName,
+            displayName: key
+        },
+        identifierRecord,
+        filePath,
+        role: IdentifierRole.DECLARATION,
+        identifierSink
+    });
+    if (entry && documentation?.normalizedText.length > 0) {
+        entry.documentation = documentation;
+    }
+}
+function registerConstructorStaticMemberReference({
+    identifierCollections,
+    identifierRecord,
+    filePath,
+    constructorName,
+    memberName,
+    identifierSink
+}) {
+    const key = createConstructorStaticMemberKey(constructorName, memberName);
+    if (!identifierCollections || !key || !identifierRecord?.name) {
+        return;
+    }
+
+    const entry = identifierCollections.constructorStaticMembers.get(key);
+    if (!entry || !Array.isArray(entry.declarations) || entry.declarations.length === 0) {
+        return;
+    }
+
+    const declaration = entry.declarations[0];
+    const classifications = [...Core.asArray(identifierRecord.classifications)];
+    Core.pushUnique(classifications, "constructor-static-member");
+
+    const referenceRecord = {
+        ...identifierRecord,
+        declaration: {
+            scopeId: declaration.scopeId ?? null,
+            start: Core.cloneLocation(declaration.start),
+            end: Core.cloneLocation(declaration.end)
+        },
+        classifications
+    };
+
+    recordIdentifierCollectionRole({
+        entry,
+        identifierRecord: referenceRecord,
+        filePath,
+        role: IdentifierRole.REFERENCE,
+        collectionName: IDENTIFIER_COLLECTION_NAMES.constructorStaticMembers,
+        collectionKey: key,
         identifierSink
     });
 }
@@ -902,8 +1142,8 @@ function registerInstanceOccurrence({
 function getIdentifierDeclarationScopeId(identifierRecord) {
     return identifierRecord?.declaration?.scopeId ?? identifierRecord?.scopeId ?? null;
 }
-function createScopedVariableKey(identifierRecord) {
-    if (!identifierRecord?.name) {
+function createScopedVariableKey(identifierRecord, filePath) {
+    if (!identifierRecord?.name || !Core.isNonEmptyString(filePath)) {
         return null;
     }
 
@@ -912,7 +1152,8 @@ function createScopedVariableKey(identifierRecord) {
         return null;
     }
 
-    return `${declarationScopeId}:${identifierRecord.name}`;
+    const normalizedFilePath = Core.toPosixPath(filePath);
+    return `${encodeURIComponent(normalizedFilePath)}:${encodeURIComponent(declarationScopeId)}:${identifierRecord.name}`;
 }
 function registerScopedVariableOccurrence({
     collection,
@@ -924,7 +1165,7 @@ function registerScopedVariableOccurrence({
     kind,
     identifierSink
 }) {
-    const collectionKey = createScopedVariableKey(identifierRecord);
+    const collectionKey = createScopedVariableKey(identifierRecord, filePath);
     if (!identifierCollections || !collectionKey || !identifierRecord?.name) {
         return;
     }
@@ -933,7 +1174,7 @@ function registerScopedVariableOccurrence({
     const declarationScopeId = getIdentifierDeclarationScopeId(identifierRecord);
     const identifierId = buildIdentifierId(kind, collectionKey);
 
-    ensureIdentifierEntryWithRole({
+    const entry = ensureIdentifierEntryWithRole({
         collection,
         key: collectionKey,
         collectionName,
@@ -954,6 +1195,12 @@ function registerScopedVariableOccurrence({
         role: validatedRole,
         identifierSink
     });
+    if (entry && Core.asArray(identifierRecord.classifications).includes("parameter")) {
+        entry.semanticKind = "parameter";
+        if (identifierRecord.documentation?.normalizedText.length > 0) {
+            entry.documentation = identifierRecord.documentation;
+        }
+    }
 }
 function registerLocalVariableOccurrence({ identifierCollections, identifierRecord, filePath, role, identifierSink }) {
     registerScopedVariableOccurrence({
@@ -1012,7 +1259,7 @@ function shouldTreatAsScopedVariable(identifierRecord, role) {
 
     const validatedRole = assertValidIdentifierRole(role);
     const classifications = Core.asArray(identifierRecord?.classifications);
-    if (!classifications.includes("variable")) {
+    if (!classifications.includes("variable") && !classifications.includes("parameter")) {
         return false;
     }
 
@@ -1196,71 +1443,68 @@ function registerInstanceAssignment({
         identifierSink
     });
 }
-function ensureScopeRecord(scopeMap, descriptor) {
-    return Core.getOrCreateMapEntry(scopeMap, descriptor.id, () => ({
+function ensureScopeRecord(scopeMap: Map<string, any>, descriptor: any) {
+    const entry = Core.getOrCreateMapEntry(scopeMap, descriptor.id, () => ({
         id: descriptor.id,
         kind: descriptor.kind,
         name: descriptor.name,
         displayName: descriptor.displayName,
         resourcePath: descriptor.resourcePath,
         event: descriptor.event ?? null,
-        filePaths: [],
-        declarations: [],
-        references: [],
-        ignoredIdentifiers: [],
-        scriptCalls: []
+        filePaths: [] as string[],
+        declarations: [] as any[],
+        references: [] as any[],
+        ignoredIdentifiers: [] as any[],
+        scriptCalls: [] as any[]
     }));
+    if (entry && !entry[CLONED_MARKER]) {
+        const clonedEntry = {
+            ...entry,
+            filePaths: [...(entry.filePaths || [])],
+            declarations: [...(entry.declarations || [])],
+            references: [...(entry.references || [])],
+            ignoredIdentifiers: [...(entry.ignoredIdentifiers || [])],
+            scriptCalls: [...(entry.scriptCalls || [])]
+        };
+        Object.defineProperty(clonedEntry, CLONED_MARKER, {
+            value: true,
+            writable: true,
+            enumerable: false,
+            configurable: true
+        });
+        scopeMap.set(descriptor.id, clonedEntry);
+        return clonedEntry;
+    }
+    return entry;
 }
-function ensureFileRecord(filesMap, relativePath, scopeId) {
-    return Core.getOrCreateMapEntry(filesMap, relativePath, () => ({
+function ensureFileRecord(filesMap: Map<string, any>, relativePath: string, scopeId: string) {
+    const entry = Core.getOrCreateMapEntry(filesMap, relativePath, () => ({
         filePath: relativePath,
+        contentHash: null,
         scopeId,
-        declarations: [],
-        references: [],
-        ignoredIdentifiers: [],
-        scriptCalls: []
+        declarations: [] as any[],
+        references: [] as any[],
+        ignoredIdentifiers: [] as any[],
+        scriptCalls: [] as any[]
     }));
-}
-function traverseAst(root, visitor) {
-    if (!Core.isObjectLike(root)) {
-        return;
+    if (entry && !entry[CLONED_MARKER]) {
+        const clonedEntry = {
+            ...entry,
+            declarations: [...(entry.declarations || [])],
+            references: [...(entry.references || [])],
+            ignoredIdentifiers: [...(entry.ignoredIdentifiers || [])],
+            scriptCalls: [...(entry.scriptCalls || [])]
+        };
+        Object.defineProperty(clonedEntry, CLONED_MARKER, {
+            value: true,
+            writable: true,
+            enumerable: false,
+            configurable: true
+        });
+        filesMap.set(relativePath, clonedEntry);
+        return clonedEntry;
     }
-    const stack = [root];
-    const seen = new WeakSet();
-    while (stack.length > 0) {
-        const node = stack.pop();
-        if (!Core.isObjectLike(node)) {
-            continue;
-        }
-        if (seen.has(node)) {
-            continue;
-        }
-        seen.add(node);
-        visitor(node);
-        for (const key of Object.keys(node)) {
-            pushNodeValueChildren(stack, node[key]);
-        }
-    }
-}
-
-function pushNodeValueChildren(stack: Array<any>, value: unknown) {
-    if (!value || typeof value !== "object") {
-        return;
-    }
-
-    if (Array.isArray(value)) {
-        for (let i = value.length - 1; i >= 0; i -= 1) {
-            const child = value[i];
-            if (Core.isObjectLike(child)) {
-                stack.push(child);
-            }
-        }
-        return;
-    }
-
-    if (Core.isObjectLike(value)) {
-        stack.push(value);
-    }
+    return entry;
 }
 function handleFunctionLikeDeclarationNode({
     node,
@@ -1352,12 +1596,25 @@ function handleIdentifierNode({
     scopeDescriptor,
     metrics,
     structVariableDeclarationScopeIds,
-    identifierSink
+    constructorStaticMemberDeclarationIdentifiers,
+    parentMap,
+    identifierSink,
+    definitionsOnly = false,
+    recordReferences = false
 }) {
     if (node?.type !== "Identifier" || !Array.isArray(node.classifications)) {
         return false;
     }
     const identifierRecord = createIdentifierRecord(node);
+    if (
+        identifierRecord.classifications.includes("declaration") &&
+        identifierRecord.classifications.includes("parameter")
+    ) {
+        const documentation = findEnclosingParameterDocumentation(node, parentMap, identifierRecord.name);
+        if (documentation !== null) {
+            identifierRecord.documentation = documentation;
+        }
+    }
     const isBuiltIn = builtInNames.has(identifierRecord.name);
     identifierRecord.isBuiltIn = isBuiltIn;
     metrics?.counters?.increment("identifiers.encountered");
@@ -1373,18 +1630,20 @@ function handleIdentifierNode({
         metrics?.counters?.increment("identifiers.declarations");
         fileRecord.declarations.push(identifierRecord);
         scopeRecord.declarations.push(identifierRecord);
-        registerIdentifierOccurrence({
-            identifierCollections,
-            identifierRecord,
-            filePath: fileRecord?.filePath ?? null,
-            role: IdentifierRole.DECLARATION,
-            enumLookup,
-            scopeDescriptor: scopeDescriptor ?? scopeRecord,
-            structVariableDeclarationScopeIds,
-            identifierSink
-        });
+        if (!constructorStaticMemberDeclarationIdentifiers.has(node)) {
+            registerIdentifierOccurrence({
+                identifierCollections,
+                identifierRecord,
+                filePath: fileRecord?.filePath ?? null,
+                role: IdentifierRole.DECLARATION,
+                enumLookup,
+                scopeDescriptor: scopeDescriptor ?? scopeRecord,
+                structVariableDeclarationScopeIds,
+                identifierSink
+            });
+        }
     }
-    if (isReference) {
+    if (isReference && (!definitionsOnly || recordReferences)) {
         metrics?.counters?.increment("identifiers.references");
         fileRecord.references.push(identifierRecord);
         scopeRecord.references.push(identifierRecord);
@@ -1569,22 +1828,12 @@ function handleConstructorParentScriptCall({
         name: calleeName,
         start: node.idLocation?.start ?? null
     };
-    const parentStart = Core.cloneLocation(node.idLocation?.start ?? null);
-    const parentEnd = Core.cloneLocation(node.idLocation?.end ?? null);
-    if (parentStart === null || parentEnd === null) {
+    if (callee.start === null || callee.end === null) {
         return;
-    }
-    parentEnd.index -= 1;
-    if (typeof parentEnd.column === "number") {
-        parentEnd.column -= 1;
     }
     recordFunctionOrScriptCall({
         builtInNames,
-        callee: {
-            ...callee,
-            end: parentEnd,
-            start: parentStart
-        },
+        callee,
         calleeName,
         fileRecord,
         metrics,
@@ -1594,6 +1843,39 @@ function handleConstructorParentScriptCall({
         scriptNameToScopeId
     });
 }
+function buildSafeParentMap(root) {
+    const parentMap = new Map<GameMakerAstNode, GameMakerAstNode>();
+    Core.traverseAst(root, {
+        enter(node, context) {
+            if (context.parent !== null) {
+                parentMap.set(node, context.parent);
+            }
+        }
+    });
+    return parentMap;
+}
+
+function findEnclosingParameterDocumentation(node, parentMap, parameterName) {
+    let current = parentMap.get(node) ?? null;
+    while (current !== null) {
+        const documentation = extractDeclarationDocumentation(current);
+        if (documentation.parameters.some((parameter) => parameter.name === parameterName)) {
+            return documentation;
+        }
+        current = parentMap.get(current) ?? null;
+    }
+    return null;
+}
+function isInsideConstructor(node, parentMap) {
+    let curr = node;
+    while (curr) {
+        if (curr.type === "ConstructorDeclaration" || curr.type === "StructDeclaration") {
+            return true;
+        }
+        curr = parentMap?.get(curr) ?? null;
+    }
+    return false;
+}
 function handleObjectEventAssignmentNode({
     node,
     scopeDescriptor,
@@ -1602,12 +1884,15 @@ function handleObjectEventAssignmentNode({
     fileRecord,
     scopeRecord,
     metrics,
-    identifierSink
+    identifierSink,
+    parentMap,
+    constructorInstanceVariableDeclarationIdentifiers
 }) {
     if (
         node?.type !== "AssignmentExpression" ||
         node.left?.type !== "Identifier" ||
-        scopeDescriptor?.kind !== "objectEvent"
+        constructorInstanceVariableDeclarationIdentifiers.has(node.left) ||
+        (scopeDescriptor?.kind !== "objectEvent" && !isInsideConstructor(node, parentMap))
     ) {
         return;
     }
@@ -1634,49 +1919,43 @@ function handleObjectEventAssignmentNode({
 }
 function collectConstructorVariableDeclarationScopeIds(ast) {
     const scopeIds = new Set();
-
-    const visit = (node, insideConstructor) => {
-        if (!Core.isObjectLike(node)) {
-            return;
-        }
-
-        const nodeType = node.type;
-        if (
-            insideConstructor &&
-            (nodeType === "FunctionDeclaration" ||
-                nodeType === "ConstructorDeclaration" ||
-                nodeType === "StructDeclaration")
-        ) {
-            return;
-        }
-
-        if (
-            insideConstructor &&
-            nodeType === "Identifier" &&
-            Array.isArray(node.classifications) &&
-            node.classifications.includes("declaration") &&
-            node.classifications.includes("variable")
-        ) {
-            const declarationScopeId = node.declaration?.scopeId ?? node.scopeId ?? null;
-            if (declarationScopeId) {
-                scopeIds.add(declarationScopeId);
+    const enteredConstructors = new WeakSet<object>();
+    let constructorDepth = 0;
+    Core.traverseAst(ast, {
+        enter(node) {
+            const isOwnedScopeBoundary =
+                node.type === "FunctionDeclaration" ||
+                node.type === "ConstructorDeclaration" ||
+                node.type === "StructDeclaration";
+            if (constructorDepth > 0 && isOwnedScopeBoundary) {
+                return false;
             }
-        }
 
-        const childInsideConstructor = insideConstructor || nodeType === "ConstructorDeclaration";
-        for (const value of Object.values(node)) {
-            if (Array.isArray(value)) {
-                for (const child of value) {
-                    visit(child, childInsideConstructor);
+            if (node.type === "ConstructorDeclaration") {
+                constructorDepth += 1;
+                enteredConstructors.add(node);
+                return;
+            }
+
+            if (
+                constructorDepth > 0 &&
+                node.type === "Identifier" &&
+                Array.isArray(node.classifications) &&
+                node.classifications.includes("declaration") &&
+                node.classifications.includes("variable")
+            ) {
+                const declarationScopeId = node.declaration?.scopeId ?? node.scopeId ?? null;
+                if (declarationScopeId) {
+                    scopeIds.add(declarationScopeId);
                 }
-                continue;
             }
-
-            visit(value, childInsideConstructor);
+        },
+        leave(node) {
+            if (enteredConstructors.has(node)) {
+                constructorDepth -= 1;
+            }
         }
-    };
-
-    visit(ast, false);
+    });
     return scopeIds;
 }
 function analyseGmlAst({
@@ -1693,76 +1972,195 @@ function analyseGmlAst({
     sourceContents = "",
     lineOffsets = null,
     structVariableDeclarationScopeIds = new Set(),
+    constructorStaticMemberDeclarationIdentifiers,
+    constructorInstanceVariableDeclarationIdentifiers,
+    identifierSink,
+    definitionsOnly = false,
+    recordReferences = false
+}) {
+    const parentMap = buildSafeParentMap(ast);
+    const enumLookup = createEnumLookup(ast, fileRecord?.filePath ?? null);
+    Core.traverseAst(ast, {
+        enter(node) {
+            handleFunctionLikeDeclarationNode({
+                node,
+                scopeDescriptor,
+                scopeRecord,
+                fileRecord,
+                identifierCollections,
+                sourceContents,
+                lineOffsets,
+                identifierSink
+            });
+            const identifierHandled = handleIdentifierNode({
+                node,
+                builtInNames,
+                fileRecord,
+                scopeRecord,
+                identifierCollections,
+                enumLookup,
+                scopeDescriptor,
+                metrics,
+                structVariableDeclarationScopeIds,
+                constructorStaticMemberDeclarationIdentifiers,
+                parentMap,
+                identifierSink,
+                definitionsOnly,
+                recordReferences
+            });
+            if (identifierHandled) {
+                return;
+            }
+            if (!definitionsOnly) {
+                handleCallExpressionNode({
+                    node,
+                    builtInNames,
+                    fileRecord,
+                    scopeRecord,
+                    relationships,
+                    scriptNameToScopeId,
+                    scriptNameToResourcePath,
+                    metrics
+                });
+                handleNewExpressionScriptCall({
+                    node,
+                    builtInNames,
+                    fileRecord,
+                    scopeRecord,
+                    relationships,
+                    scriptNameToScopeId,
+                    scriptNameToResourcePath,
+                    metrics
+                });
+                handleConstructorParentScriptCall({
+                    node,
+                    builtInNames,
+                    fileRecord,
+                    scopeRecord,
+                    relationships,
+                    scriptNameToScopeId,
+                    scriptNameToResourcePath,
+                    metrics
+                });
+            }
+            handleObjectEventAssignmentNode({
+                node,
+                scopeDescriptor,
+                identifierCollections,
+                builtInNames,
+                fileRecord,
+                scopeRecord,
+                metrics,
+                identifierSink,
+                parentMap,
+                constructorInstanceVariableDeclarationIdentifiers
+            });
+        }
+    });
+}
+function analyseConstructorStaticMemberOccurrences({
+    analysis,
+    filePath,
+    identifierCollections,
+    pendingConstructorStaticMemberReferences,
     identifierSink
 }) {
-    const enumLookup = createEnumLookup(ast, fileRecord?.filePath ?? null);
-    traverseAst(ast, (node) => {
-        handleFunctionLikeDeclarationNode({
-            node,
-            scopeDescriptor,
-            scopeRecord,
-            fileRecord,
+    if (!identifierCollections) {
+        return;
+    }
+
+    for (const declaration of analysis.declarations) {
+        registerConstructorStaticMemberDeclaration({
             identifierCollections,
-            sourceContents,
-            lineOffsets,
-            identifierSink
+            identifierRecord: createIdentifierRecord(declaration.memberIdentifier),
+            filePath,
+            constructorName: declaration.constructorName,
+            memberName: declaration.memberName,
+            identifierSink,
+            documentation: extractDeclarationDocumentation(declaration.declarationNode)
         });
-        const identifierHandled = handleIdentifierNode({
-            node,
-            builtInNames,
-            fileRecord,
-            scopeRecord,
-            identifierCollections,
-            enumLookup,
-            scopeDescriptor,
-            metrics,
-            structVariableDeclarationScopeIds,
-            identifierSink
+    }
+
+    for (const reference of analysis.references) {
+        pendingConstructorStaticMemberReferences.push({
+            filePath,
+            constructorName: reference.constructorName,
+            memberName: reference.memberName,
+            identifierRecord: createIdentifierRecord(reference.memberIdentifier)
         });
-        if (identifierHandled) {
-            return;
-        }
-        handleCallExpressionNode({
-            node,
-            builtInNames,
-            fileRecord,
-            scopeRecord,
-            relationships,
-            scriptNameToScopeId,
-            scriptNameToResourcePath,
-            metrics
-        });
-        handleNewExpressionScriptCall({
-            node,
-            builtInNames,
-            fileRecord,
-            scopeRecord,
-            relationships,
-            scriptNameToScopeId,
-            scriptNameToResourcePath,
-            metrics
-        });
-        handleConstructorParentScriptCall({
-            node,
-            builtInNames,
-            fileRecord,
-            scopeRecord,
-            relationships,
-            scriptNameToScopeId,
-            scriptNameToResourcePath,
-            metrics
-        });
-        handleObjectEventAssignmentNode({
-            node,
-            scopeDescriptor,
-            identifierCollections,
-            builtInNames,
-            fileRecord,
-            scopeRecord,
-            metrics,
-            identifierSink
-        });
+    }
+}
+
+function analyseConstructorInstanceVariableOccurrences({
+    analysis,
+    builtInNames,
+    filePath,
+    identifierCollections,
+    scopeDescriptor,
+    identifierSink
+}) {
+    if (!identifierCollections) {
+        return;
+    }
+    const createConstructorScopeDescriptor = (constructorName) => ({
+        ...scopeDescriptor,
+        id: `${scopeDescriptor.id}:constructor:${constructorName}`,
+        kind: "constructor",
+        name: constructorName,
+        displayName: constructorName
     });
+
+    for (const declaration of analysis.instanceVariableDeclarations) {
+        if (builtInNames.has(declaration.variableName)) {
+            continue;
+        }
+        registerInstanceAssignment({
+            identifierCollections,
+            identifierRecord: createIdentifierRecord(declaration.variableIdentifier),
+            filePath,
+            scopeDescriptor: createConstructorScopeDescriptor(declaration.constructorName),
+            identifierSink
+        });
+    }
+
+    for (const reference of analysis.instanceVariableReferences) {
+        if (builtInNames.has(reference.variableName)) {
+            continue;
+        }
+        registerInstanceOccurrence({
+            identifierCollections,
+            identifierRecord: createIdentifierRecord(reference.variableIdentifier),
+            filePath,
+            role: IdentifierRole.REFERENCE,
+            scopeDescriptor: createConstructorScopeDescriptor(reference.constructorName),
+            identifierSink
+        });
+    }
+}
+
+function collectConstructorStaticMemberDeclarationIdentifiers(analysis: ConstructorMemberAnalysis): WeakSet<object> {
+    return new WeakSet(analysis.declarations.map((declaration) => declaration.memberIdentifier));
+}
+function collectConstructorInstanceVariableDeclarationIdentifiers(
+    analysis: ConstructorMemberAnalysis
+): WeakSet<object> {
+    return new WeakSet(analysis.instanceVariableDeclarations.map((declaration) => declaration.variableIdentifier));
+}
+function registerPendingConstructorStaticMemberReferences({
+    identifierCollections,
+    pendingConstructorStaticMemberReferences,
+    identifierSink
+}) {
+    for (const reference of pendingConstructorStaticMemberReferences) {
+        registerConstructorStaticMemberReference({
+            identifierCollections,
+            identifierRecord: reference.identifierRecord,
+            filePath: reference.filePath,
+            constructorName: reference.constructorName,
+            memberName: reference.memberName,
+            identifierSink
+        });
+    }
 }
 function cloneAssetReference(reference) {
     return {
@@ -1818,6 +2216,7 @@ async function readProjectGmlFile({ file, fsFacade, metrics }) {
         return null;
     }
 
+    metrics.counters.increment("files.gmlRead");
     metrics.counters.increment("io.gmlBytes", Buffer.byteLength(contents));
     return contents;
 }
@@ -1874,13 +2273,28 @@ function prepareProjectIndexRecords({
     });
     return { scopeDescriptor, scopeRecord, fileRecord };
 }
-function parseProjectGmlSource({ contents, file, parseProjectSource, metrics, projectRoot }) {
-    return metrics.timers.timeSync("gml.parse", () =>
-        parseProjectSource(contents, {
-            filePath: file.relativePath,
-            projectRoot
-        })
-    );
+function parseProjectGmlSource({ contents, file, parseProjectSource, metrics, projectRoot }): GameMakerAstNode {
+    const context = {
+        filePath: file.relativePath,
+        projectRoot
+    };
+    return metrics.timers.timeSync("gml.parse", () => {
+        try {
+            const parsed =
+                typeof parseProjectSource === "function"
+                    ? parseProjectSource(contents, context)
+                    : Parser.GMLParser.parse(contents, PROJECT_INDEX_PARSE_OPTIONS);
+            if (!Core.isProgramNode(parsed)) {
+                throw new TypeError(`Project parser did not return a GML Program for ${file.relativePath}.`);
+            }
+            return parsed;
+        } catch (error) {
+            if (Core.isSyntaxErrorWithLocation(error)) {
+                throw formatProjectIndexSyntaxError(error, contents, context);
+            }
+            throw error;
+        }
+    });
 }
 async function processProjectGmlFile({
     file,
@@ -1895,7 +2309,11 @@ async function processProjectGmlFile({
     relationships,
     builtInNames,
     projectRoot,
-    identifierSink
+    identifierSink,
+    pendingConstructorStaticMemberReferences,
+    recordMemorySample,
+    definitionsOnly = false,
+    recordReferences = false
 }) {
     ensureNotAborted();
     metrics.counters.increment("files.gmlProcessed");
@@ -1913,6 +2331,7 @@ async function processProjectGmlFile({
         identifierCollections,
         identifierSink
     });
+    fileRecord.contentHash = createHash("sha256").update(contents).digest("hex");
     const ast = parseProjectGmlSource({
         contents,
         file,
@@ -1920,7 +2339,15 @@ async function processProjectGmlFile({
         metrics,
         projectRoot
     });
+    metrics.counters.increment("files.gmlParsed");
+    metrics.timers.timeSync("gml.bind", () => annotateSemanticBindings(ast));
+    recordMemorySample();
     const structVariableDeclarationScopeIds = collectConstructorVariableDeclarationScopeIds(ast);
+    const constructorMemberAnalysis = collectConstructorMemberAnalysis(ast);
+    const constructorStaticMemberDeclarationIdentifiers =
+        collectConstructorStaticMemberDeclarationIdentifiers(constructorMemberAnalysis);
+    const constructorInstanceVariableDeclarationIdentifiers =
+        collectConstructorInstanceVariableDeclarationIdentifiers(constructorMemberAnalysis);
     metrics.timers.timeSync("gml.analyse", () =>
         analyseGmlAst({
             ast,
@@ -1936,10 +2363,305 @@ async function processProjectGmlFile({
             sourceContents: contents,
             lineOffsets,
             structVariableDeclarationScopeIds,
+            constructorStaticMemberDeclarationIdentifiers,
+            constructorInstanceVariableDeclarationIdentifiers,
+            identifierSink,
+            definitionsOnly,
+            recordReferences
+        })
+    );
+    metrics.timers.timeSync("gml.constructorStaticMembers", () =>
+        analyseConstructorStaticMemberOccurrences({
+            analysis: constructorMemberAnalysis,
+            filePath: file.relativePath,
+            identifierCollections,
+            pendingConstructorStaticMemberReferences,
             identifierSink
         })
     );
+    metrics.timers.timeSync("gml.constructorInstanceVariables", () =>
+        analyseConstructorInstanceVariableOccurrences({
+            analysis: constructorMemberAnalysis,
+            builtInNames,
+            filePath: file.relativePath,
+            identifierCollections,
+            scopeDescriptor,
+            identifierSink
+        })
+    );
+    metrics.counters.increment("files.gmlAnalysed");
+    recordMemorySample();
 }
+
+function reconstructResourceAnalysis(existingIndex: any): {
+    resourcesMap: Map<string, any>;
+    assetReferences: any[];
+    gmlScopeMap: Map<string, any>;
+    scriptNameToResourcePath: Map<string, string>;
+    scriptNameToScopeId: Map<string, string>;
+} {
+    const resourcesMap = new Map<string, any>();
+    const scriptNameToScopeId = new Map<string, string>();
+    const scriptNameToResourcePath = new Map<string, string>();
+    if (existingIndex && existingIndex.resources) {
+        for (const [key, value] of Object.entries(existingIndex.resources)) {
+            const val = value as any;
+            resourcesMap.set(key, {
+                path: val.path,
+                name: val.name,
+                resourceType: val.resourceType,
+                scopes: new Set(val.scopes || []),
+                gmlFiles: new Set(val.gmlFiles || []),
+                assetReferences: val.assetReferences || [],
+                layers: val.layers
+            });
+            if (val.resourceType === "GMScript" && typeof val.name === "string" && typeof val.path === "string") {
+                const scopeId = Array.isArray(val.scopes)
+                    ? val.scopes.find(
+                          (candidate: unknown): candidate is string =>
+                              typeof candidate === "string" && candidate.startsWith("scope:script:")
+                      )
+                    : undefined;
+                if (scopeId) {
+                    scriptNameToScopeId.set(val.name, scopeId);
+                }
+                scriptNameToResourcePath.set(val.name, val.path);
+            }
+        }
+    }
+    const assetReferences = existingIndex?.relationships?.assetReferences || [];
+
+    const gmlScopeMap = new Map<string, any>();
+    if (existingIndex && existingIndex.scopes) {
+        for (const [_key, value] of Object.entries(existingIndex.scopes)) {
+            const val = value as any;
+            const filePaths = Array.isArray(val.filePaths)
+                ? val.filePaths.filter((filePath: unknown): filePath is string => typeof filePath === "string")
+                : [];
+            for (const gmlRelativePath of filePaths) {
+                gmlScopeMap.set(gmlRelativePath, {
+                    id: val.id,
+                    kind: val.kind,
+                    name: val.name,
+                    displayName: val.displayName,
+                    resourcePath: val.resourcePath,
+                    event: val.event ? { ...val.event } : null,
+                    gmlFile: gmlRelativePath
+                });
+            }
+        }
+    }
+
+    return {
+        resourcesMap,
+        assetReferences,
+        gmlScopeMap,
+        scriptNameToResourcePath,
+        scriptNameToScopeId
+    };
+}
+
+function createProjectIndexAggregationStateFromExisting(existingIndex: any) {
+    const scopeMap = new Map<string, any>();
+    if (existingIndex && existingIndex.scopes) {
+        const scopes = existingIndex.scopes;
+        for (const key in scopes) {
+            if (Object.hasOwn(scopes, key)) {
+                scopeMap.set(key, scopes[key]);
+            }
+        }
+    }
+
+    const filesMap = new Map<string, any>();
+    if (existingIndex && existingIndex.files) {
+        const files = existingIndex.files;
+        for (const key in files) {
+            if (Object.hasOwn(files, key)) {
+                filesMap.set(key, files[key]);
+            }
+        }
+    }
+
+    const relationships = {
+        scriptCalls: [...(existingIndex?.relationships?.scriptCalls || [])],
+        assetReferences: []
+    };
+
+    const identifierCollections = createIdentifierCollections();
+    if (existingIndex && existingIndex.identifiers) {
+        const identifiers = existingIndex.identifiers;
+        for (const key in identifierCollections) {
+            const map = (identifierCollections as any)[key];
+            const existingMap = identifiers[key];
+            if (existingMap) {
+                for (const itemKey in existingMap) {
+                    if (Object.hasOwn(existingMap, itemKey)) {
+                        map.set(itemKey, existingMap[itemKey]);
+                    }
+                }
+            }
+        }
+    }
+
+    return {
+        scopeMap,
+        filesMap,
+        relationships,
+        identifierCollections,
+        constructorStaticMemberReferences: [] as any[]
+    };
+}
+
+function removeFileFromAggregationState(
+    relativeChangedPath: string,
+    scopeMap: Map<string, any>,
+    filesMap: Map<string, any>,
+    identifierCollections: any,
+    relationships: any
+): void {
+    // 1. Delete file record. `Map.prototype.delete` is safe to call before any
+    // iteration begins on `scopeMap`/`identifierCollections`, so this step does
+    // not need to participate in the snapshot pass below.
+    filesMap.delete(relativeChangedPath);
+
+    // 2. Delete scope records. We collect the doomed keys (and replacement
+    // entries for the copy-on-write global/project scopes) in a first pass and
+    // apply them in a second pass so the loop never mutates the Map it is
+    // iterating over. The previous implementation called `scopeMap.delete`
+    // inside `scopeMap.entries()`, which leans on spec-defined iterator
+    // semantics where deletion of not-yet-yielded entries is implementation
+    // defined; it is currently well-defined in V8 but the contract is easy to
+    // break with a future refactor and obscures the intent of the loop.
+    const scopeIdsToRemove: Array<string> = [];
+    const scopeUpdates: Array<{ scopeId: string; nextEntry: any }> = [];
+
+    for (const [scopeId, scopeRecord] of scopeMap.entries()) {
+        if (
+            scopeId.startsWith(`file:${relativeChangedPath}`) ||
+            (scopeRecord.filePaths && scopeRecord.filePaths.includes(relativeChangedPath))
+        ) {
+            if (scopeId !== "global" && scopeId !== "project") {
+                scopeIdsToRemove.push(scopeId);
+            } else {
+                // Perform copy-on-write for global/project scopes
+                const filePaths = (scopeRecord.filePaths || []).filter((p: string) => p !== relativeChangedPath);
+                const declarations = (scopeRecord.declarations || []).filter(
+                    (d: any) => d.filePath !== relativeChangedPath
+                );
+                const references = (scopeRecord.references || []).filter(
+                    (r: any) => r.filePath !== relativeChangedPath
+                );
+                const ignoredIdentifiers = (scopeRecord.ignoredIdentifiers || []).filter(
+                    (i: any) => i.filePath !== relativeChangedPath
+                );
+                const scriptCalls = (scopeRecord.scriptCalls || []).filter(
+                    (c: any) => c.from?.filePath !== relativeChangedPath
+                );
+                scopeUpdates.push({
+                    scopeId,
+                    nextEntry: {
+                        ...scopeRecord,
+                        filePaths,
+                        declarations,
+                        references,
+                        ignoredIdentifiers,
+                        scriptCalls
+                    }
+                });
+            }
+        }
+    }
+
+    for (const scopeId of scopeIdsToRemove) {
+        scopeMap.delete(scopeId);
+    }
+    for (const { scopeId, nextEntry } of scopeUpdates) {
+        scopeMap.set(scopeId, nextEntry);
+    }
+
+    // 3. Filter occurrences in identifier collections. Same snapshot discipline
+    // as the scope-map loop above: collect the keys to delete and the updated
+    // entries during iteration, then apply them afterwards so the inner
+    // `Map.entries()` loop is never asked to walk a collection that we are
+    // actively mutating.
+    for (const collectionVal of Object.values(identifierCollections)) {
+        const collection = collectionVal as Map<string, any>;
+        const collectionKeysToRemove: Array<string> = [];
+        const collectionUpdates: Array<{ key: string; nextEntry: any }> = [];
+
+        for (const [key, entry] of collection.entries()) {
+            const decls = entry.declarations || [];
+            const refs = entry.references || [];
+            const hasDecl = decls.some((d: any) => d.filePath === relativeChangedPath);
+            const hasRef = refs.some((r: any) => r.filePath === relativeChangedPath);
+            if (hasDecl || hasRef) {
+                const declarations = declarationsFilterForRemove(decls, relativeChangedPath);
+                const references = referencesFilterForRemove(refs, relativeChangedPath);
+                if (declarations.length === 0 && references.length === 0) {
+                    collectionKeysToRemove.push(key);
+                } else {
+                    collectionUpdates.push({
+                        key,
+                        nextEntry: {
+                            ...entry,
+                            declarations,
+                            references
+                        }
+                    });
+                }
+            }
+        }
+
+        for (const key of collectionKeysToRemove) {
+            collection.delete(key);
+        }
+        for (const { key, nextEntry } of collectionUpdates) {
+            collection.set(key, nextEntry);
+        }
+    }
+
+    // 4. Filter script calls in relationships
+    if (relationships && Array.isArray(relationships.scriptCalls)) {
+        relationships.scriptCalls = relationships.scriptCalls.filter(
+            (call: any) => call.from?.filePath !== relativeChangedPath
+        );
+    }
+}
+
+function declarationsFilterForRemove(decls: any[], relativeChangedPath: string) {
+    return decls.filter((d: any) => d.filePath !== relativeChangedPath);
+}
+
+function referencesFilterForRemove(refs: any[], relativeChangedPath: string) {
+    return refs.filter((r: any) => r.filePath !== relativeChangedPath);
+}
+
+function removeChangedFilesFromAggregationState({
+    changedFiles,
+    resolvedRoot,
+    scopeMap,
+    filesMap,
+    identifierCollections,
+    relationships
+}: {
+    changedFiles: ReadonlyArray<ProjectIndexSemanticFileChange>;
+    resolvedRoot: string;
+    scopeMap: Map<string, any>;
+    filesMap: Map<string, any>;
+    identifierCollections: any;
+    relationships: any;
+}): void {
+    for (const change of changedFiles) {
+        removeFileFromAggregationState(
+            path.relative(resolvedRoot, change.filePath),
+            scopeMap,
+            filesMap,
+            identifierCollections,
+            relationships
+        );
+    }
+}
+
 /**
  * Centralize the mutable collections used while aggregating project index
  * details. Keeping the map initialisation and relationship bookkeeping here
@@ -1973,7 +2695,8 @@ function createProjectIndexAggregationState(resourceAnalysis) {
         scopeMap,
         filesMap,
         relationships,
-        identifierCollections
+        identifierCollections,
+        constructorStaticMemberReferences: []
     };
 }
 
@@ -1994,7 +2717,10 @@ function resolveIdentifierRoleRecords({
         return Core.cloneObjectEntries(fallbackRecords);
     }
 
-    return Core.toMutableArray(identifierSink.readAll(collection, key, role), { clone: true });
+    // Snapshot creation consumes each identifier role exactly once. Release the
+    // sink's in-memory tail and parsed spill cache immediately after cloning so
+    // large builds do not retain already-snapshotted records until final disposal.
+    return Core.toMutableArray(identifierSink.consumeAll(collection, key, role), { clone: true });
 }
 /**
  * Derive the final serializable project index payload from the populated
@@ -2042,6 +2768,7 @@ function createProjectIndexResultSnapshot({
         filesMap,
         (record) => ({
             filePath: record.filePath,
+            contentHash: record.contentHash ?? null,
             scopeId: record.scopeId,
             ...cloneEntryCollections(record, "declarations", "references", "ignoredIdentifiers", "scriptCalls")
         }),
@@ -2053,6 +2780,7 @@ function createProjectIndexResultSnapshot({
             id: entry.id,
             name: entry.name ?? null,
             displayName: entry.displayName ?? entry.name ?? entry.id,
+            documentation: entry.documentation ?? parseGmlSymbolDocumentation(""),
             resourcePath: entry.resourcePath ?? null,
             declarationKinds: [...Core.asArray(entry.declarationKinds)],
             declarations: resolveIdentifierRoleRecords({
@@ -2087,6 +2815,7 @@ function createProjectIndexResultSnapshot({
             key: entry.key,
             name: entry.name ?? null,
             displayName: entry.displayName ?? entry.name ?? entry.key,
+            documentation: entry.documentation ?? parseGmlSymbolDocumentation(""),
             filePath: entry.filePath ?? null,
             scopeId: entry.scopeId ?? null,
             declarations: resolveIdentifierRoleRecords({
@@ -2109,6 +2838,7 @@ function createProjectIndexResultSnapshot({
             key: entry.key,
             name: entry.name ?? null,
             displayName: entry.displayName ?? entry.name ?? entry.key,
+            documentation: entry.documentation ?? parseGmlSymbolDocumentation(""),
             filePath: entry.filePath ?? null,
             scopeId: entry.scopeId ?? null,
             declarations: resolveIdentifierRoleRecords({
@@ -2170,6 +2900,8 @@ function createProjectIndexResultSnapshot({
             name: entry.name ?? null,
             enumKey: entry.enumKey ?? null,
             enumName: entry.enumName ?? null,
+            value: entry.value ?? null,
+            order: entry.order ?? 0,
             filePath: entry.filePath ?? null,
             declarations: resolveIdentifierRoleRecords({
                 identifierSink,
@@ -2181,6 +2913,29 @@ function createProjectIndexResultSnapshot({
             references: resolveIdentifierRoleRecords({
                 identifierSink,
                 collection: IDENTIFIER_COLLECTION_NAMES.enumMembers,
+                key: entry.key,
+                role: "references",
+                fallbackRecords: entry.references
+            })
+        })),
+        constructorStaticMembers: mapToObject(identifierCollections.constructorStaticMembers, (entry) => ({
+            identifierId: entry.identifierId ?? buildIdentifierId("constructor-static-member", entry.key ?? ""),
+            key: entry.key,
+            name: entry.name ?? null,
+            constructorName: entry.constructorName ?? null,
+            displayName: entry.displayName ?? entry.key ?? null,
+            documentation: entry.documentation ?? parseGmlSymbolDocumentation(""),
+            filePath: entry.filePath ?? null,
+            declarations: resolveIdentifierRoleRecords({
+                identifierSink,
+                collection: IDENTIFIER_COLLECTION_NAMES.constructorStaticMembers,
+                key: entry.key,
+                role: "declarations",
+                fallbackRecords: entry.declarations
+            }),
+            references: resolveIdentifierRoleRecords({
+                identifierSink,
+                collection: IDENTIFIER_COLLECTION_NAMES.constructorStaticMembers,
                 key: entry.key,
                 role: "references",
                 fallbackRecords: entry.references
@@ -2229,8 +2984,10 @@ function createProjectIndexResultSnapshot({
             identifierId: entry.identifierId ?? buildIdentifierId("local", entry.key ?? ""),
             key: entry.key,
             name: entry.name ?? null,
+            documentation: entry.documentation ?? parseGmlSymbolDocumentation(""),
             scopeId: entry.scopeId ?? null,
             scopeKind: entry.scopeKind ?? null,
+            semanticKind: entry.semanticKind ?? "localVariable",
             declarations: resolveIdentifierRoleRecords({
                 identifierSink,
                 collection: IDENTIFIER_COLLECTION_NAMES.localVariables,
@@ -2279,10 +3036,7 @@ function createProjectIndexResultSnapshot({
 }
 async function loadBuiltInNamesForProjectIndex({ fsFacade, metrics, signal, ensureNotAborted }) {
     const builtInIdentifiers = await metrics.timers.timeAsync("loadBuiltIns", () =>
-        loadBuiltInIdentifiers(fsFacade, metrics, {
-            signal,
-            fallbackMessage: PROJECT_INDEX_BUILD_ABORT_MESSAGE
-        })
+        loadBuiltInIdentifiers(fsFacade, metrics, { signal })
     );
     ensureNotAborted();
     return builtInIdentifiers.names ?? new Set();
@@ -2363,10 +3117,143 @@ function configureGmlProcessing({ options, metrics }) {
     const concurrencySettings = options?.concurrency ?? {};
     const gmlConcurrency = clampConcurrency(concurrencySettings.gml ?? concurrencySettings.gmlParsing);
     metrics.metadata.setMetadata("gmlParseConcurrency", gmlConcurrency);
-    const parseProjectSource = resolveProjectIndexParser(options);
-    return { gmlConcurrency, parseProjectSource };
+    const workerConcurrency = clampWorkerConcurrency(concurrencySettings.worker);
+    metrics.metadata.setMetadata("gmlWorkerPoolConcurrency", workerConcurrency);
+    const parseProjectSource = options?.parseGml;
+    return { gmlConcurrency, workerConcurrency, parseProjectSource };
 }
-async function processProjectGmlFilesForIndex({
+
+type ProjectIndexSemanticFileChange = Readonly<{
+    filePath: string;
+    kind: "added" | "deleted" | "metadataChanged" | "modified";
+}>;
+
+async function reconcileIncrementalResourceMetadata({
+    changes,
+    projectRoot,
+    resourceAnalysis,
+    fsFacade,
+    metrics,
+    signal,
+    ensureNotAborted,
+    logger
+}: {
+    changes: ReadonlyArray<ProjectIndexSemanticFileChange>;
+    projectRoot: string;
+    resourceAnalysis: ReturnType<typeof reconstructResourceAnalysis>;
+    fsFacade: ProjectIndexFsFacade;
+    metrics: ReturnType<typeof createProjectIndexMetrics>["recording"];
+    signal: Parameters<typeof Core.throwIfAborted>[0];
+    ensureNotAborted: () => void;
+    logger: ProjectIndexLogger;
+}): Promise<ReadonlyArray<ProjectIndexSemanticFileChange>> {
+    const gmlChangesByPath = new Map(
+        changes
+            .filter((change) => change.filePath.toLowerCase().endsWith(".gml"))
+            .map((change) => [path.resolve(change.filePath), change.kind] as const)
+    );
+    const changedMetadata = changes
+        .filter((change) => !change.filePath.toLowerCase().endsWith(".gml"))
+        .map((change) => ({ ...change, filePath: path.resolve(change.filePath) }));
+    for (const { filePath: changedMetadataFile } of changedMetadata) {
+        const relativeMetadataPath = path.relative(projectRoot, changedMetadataFile);
+        const previousResource = resourceAnalysis.resourcesMap.get(relativeMetadataPath);
+        for (const gmlFile of previousResource?.gmlFiles ?? []) {
+            const absoluteGmlPath = path.resolve(projectRoot, gmlFile);
+            if (!gmlChangesByPath.has(absoluteGmlPath)) {
+                gmlChangesByPath.set(absoluteGmlPath, "deleted");
+            }
+        }
+        if (previousResource?.name) {
+            resourceAnalysis.scriptNameToScopeId.delete(previousResource.name);
+            resourceAnalysis.scriptNameToResourcePath.delete(previousResource.name);
+        }
+        resourceAnalysis.resourcesMap.delete(relativeMetadataPath);
+        resourceAnalysis.assetReferences = resourceAnalysis.assetReferences.filter(
+            (reference) => reference.fromResourcePath !== relativeMetadataPath
+        );
+        // Collect the keys to evict in a first pass and apply the deletions
+        // afterwards so the loop never mutates the Map it is iterating over.
+        // The previous in-loop `gmlScopeMap.delete(gmlFile)` call leans on
+        // spec-defined iterator semantics where deletion of not-yet-yielded
+        // entries is implementation defined; it currently works under V8 but
+        // is fragile to future runtime refactors and hides the loop's
+        // intent. The same loop body is used as a small, focused fix here
+        // for consistency with `removeFileFromAggregationState`.
+        const gmlFilesToEvict: Array<string> = [];
+        for (const [gmlFile, descriptor] of resourceAnalysis.gmlScopeMap) {
+            if (descriptor.resourcePath === relativeMetadataPath) {
+                gmlFilesToEvict.push(gmlFile);
+            }
+        }
+        for (const gmlFile of gmlFilesToEvict) {
+            resourceAnalysis.gmlScopeMap.delete(gmlFile);
+        }
+    }
+    const metadataFileCandidates = await Promise.all(
+        changedMetadata.map(async ({ filePath: absolutePath, kind }) => {
+            if (kind === "deleted") {
+                return null;
+            }
+            const stats = await runWithMissingPathFallback(
+                () => fsFacade.stat(absolutePath),
+                () => null
+            );
+            return stats === null || (typeof stats.isFile === "function" && !stats.isFile())
+                ? null
+                : { absolutePath, relativePath: path.relative(projectRoot, absolutePath) };
+        })
+    );
+    const existingMetadataFiles = metadataFileCandidates.flatMap((file) => (file === null ? [] : [file]));
+    if (existingMetadataFiles.length > 0) {
+        const refreshedMetadata = await analyseProjectResourcesForIndex({
+            projectRoot,
+            yyFiles: existingMetadataFiles,
+            fsFacade,
+            metrics,
+            signal,
+            ensureNotAborted,
+            logger
+        });
+        for (const [resourcePath, resource] of refreshedMetadata.resourcesMap) {
+            resourceAnalysis.resourcesMap.set(resourcePath, {
+                ...resource,
+                scopes: new Set(resource.scopes),
+                gmlFiles: new Set(resource.gmlFiles)
+            });
+            for (const gmlFile of resource.gmlFiles) {
+                gmlChangesByPath.set(path.resolve(projectRoot, gmlFile), "modified");
+            }
+        }
+        resourceAnalysis.assetReferences.push(...refreshedMetadata.assetReferences);
+        for (const [gmlFile, descriptor] of refreshedMetadata.gmlScopeMap) {
+            resourceAnalysis.gmlScopeMap.set(gmlFile, descriptor);
+        }
+        for (const [scriptName, resourcePath] of refreshedMetadata.scriptNameToResourcePath) {
+            resourceAnalysis.scriptNameToResourcePath.set(scriptName, resourcePath);
+        }
+        for (const [scriptName, scopeId] of refreshedMetadata.scriptNameToScopeId) {
+            resourceAnalysis.scriptNameToScopeId.set(scriptName, scopeId);
+        }
+    }
+    return [...gmlChangesByPath]
+        .map(([filePath, kind]) => ({ filePath, kind }))
+        .toSorted((left, right) => left.filePath.localeCompare(right.filePath));
+}
+
+/**
+ * Process a batch of GML files sequentially (subject to the promise-based
+ * `gmlConcurrency` I/O overlap), appending results into the caller-supplied
+ * `scopeMap`/`filesMap`/`identifierCollections`/`relationships`/
+ * `constructorStaticMemberReferences` accumulators.
+ *
+ * Exported so the GML worker-thread pool (`gml-parallel-worker.ts`) can reuse
+ * this exact function — unmodified — to process its own file batch against a
+ * local, empty set of accumulators. Keeping a single implementation means the
+ * sequential and parallel project-index paths can never drift from one
+ * another; only the accumulators and file list differ between the two.
+ */
+export async function processProjectGmlFilesForIndex({
     gmlFiles,
     gmlConcurrency,
     parseProjectSource,
@@ -2381,12 +3268,27 @@ async function processProjectGmlFilesForIndex({
     builtInNames,
     projectRoot,
     signal,
-    identifierSink
+    identifierSink,
+    constructorStaticMemberReferences,
+    recordMemorySample,
+    onProgress,
+    definitionsOnly = false,
+    recordReferences = false
 }) {
+    let processed = 0;
+    const total = gmlFiles.length;
+    const fileTimings: Array<{ relativePath: string; durationMs: number }> = [];
     await processWithConcurrency(
         gmlFiles,
         gmlConcurrency,
         async (file) => {
+            // Parsing and AST traversal are synchronous CPU work. Yield before
+            // each file so LSP callers can service hover/tokens between files
+            // while Tier 1/Tier 2 continue in the background.
+            await new Promise<void>((resolve) => {
+                setImmediate(resolve);
+            });
+            const fileStartedAt = performance.now();
             await processProjectGmlFile({
                 file,
                 fsFacade,
@@ -2400,12 +3302,22 @@ async function processProjectGmlFilesForIndex({
                 relationships,
                 builtInNames,
                 projectRoot,
-                identifierSink
+                identifierSink,
+                pendingConstructorStaticMemberReferences: constructorStaticMemberReferences,
+                recordMemorySample,
+                definitionsOnly,
+                recordReferences
             });
+            fileTimings.push({ relativePath: file.relativePath, durationMs: performance.now() - fileStartedAt });
+            processed += 1;
+            if (onProgress) {
+                onProgress({ stage: "gml-parse", current: processed, total });
+            }
         },
         { signal }
     );
     ensureNotAborted();
+    metrics.metadata.setMetadata("gmlFileTimings", fileTimings);
 }
 function finalizeProjectIndexResult({ metricsReporting, options, projectIndex }) {
     const metricsReport = finalizeProjectIndexMetrics(metricsReporting);
@@ -2415,7 +3327,173 @@ function finalizeProjectIndexResult({ metricsReporting, options, projectIndex })
     }
     return projectIndex;
 }
-export async function buildProjectIndex(projectRoot, fsFacade = Core.defaultFsFacade, options = {} as any) {
+async function prepareIncrementalState(
+    resolvedRoot: string,
+    incremental: NonNullable<ProjectIndexBuildOptions["incremental"]>,
+    fsFacade: ProjectIndexFsFacade,
+    metrics: ReturnType<typeof createProjectIndexMetrics>["recording"],
+    signal: any,
+    ensureNotAborted: () => void,
+    logger: ProjectIndexLogger | null
+) {
+    const { existingIndex, changes } = incremental;
+    const changesByPath = new Map<string, ProjectIndexSemanticFileChange["kind"]>();
+    for (const change of changes as ReadonlyArray<ProjectIndexSemanticFileChange>) {
+        changesByPath.set(path.resolve(change.filePath), change.kind);
+    }
+    const uniqueChanges = [...changesByPath].map(([filePath, kind]) => ({ filePath, kind }));
+
+    const resourceAnalysis = reconstructResourceAnalysis(existingIndex);
+    const changedGmlFiles = await reconcileIncrementalResourceMetadata({
+        changes: uniqueChanges,
+        projectRoot: resolvedRoot,
+        resourceAnalysis,
+        fsFacade,
+        metrics,
+        signal,
+        ensureNotAborted,
+        logger
+    });
+    const state = createProjectIndexAggregationStateFromExisting(existingIndex);
+    const scopeMap = state.scopeMap;
+    const filesMap = state.filesMap;
+    const relationships = state.relationships;
+    const identifierCollections = state.identifierCollections;
+
+    removeChangedFilesFromAggregationState({
+        changedFiles: changedGmlFiles,
+        resolvedRoot,
+        scopeMap,
+        filesMap,
+        identifierCollections,
+        relationships
+    });
+
+    const changedFileDescriptors = changedGmlFiles
+        .filter((change) => change.kind !== "deleted")
+        .map((change) => {
+            const changedFile = change.filePath;
+            const relativeChangedPath = path.relative(resolvedRoot, changedFile);
+            removeFileFromAggregationState(
+                relativeChangedPath,
+                scopeMap,
+                filesMap,
+                identifierCollections,
+                relationships
+            );
+            let fileResourcePath = `scripts/${path.basename(changedFile, ".gml")}/${path.basename(changedFile)}`;
+            for (const [resPath, resRecord] of resourceAnalysis.resourcesMap.entries()) {
+                if (resRecord.gmlFiles.has(relativeChangedPath)) {
+                    fileResourcePath = resPath;
+                    break;
+                }
+            }
+            return {
+                absolutePath: changedFile,
+                relativePath: relativeChangedPath,
+                name: path.basename(changedFile, ".gml"),
+                resourcePath: fileResourcePath
+            };
+        });
+    const changedPathExistence = await Promise.all(
+        changedFileDescriptors.map(async (descriptor) => {
+            const stats = await runWithMissingPathFallback(
+                () => fsFacade.stat(descriptor.absolutePath),
+                () => null
+            );
+            const exists = stats !== null && (typeof stats.isFile !== "function" || stats.isFile());
+            return exists ? descriptor.absolutePath : null;
+        })
+    );
+    const existingChangedPaths = new Set(
+        changedPathExistence.flatMap((filePath) => (filePath === null ? [] : [filePath]))
+    );
+    const orderedGmlFiles = changedFileDescriptors.filter((descriptor) =>
+        existingChangedPaths.has(descriptor.absolutePath)
+    );
+    metrics.counters.increment("files.incrementalSelected", orderedGmlFiles.length);
+
+    return {
+        resourceAnalysis,
+        scopeMap,
+        filesMap,
+        relationships,
+        identifierCollections,
+        orderedGmlFiles
+    };
+}
+
+async function prepareFullBuildState(
+    resolvedRoot: string,
+    options: ProjectIndexBuildOptions,
+    fsFacade: ProjectIndexFsFacade,
+    metrics: ReturnType<typeof createProjectIndexMetrics>["recording"],
+    signal: any,
+    ensureNotAborted: () => void,
+    logger: ProjectIndexLogger | null,
+    recordMemorySample: () => void
+) {
+    const { yyFiles, gmlFiles } = await discoverProjectFilesForIndex({
+        projectRoot: resolvedRoot,
+        fsFacade,
+        metrics,
+        signal,
+        ensureNotAborted,
+        logger
+    });
+    recordMemorySample();
+
+    const resourceAnalysis = await analyseProjectResourcesForIndex({
+        projectRoot: resolvedRoot,
+        yyFiles,
+        fsFacade,
+        metrics,
+        signal,
+        ensureNotAborted,
+        logger
+    });
+    recordMemorySample();
+
+    const state = createProjectIndexAggregationState(resourceAnalysis);
+    const scopeMap = state.scopeMap;
+    const filesMap = state.filesMap;
+    const relationships = state.relationships;
+    const identifierCollections = state.identifierCollections;
+
+    let orderedGmlFiles = gmlFiles;
+    if (options?.priorityFiles) {
+        const prioritySet = new Set(
+            (Array.isArray(options.priorityFiles) ? options.priorityFiles : [options.priorityFiles]).map((f) =>
+                path.resolve(f)
+            )
+        );
+        const priorities: any[] = [];
+        const others: any[] = [];
+        for (const file of gmlFiles) {
+            if (prioritySet.has(path.resolve(file.absolutePath))) {
+                priorities.push(file);
+            } else {
+                others.push(file);
+            }
+        }
+        orderedGmlFiles = [...priorities, ...others];
+    }
+
+    return {
+        resourceAnalysis,
+        scopeMap,
+        filesMap,
+        relationships,
+        identifierCollections,
+        orderedGmlFiles
+    };
+}
+
+export async function buildProjectIndex(
+    projectRoot: string,
+    fsFacade: ProjectIndexFsFacade = Core.defaultFsFacade,
+    options: ProjectIndexBuildOptions = {}
+) {
     if (!projectRoot) {
         throw new Error("projectRoot must be provided to buildProjectIndex");
     }
@@ -2428,19 +3506,25 @@ export async function buildProjectIndex(projectRoot, fsFacade = Core.defaultFsFa
     });
     const metrics = metricsContracts.recording;
     const metricsReporting = metricsContracts.reporting;
+    metrics.metadata.setMetadata("buildMode", options.incremental ? "incremental" : "project");
+    metrics.metadata.setMetadata("analysisTier", options.definitionsOnly === true ? "definitions" : "full");
+    metrics.counters.increment("files.gmlRead", 0);
+    metrics.counters.increment("files.gmlParsed", 0);
+    metrics.counters.increment("files.gmlAnalysed", 0);
+    metrics.counters.increment("files.incrementalSelected", 0);
     const stopTotal = metrics.timers.startTimer("total");
     const { signal, ensureNotAborted } = createProjectIndexAbortGuard(options);
     const identifierSink =
         options?.identifierSink?.enabled === true ? createIdentifierSink(options.identifierSink) : null;
-    let maxRss = 0;
-    let maxHeapUsed = 0;
-    const recordMemoryHighWater = (): void => {
+    let sampledPeakRss = 0;
+    let sampledPeakHeapUsed = 0;
+    const recordMemorySample = (): void => {
         const snapshot = process.memoryUsage();
-        maxRss = Math.max(maxRss, snapshot.rss);
-        maxHeapUsed = Math.max(maxHeapUsed, snapshot.heapUsed);
+        sampledPeakRss = Math.max(sampledPeakRss, snapshot.rss);
+        sampledPeakHeapUsed = Math.max(sampledPeakHeapUsed, snapshot.heapUsed);
     };
 
-    recordMemoryHighWater();
+    recordMemorySample();
 
     if (logger) {
         logProjectIndexDebug(logger, `DEBUG: Starting buildProjectIndex for project: ${resolvedRoot}`);
@@ -2452,63 +3536,122 @@ export async function buildProjectIndex(projectRoot, fsFacade = Core.defaultFsFa
         signal,
         ensureNotAborted
     });
-    recordMemoryHighWater();
+    recordMemorySample();
 
-    const { yyFiles, gmlFiles } = await discoverProjectFilesForIndex({
-        projectRoot: resolvedRoot,
-        fsFacade,
-        metrics,
-        signal,
-        ensureNotAborted,
-        logger
-    });
-    recordMemoryHighWater();
+    const { resourceAnalysis, scopeMap, filesMap, relationships, identifierCollections, orderedGmlFiles } =
+        options.incremental
+            ? await prepareIncrementalState(
+                  resolvedRoot,
+                  options.incremental,
+                  fsFacade,
+                  metrics,
+                  signal,
+                  ensureNotAborted,
+                  logger
+              )
+            : await prepareFullBuildState(
+                  resolvedRoot,
+                  options,
+                  fsFacade,
+                  metrics,
+                  signal,
+                  ensureNotAborted,
+                  logger,
+                  recordMemorySample
+              );
 
-    const resourceAnalysis = await analyseProjectResourcesForIndex({
-        projectRoot: resolvedRoot,
-        yyFiles,
-        fsFacade,
-        metrics,
-        signal,
-        ensureNotAborted,
-        logger
-    });
-    recordMemoryHighWater();
+    const constructorStaticMemberReferences: any[] = [];
 
-    const { scopeMap, filesMap, relationships, identifierCollections } =
-        createProjectIndexAggregationState(resourceAnalysis);
-
-    const { gmlConcurrency, parseProjectSource } = configureGmlProcessing({
+    const { gmlConcurrency, workerConcurrency, parseProjectSource } = configureGmlProcessing({
         options,
         metrics
     });
 
+    const definitionsOnly = options?.definitionsOnly === true;
     try {
-        await processProjectGmlFilesForIndex({
-            gmlFiles,
-            gmlConcurrency,
-            parseProjectSource,
-            fsFacade,
-            metrics,
-            ensureNotAborted,
-            resourceAnalysis,
-            scopeMap,
-            filesMap,
-            identifierCollections,
-            relationships,
-            builtInNames,
-            projectRoot: resolvedRoot,
-            signal,
-            identifierSink
-        });
-        recordMemoryHighWater();
+        const runSequentialGmlProcessing = () =>
+            processProjectGmlFilesForIndex({
+                gmlFiles: orderedGmlFiles,
+                gmlConcurrency,
+                parseProjectSource,
+                fsFacade,
+                metrics,
+                ensureNotAborted,
+                resourceAnalysis,
+                scopeMap,
+                filesMap,
+                identifierCollections,
+                relationships,
+                builtInNames,
+                projectRoot: resolvedRoot,
+                signal,
+                identifierSink,
+                constructorStaticMemberReferences,
+                recordMemorySample,
+                onProgress: options?.onProgress,
+                definitionsOnly
+            });
 
-        recordScriptCallMetricsAndReferences({
-            relationships,
-            metrics,
+        const canUseWorkerPool = isGmlParallelPoolEligible({
+            gmlFiles: orderedGmlFiles,
+            fsFacade,
+            parseProjectSource,
+            identifierSink,
+            workerConcurrency
+        });
+
+        if (canUseWorkerPool) {
+            try {
+                await runProjectGmlFilesWithWorkerPool({
+                    gmlFiles: orderedGmlFiles,
+                    workerConcurrency,
+                    gmlConcurrency,
+                    resourceAnalysis,
+                    scopeMap,
+                    filesMap,
+                    identifierCollections,
+                    relationships,
+                    builtInNames,
+                    projectRoot: resolvedRoot,
+                    signal,
+                    metrics,
+                    pendingConstructorStaticMemberReferences: constructorStaticMemberReferences,
+                    onProgress: options?.onProgress,
+                    definitionsOnly
+                });
+            } catch (poolError) {
+                if (Core.isAbortError(poolError)) {
+                    throw poolError;
+                }
+                // Parallelism is an optimization, not a required behavior: any
+                // failure in the worker pool's setup, IPC, or merge logic falls
+                // back to the sequential path rather than failing a build that
+                // would otherwise have succeeded. Nothing has been mutated on
+                // the shared accumulators yet (the pool only merges after every
+                // worker succeeds), so re-running sequentially from scratch is
+                // safe.
+                metrics.counters.increment("gmlWorkerPool.fallbackToSequential");
+                await runSequentialGmlProcessing();
+            }
+        } else {
+            await runSequentialGmlProcessing();
+        }
+        recordMemorySample();
+
+        registerPendingConstructorStaticMemberReferences({
             identifierCollections,
+            pendingConstructorStaticMemberReferences: constructorStaticMemberReferences,
             identifierSink
         });
+
+        if (!definitionsOnly) {
+            recordScriptCallMetricsAndReferences({
+                relationships,
+                metrics,
+                identifierCollections,
+                identifierSink
+            });
+        }
 
         const projectIndexPayload = createProjectIndexResultSnapshot({
             projectRoot: resolvedRoot,
@@ -2519,7 +3662,7 @@ export async function buildProjectIndex(projectRoot, fsFacade = Core.defaultFsFa
             relationships,
             identifierSink
         });
-        recordMemoryHighWater();
+        recordMemorySample();
 
         if (identifierSink) {
             const sinkStats = identifierSink.getStats();
@@ -2530,8 +3673,8 @@ export async function buildProjectIndex(projectRoot, fsFacade = Core.defaultFsFa
             metrics.caches.recordMetric("identifierSink", "misses", sinkStats.cacheMisses);
         }
 
-        metrics.metadata.setMetadata("memory.maxRssBytes", maxRss);
-        metrics.metadata.setMetadata("memory.maxHeapUsedBytes", maxHeapUsed);
+        metrics.metadata.setMetadata("memory.sampledPeakRssBytes", sampledPeakRss);
+        metrics.metadata.setMetadata("memory.sampledPeakHeapUsedBytes", sampledPeakHeapUsed);
 
         if (logger) {
             logProjectIndexDebug(logger, "DEBUG: identifierCollections keys:", Object.keys(identifierCollections));
@@ -2556,3 +3699,155 @@ export async function buildProjectIndex(projectRoot, fsFacade = Core.defaultFsFa
         identifierSink?.dispose();
     }
 }
+
+/**
+ * Publishes a completed project index through the canonical definitions/full
+ * semantic slots using one manifest revision.
+ *
+ * Consumers that apply source edits call this semantic-owned boundary instead
+ * of opening or mutating the SQLite store directly.
+ */
+export async function publishBuiltProjectIndex(
+    projectRoot: string,
+    projectIndex: Awaited<ReturnType<typeof buildProjectIndex>>,
+    fsFacade: ProjectIndexFsFacade = Core.defaultFsFacade
+): Promise<void> {
+    const store = openSemanticIndexStore(projectRoot);
+    let storedManifest;
+    try {
+        storedManifest = store.readSemanticManifest("full") ?? store.readSemanticManifest("definitions");
+    } finally {
+        await store.close();
+    }
+    const manifest = await buildSemanticFileManifest(projectRoot, fsFacade, [], storedManifest);
+    await saveSemanticStoreIndex({ manifest, projectIndex, projectRoot });
+}
+
+/**
+ * Resolves one deterministic scoped impact set from the persisted full-tier
+ * reverse-dependency graph. Directly changed files are ordered before their
+ * immediate dependents and no transitive expansion is performed.
+ */
+export async function resolveSemanticImpactFilePaths(
+    projectRoot: string,
+    changedFilePaths: ReadonlyArray<string>,
+    introducedIdentifierNames: ReadonlyArray<string>
+): Promise<ReadonlyArray<string>> {
+    const resolvedRoot = path.resolve(projectRoot);
+    const store = openSemanticIndexStore(resolvedRoot);
+    try {
+        const changedAbsolutePaths = Core.uniqueArray(
+            changedFilePaths.map((filePath) => path.resolve(resolvedRoot, filePath))
+        ).toSorted((left, right) => left.localeCompare(right));
+        const impactedPaths = new Set(changedAbsolutePaths);
+        for (const changedPath of changedAbsolutePaths) {
+            for (const dependentPath of store.findImmediateDownstreamFiles(changedPath)) {
+                impactedPaths.add(path.resolve(resolvedRoot, dependentPath));
+            }
+        }
+        for (const unresolvedPath of store.findUnresolvedDependents(introducedIdentifierNames)) {
+            impactedPaths.add(path.resolve(resolvedRoot, unresolvedPath));
+        }
+        const orderedPaths = [...impactedPaths].sort((left, right) => left.localeCompare(right));
+        const indegrees = new Map(orderedPaths.map((filePath) => [filePath, 0]));
+        const dependentsByOwner = new Map<string, Set<string>>();
+        for (const ownerPath of orderedPaths) {
+            for (const dependentPath of store.findImmediateDownstreamFiles(ownerPath)) {
+                const absoluteDependentPath = path.resolve(resolvedRoot, dependentPath);
+                if (!impactedPaths.has(absoluteDependentPath)) {
+                    continue;
+                }
+                const dependents = Core.getOrCreateMapEntry(dependentsByOwner, ownerPath, () => new Set<string>());
+                if (dependents.has(absoluteDependentPath)) {
+                    continue;
+                }
+                dependents.add(absoluteDependentPath);
+                indegrees.set(absoluteDependentPath, (indegrees.get(absoluteDependentPath) ?? 0) + 1);
+            }
+        }
+        const available = orderedPaths.filter((filePath) => indegrees.get(filePath) === 0);
+        const result: string[] = [];
+        while (available.length > 0) {
+            const ownerPath = available.shift();
+            if (ownerPath === undefined) {
+                break;
+            }
+            result.push(ownerPath);
+            for (const dependentPath of [...(dependentsByOwner.get(ownerPath) ?? [])].sort((left, right) =>
+                left.localeCompare(right)
+            )) {
+                const nextIndegree = (indegrees.get(dependentPath) ?? 0) - 1;
+                indegrees.set(dependentPath, nextIndegree);
+                if (nextIndegree === 0) {
+                    available.push(dependentPath);
+                    available.sort((left, right) => left.localeCompare(right));
+                }
+            }
+        }
+        const emittedPaths = new Set(result);
+        return Object.freeze([...result, ...orderedPaths.filter((filePath) => !emittedPaths.has(filePath))]);
+    } finally {
+        await store.close();
+    }
+}
+
+/**
+ * Publishes one complete changed-file batch without replacing unrelated
+ * normalized semantic rows.
+ */
+export async function publishBuiltProjectIndexIncrement(
+    projectRoot: string,
+    projectIndex: Awaited<ReturnType<typeof buildProjectIndex>>,
+    changedFilePaths: ReadonlyArray<string>,
+    fsFacade: ProjectIndexFsFacade = Core.defaultFsFacade
+): Promise<void> {
+    const store = openSemanticIndexStore(projectRoot);
+    try {
+        const baselineManifest = store.readSemanticManifest("definitions") ?? store.readSemanticManifest("full");
+        if (baselineManifest === null) {
+            await publishBuiltProjectIndex(projectRoot, projectIndex, fsFacade);
+            return;
+        }
+        const absoluteChangedFiles = changedFilePaths.map((filePath) => path.resolve(projectRoot, filePath));
+        const manifest = await updateSemanticFileManifest(
+            projectRoot,
+            baselineManifest,
+            fsFacade,
+            [],
+            absoluteChangedFiles
+        );
+        const publishTier = (tier: "definitions" | "full") => {
+            const currentSlots = store.readActiveSemanticSlots();
+            const request = {
+                affectedFiles: absoluteChangedFiles,
+                authoritative: false,
+                baseGeneration: currentSlots[tier]?.generation ?? null,
+                expectedHeadGeneration: store.readSemanticProjectHead().generation,
+                manifest,
+                navigationProjection: projectIndex,
+                snapshot: createSemanticSnapshotFromProjectIndex(projectIndex, tier, manifest.sourceRevision),
+                sourceRevision: manifest.sourceRevision,
+                tier
+            } as const;
+            return currentSlots[tier] === null
+                ? store.publishSemanticSnapshot(request)
+                : store.applySemanticIncrement(request);
+        };
+        const definitionsPublication = publishTier("definitions");
+        if (definitionsPublication.status === "superseded" || publishTier("full").status === "superseded") {
+            throw new Error(`Semantic incremental publication was superseded for ${projectRoot}.`);
+        }
+    } finally {
+        await store.close();
+    }
+}
+
+/**
+ * Test-only surface for `removeFileFromAggregationState` and the supporting
+ * aggregation-state helpers. Exported as a frozen object so unit tests can
+ * exercise the snapshot-pattern mutation logic directly without standing up
+ * the full project-index pipeline.
+ */
+export const __projectIndexBuilderTest__ = Object.freeze({
+    removeFileFromAggregationState
+});

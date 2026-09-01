@@ -9,6 +9,7 @@ export function createDefaultGmloopProjectConfig(): Readonly<Record<string, unkn
         printWidth: 120,
         refactor: Object.freeze({
             codemods: Object.freeze({
+                globalvarToGlobal: Object.freeze({}),
                 loopLengthHoisting: Object.freeze({}),
                 namingConvention: Object.freeze({
                     exclusivePrefixes: Object.freeze({
@@ -45,10 +46,14 @@ export function createDefaultGmloopProjectConfig(): Readonly<Record<string, unkn
                         timelineResourceName: Object.freeze({ prefix: "tl_" }),
                         variable: Object.freeze({ caseStyle: "lower_snake" })
                     })
-                })
+                }),
+                repairArgumentSeparators: Object.freeze({}),
+                repairLogicalNot: Object.freeze({}),
+                scientificNotation: Object.freeze({})
             })
         }),
         semi: true,
-        tabWidth: 4
+        tabWidth: 4,
+        useTabs: false
     });
 }

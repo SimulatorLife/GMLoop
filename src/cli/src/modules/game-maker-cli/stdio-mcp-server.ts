@@ -44,14 +44,38 @@ export async function probeStdioMcpServer(
         // the intervals are cleared by their respective match handlers.
         const activeIntervals = new Set<ReturnType<typeof setInterval>>();
 
+        /**
+         * Detach every listener we registered on the child process and its
+         * stdio streams, then terminate the child if it is still alive.
+         *
+         * Node keeps listeners attached to an EventEmitter alive for the
+         * emitter's lifetime. The closures we registered for `data`, `error`,
+         * and `close` capture `stdoutBuffer`, `stderrBuffer`, `pendingMessages`,
+         * and `finalize`, so leaving them attached keeps the parent's stdio
+         * pipes referenced (and their underlying file descriptors open) for as
+         * long as the child runs. Sending SIGTERM lets the child close its
+         * end of the pipes, which then becomes observable here through the
+         * `close` event — but we already removed those listeners below, so the
+         * process can exit silently without re-entering `finalize`. The
+         * `settled` guard at the top of `finalize` keeps that path idempotent
+         * even if a stray `close` arrives mid-shutdown.
+         */
+        const terminateChildProcess = (): void => {
+            childProcess.stdout?.removeAllListeners();
+            childProcess.stderr?.removeAllListeners();
+            childProcess.removeAllListeners();
+
+            if (childProcess.exitCode === null && childProcess.signalCode === null && childProcess.killed === false) {
+                childProcess.kill("SIGTERM");
+            }
+        };
+
         const cleanup = () => {
             for (const interval of activeIntervals) {
                 clearInterval(interval);
             }
             activeIntervals.clear();
-            if (childProcess.killed === false) {
-                childProcess.kill("SIGTERM");
-            }
+            terminateChildProcess();
         };
 
         const timeout = setTimeout(() => {
@@ -80,6 +104,14 @@ export async function probeStdioMcpServer(
                 clearInterval(interval);
             }
             activeIntervals.clear();
+            // Tear down the child even on the success path. Without this, the
+            // child process — which is only required to deliver one round of
+            // initialize + tools/list responses — keeps running indefinitely,
+            // holding its stdio pipes (and the file descriptors backing them)
+            // open in the parent. On long-lived CLI invocations that probe many
+            // MCP servers, that accumulated cost eventually surfaces as `EMFILE`
+            // when the process tries to open one too many descriptors.
+            terminateChildProcess();
             callback();
         };
 

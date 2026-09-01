@@ -1,0 +1,48 @@
+{
+  "brackets": [
+    [
+      "{",
+      "}"
+    ],
+    [
+      "[",
+      "]"
+    ],
+    [
+      "<",
+      ">"
+    ]
+  ],
+  "autoClosingPairs": [
+    {
+      "open": "{",
+      "close": "}"
+    },
+    {
+      "open": "[",
+      "close": "]"
+    },
+    {
+      "open": "<",
+      "close": ">"
+    }
+  ],
+  "surroundingPairs": [
+    [
+      "{",
+      "}"
+    ],
+    [
+      "[",
+      "]"
+    ],
+    [
+      "<",
+      ">"
+    ]
+  ],
+  "autoCloseBefore": ";:.,=}])>` \n\t",
+  "wordPattern": {
+    "pattern": "(@?[\\w+]|[\\w\\.]+)"
+  }
+}

@@ -1,7 +1,9 @@
 {
   "printWidth": 120,
   "lintRules": {
+    "gml/remove-doc-function-tags": "error",
     "gml/normalize-doc-comments": "error",
+    "gml/normalize-doc-param-separators": "error",
     "gml/optimize-math-expressions": "error"
   },
   "fixture": {

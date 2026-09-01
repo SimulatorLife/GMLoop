@@ -1,13 +1,15 @@
 export { Parser } from "./src/index.js";
 export type {
     CommentProcessingOptions,
-    GlobalIdentifierTracker,
-    IdentifierRoleManager,
+    DocCommentAttachmentOptions,
     LocationMetadataOptions,
     OutputFormatOptions,
     ParserOptions,
-    ScopeLifecycle,
-    ScopeTracker,
-    ScopeTrackerOptions,
-    ScopeTrackingOptions
+    PredictionStrategyOptions
+} from "./src/types/parser-types.js";
+export {
+    DEFAULT_PREDICTION_CACHE_RELEASE_INTERVAL,
+    DEFAULT_PREDICTION_CACHE_RELEASE_MAX_SOURCE_LENGTH,
+    DEFAULT_SLL_PREDICTION_MAX_SOURCE_LENGTH,
+    defaultParserOptions
 } from "./src/types/parser-types.js";

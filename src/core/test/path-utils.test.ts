@@ -16,7 +16,7 @@ import {
     resolvePortableAbsolutePath,
     walkAncestorDirectories
 } from "../src/fs/path.js";
-import { isProjectPathExcluded } from "../src/project-config/project-excludes.js";
+import { DEFAULT_PROJECT_EXCLUDES, isProjectPathExcluded } from "../src/project-config/project-excludes.js";
 
 void describe("path-utils", () => {
     void describe("resolveContainedRelativePath", () => {
@@ -257,5 +257,13 @@ void describe("isProjectPathExcluded", () => {
         assert.strictEqual(isProjectPathExcluded(String.raw`scripts\generated\cache.gml`, excludes), true);
         assert.strictEqual(isProjectPathExcluded("notes/session.tmp", excludes), true);
         assert.strictEqual(isProjectPathExcluded("scripts/live.gml", excludes), false);
+    });
+
+    void it("excludes cache and .gmcache by default under DEFAULT_PROJECT_EXCLUDES", () => {
+        assert.strictEqual(isProjectPathExcluded("cache/file.gml", DEFAULT_PROJECT_EXCLUDES), true);
+        assert.strictEqual(isProjectPathExcluded("scripts/cache/file.gml", DEFAULT_PROJECT_EXCLUDES), true);
+        assert.strictEqual(isProjectPathExcluded(".gmcache/file.gml", DEFAULT_PROJECT_EXCLUDES), true);
+        assert.strictEqual(isProjectPathExcluded("scripts/.gmcache/file.gml", DEFAULT_PROJECT_EXCLUDES), true);
+        assert.strictEqual(isProjectPathExcluded("scripts/my_cache/file.gml", DEFAULT_PROJECT_EXCLUDES), false);
     });
 });

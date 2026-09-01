@@ -1,13 +1,6 @@
-import type { GameMakerAstNode } from "@gmloop/core";
+import { Core } from "@gmloop/core";
 
-import { buildPrintableDocCommentLines } from "../comments/description-doc.js";
-import { handleComments, printComment } from "../comments/index.js";
-import { LogicalOperatorsStyle } from "../options/logical-operators-style.js";
-import { gmlParserAdapter } from "../parsers/index.js";
-import { DEFAULT_PRINT_WIDTH, DEFAULT_TAB_WIDTH } from "../printer/constants.js";
-import { print } from "../printer/index.js";
-import { normalizeFormattedOutput } from "../printer/normalize-formatted-output.js";
-import { countTrailingBlankLines, getNextNonWhitespaceCharacter } from "../shared/layout-helpers.js";
+import { defaultGmlFormatAdapterResolver, type GmlFormatAdapterResolver } from "./default-format-adapters.js";
 import { normalizeGmlFormatComponents } from "./format-component-normalizer.js";
 import type { GmlFormatProvider } from "./format-provider.js";
 import type { GmlFormatComponentBundle, GmlFormatComponentContract } from "./format-types.js";
@@ -16,17 +9,27 @@ import type { GmlFormatComponentBundle, GmlFormatComponentContract } from "./for
  * Default implementation bundle wiring the canonical parser, printer, and
  * comment handlers. This is the single point where concrete adapters are
  * assembled into the component contract.
+ *
+ * The contract now only exposes the helpers that the high-level Prettier
+ * plugin wiring needs: the parser adapter, the printer entry point, the
+ * `printComment`/`handleComments` Prettier callbacks, and the
+ * `LogicalOperatorsStyle` map. The printer workspace imports the
+ * remaining comment helpers (`printDanglingComments`,
+ * `printDanglingCommentsAsGroup`) directly from
+ * `../comments/comment-printer.js`; the previous
+ * `printer/comment-print-boundary.ts` read-side indirection through
+ * `options.gml` was a backward-compatibility shim with no remaining
+ * callers and has been removed.
+ * (target-state.md §2.3, §3.2)
+ *
+ * Adapter selection is delegated to {@link defaultGmlFormatAdapterResolver}
+ * so this orchestration module never imports concrete low-level adapters
+ * directly. The resolver contract is the single dependency-inversion seam
+ * for the format workspace's high-level glue.
  */
-export const defaultGmlFormatComponentImplementations: GmlFormatComponentContract = Object.freeze({
-    gmlParserAdapter,
-    print,
-    handleComments,
-    printComment,
-    buildPrintableDocCommentLines,
-    countTrailingBlankLines,
-    getNextNonWhitespaceCharacter,
-    LogicalOperatorsStyle
-});
+export const defaultGmlFormatComponentImplementations: GmlFormatComponentContract = Object.freeze(
+    defaultGmlFormatAdapterResolver.resolveAdapters()
+);
 
 /**
  * The immutable, normalized format component bundle used by the GML Prettier plugin.
@@ -41,13 +44,30 @@ export const gmlFormatComponents: GmlFormatComponentBundle = Object.freeze(
     normalizeGmlFormatComponents(createDefaultGmlFormatComponents())
 );
 
-const DEFAULT_PRETTIER_OPTIONS = Object.freeze({
-    tabWidth: DEFAULT_TAB_WIDTH,
-    semi: true,
-    printWidth: DEFAULT_PRINT_WIDTH,
-    bracketSpacing: false, // Keep false to match existing GML formatting expectations.
-    singleQuote: false
-});
+/**
+ * Construct the abstract provider consumed by the high-level Prettier plugin
+ * entry point.
+ *
+ * Mirrors {@link createDefaultGmlFormatComponents} so every orchestration
+ * consumer of the resolver can depend on the same dependency-inversion seam.
+ * Concrete parser, printer, comment, and normalization implementations stay
+ * behind this boundary; only the resolved adapters and helper functions are
+ * surfaced on the returned provider.
+ *
+ * (target-state.md §2.3, §3.2 — orchestration depends on abstractions, not
+ * concrete adapters.)
+ */
+export function createDefaultGmlFormatProvider(
+    resolver: GmlFormatAdapterResolver = defaultGmlFormatAdapterResolver,
+    components: GmlFormatComponentBundle = createDefaultGmlFormatComponents(resolver)
+): GmlFormatProvider {
+    return Object.freeze({
+        components,
+        prettierDefaults: resolver.resolvePrettierDefaults(),
+        formatSource: resolver.resolveSourceFormatter(),
+        normalizeFormattedOutput: resolver.resolveNormalizeFormattedOutput()
+    });
+}
 
 /**
  * Default abstract provider consumed by the high-level Prettier plugin entry
@@ -55,27 +75,32 @@ const DEFAULT_PRETTIER_OPTIONS = Object.freeze({
  * stay behind this component boundary so orchestration code depends only on the
  * provider contract.
  */
-export const defaultGmlFormatProvider: GmlFormatProvider = Object.freeze({
-    components: gmlFormatComponents,
-    prettierDefaults: DEFAULT_PRETTIER_OPTIONS,
-    normalizeFormattedOutput
-});
+export const defaultGmlFormatProvider: GmlFormatProvider = Object.freeze(createDefaultGmlFormatProvider());
 
-export function createDefaultGmlFormatComponents(): GmlFormatComponentBundle {
+export function createDefaultGmlFormatComponents(
+    resolver: GmlFormatAdapterResolver = defaultGmlFormatAdapterResolver
+): GmlFormatComponentBundle {
+    const adapters = resolver.resolveAdapters();
+    const logicalOperatorsStyle = adapters.LogicalOperatorsStyle;
+
     return {
         parsers: {
-            "gml-parse": defaultGmlFormatComponentImplementations.gmlParserAdapter
+            "gml-parse": adapters.gmlParserAdapter
         },
         printers: {
             "gml-ast": {
-                print: defaultGmlFormatComponentImplementations.print,
-                // Accept any for the runtime types coming from the AST and comment
-                // helpers, satisfying TypeScript without adding deep imports.
-                isBlockComment: (comment: GameMakerAstNode) => comment?.type === "CommentBlock",
-                canAttachComment: (node: GameMakerAstNode) =>
-                    node?.type && !node.type.includes("Comment") && node?.type !== "EmptyStatement",
-                printComment: defaultGmlFormatComponentImplementations.printComment,
-                handleComments: defaultGmlFormatComponentImplementations.handleComments
+                print: adapters.print,
+                // Delegate the comment-classification predicates to the
+                // canonical helpers owned by `@gmloop/core`. Centralising
+                // these rules keeps the high-level Prettier wiring free of
+                // ad-hoc AST shape checks and lets any embedded consumer
+                // (or test) override the boundaries through the same
+                // dependency-inversion seam that already governs the
+                // parser, printer, and comment handlers.
+                isBlockComment: Core.isBlockComment,
+                canAttachComment: Core.canAttachComment,
+                printComment: adapters.printComment,
+                handleComments: adapters.handleComments
             }
         },
         options: {
@@ -87,21 +112,29 @@ export function createDefaultGmlFormatComponents(): GmlFormatComponentBundle {
                 description:
                     "Allow short, comment-free braced control-flow blocks to stay on one line when the complete statement fits within printWidth (for example, 'if (condition) { return; }'). When disabled, control-flow blocks always expand across multiple lines."
             },
+            inlineControlFlowBlockMargin: {
+                since: "0.0.0",
+                type: "int",
+                category: "gml",
+                default: 0,
+                description:
+                    "Buffer (in characters) added to the inline-length estimate for control-flow blocks before it is compared to `printWidth`. Positive values make the formatter more conservative (require additional headroom before a block is kept inline); negative values make it more aggressive (allow the inline form to exceed `printWidth` by the configured amount). Has no effect when `allowInlineControlFlowBlocks` is `false`."
+            },
             logicalOperatorsStyle: {
                 since: "0.0.0",
                 type: "choice",
                 category: "gml",
-                default: LogicalOperatorsStyle.KEYWORDS,
+                default: logicalOperatorsStyle.KEYWORDS,
                 description:
                     "Enforces a consistent logical operator style across the file. Each mode normalises every occurrence: 'keywords' converts all logical operators to word form; 'symbols' converts all to symbol form.",
                 choices: [
                     {
-                        value: LogicalOperatorsStyle.KEYWORDS,
+                        value: logicalOperatorsStyle.KEYWORDS,
                         description:
                             "Enforce keyword form: `&&`, `||`, and `^^` are converted to `and`, `or`, and `xor`."
                     },
                     {
-                        value: LogicalOperatorsStyle.SYMBOLS,
+                        value: logicalOperatorsStyle.SYMBOLS,
                         description:
                             "Enforce symbol form: `and`, `or`, and `xor` are converted to `&&`, `||`, and `^^`."
                     }

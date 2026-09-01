@@ -1,0 +1,40 @@
+{
+  "name": "@gmloop/lsp",
+  "version": "0.0.1",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": "./dist/index.js",
+    "./package.json": "./package.json"
+  },
+  "bin": {
+    "gmloop-lsp": "./dist/src/main.js"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build:types": "tsc -b tsconfig.json && chmod +x dist/src/main.js",
+    "clean:types": "rm -rf dist",
+    "start": "node ./dist/src/main.js",
+    "test": "pnpm run build:types && node --test-force-exit --test --test-timeout=120000 dist/test/*.test.js"
+  },
+  "dependencies": {
+    "@gmloop/core": "workspace:*",
+    "@gmloop/format": "workspace:*",
+    "@gmloop/lint": "workspace:*",
+    "@gmloop/parser": "workspace:*",
+    "@gmloop/refactor": "workspace:*",
+    "@gmloop/semantic": "workspace:*",
+    "eslint": "catalog:",
+    "vscode-languageserver": "^9.0.1"
+  },
+  "devDependencies": {
+    "typescript": "catalog:"
+  },
+  "engines": {
+    "node": ">=22.5.0"
+  }
+}

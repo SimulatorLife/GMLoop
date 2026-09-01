@@ -77,6 +77,7 @@ import {
 import type {
     MutableGameMakerAstNode,
     ParenthesizedExpressionNode,
+    ProgramNode,
     VariableDeclarationNode,
     VariableDeclaratorNode
 } from "./types.js";
@@ -531,10 +532,27 @@ export function isMacroDeclarationNode(node: unknown): node is MutableGameMakerA
 /**
  * Type guard for program nodes.
  *
- * Program nodes represent the root of the AST.
+ * Program nodes represent the root of the AST. The check mirrors the full
+ * `ProgramNode` contract — both the `type` discriminator and the presence of
+ * an array-shaped `body` — so collaborators that satisfy the contract may be
+ * substituted for canonical `ProgramNode` instances without call sites having
+ * to repeat the assertion. Validating `body` here codifies the contract used
+ * by every parser, transpiler, refactor, and symbol-extraction entry point:
+ * a value that lacks an array body is *not* a valid program even when its
+ * `type` claim matches, so consumers can rely on the narrowing without
+ * secondary `Array.isArray(body)` guards.
+ *
+ * @param node Candidate value to inspect.
+ * @returns `true` when `node` exposes both the program discriminator and an
+ *   array-shaped body, satisfying the substitutable program contract.
  */
-export function isProgramNode(node: unknown): node is MutableGameMakerAstNode {
-    return hasType(node, PROGRAM);
+export function isProgramNode(node: unknown): node is ProgramNode {
+    if (!hasType(node, PROGRAM)) {
+        return false;
+    }
+
+    const candidate = node as { body?: unknown };
+    return Array.isArray(candidate.body);
 }
 
 /**

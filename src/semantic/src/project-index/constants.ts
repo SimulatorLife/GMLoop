@@ -2,9 +2,38 @@ import { Core } from "@gmloop/core";
 
 export const PROJECT_MANIFEST_EXTENSION = ".yyp";
 
-export const PROJECT_INDEX_CACHE_MAX_SIZE_BASELINE = 8 * 1024 * 1024; // 8 MiB
 export const PROJECT_INDEX_GML_CONCURRENCY_BASELINE = 4;
 export const PROJECT_INDEX_GML_MAX_CONCURRENCY_BASELINE = 16;
+export const PROJECT_INDEX_SLL_PREDICTION_MAX_SOURCE_LENGTH = 128_000;
+
+/**
+ * Upper bound applied to the GML project-index worker-thread pool. Real OS
+ * threads are considerably more expensive than the promise-based
+ * `gmlConcurrency` lanes, so the ceiling stays modest even on machines with a
+ * very large core count.
+ */
+export const PROJECT_INDEX_GML_WORKER_MAX_CONCURRENCY_BASELINE = 16;
+
+/**
+ * Minimum number of discovered `.gml` files required before the worker-thread
+ * pool is worth its spawn/serialize/merge overhead. Smaller batches stay on
+ * the single-threaded path, which is already fast enough that pool overhead
+ * would dominate.
+ */
+export const PROJECT_INDEX_GML_WORKER_POOL_MIN_FILES = 32;
+
+/**
+ * Minimum files assigned to each worker. Each worker pays a large fixed cost
+ * just from spawning (loading and compiling the ANTLR-generated parser and the
+ * rest of the semantic-analysis module graph into its own isolated heap —
+ * measured at roughly 60-80MB per worker, independent of how many files it
+ * actually processes). Spawning `os.cpus().length` workers for a batch just
+ * above {@link PROJECT_INDEX_GML_WORKER_POOL_MIN_FILES} would mean each worker
+ * does only a handful of files while still paying full price to spin up, so
+ * the effective worker count is capped to keep each worker's batch worth that
+ * fixed cost.
+ */
+export const PROJECT_INDEX_GML_WORKER_POOL_MIN_FILES_PER_WORKER = 40;
 
 const PROJECT_MANIFEST_EXTENSION_LOWER = PROJECT_MANIFEST_EXTENSION.toLowerCase();
 
@@ -92,5 +121,3 @@ export function isProjectManifestPath(candidate) {
 
     return candidate.toLowerCase().endsWith(PROJECT_MANIFEST_EXTENSION_LOWER);
 }
-
-export { DEFAULT_RESOURCE_METADATA_EXTENSIONS as PROJECT_RESOURCE_METADATA_DEFAULTS };

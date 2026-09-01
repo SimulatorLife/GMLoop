@@ -1,0 +1,1 @@
+If an exact requested command is not permitted, do not stall, repeatedly search, or retry the same denied command; instead, try the closest permitted foreground command that preserves the spirit of the request, briefly explain the substitution, and if no safe permitted equivalent exists, report the blocked command.

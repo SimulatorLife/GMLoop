@@ -79,8 +79,8 @@ export interface GameMakerAstNode {
     arguments?: Array<unknown> | null;
     /** Single expression used by return or unary nodes. */
     argument?: GameMakerAstNode | null;
-    /** Block or list of statements inside structured nodes. */
-    body?: Array<unknown> | null;
+    /** Block node or statement list inside structured nodes. */
+    body?: GameMakerAstNode | Array<unknown> | null;
     /** Variable declarators for declarations. */
     declarations?: Array<GameMakerAstNode> | null;
     /** Initializer for variable declarators or assignment right-hand sides */
@@ -164,4 +164,25 @@ export interface VariableDeclaratorNode extends GameMakerAstNode {
 export interface DefineStatementNode extends GameMakerAstNode {
     type: "DefineStatement";
     replacementDirective?: string | null;
+}
+
+/**
+ * Contract for the root of a GameMaker AST.
+ *
+ * Program nodes appear at the head of every parsed source and are the
+ * boundary for transpilation, refactoring, symbol extraction, and project
+ * indexing. They are deliberately typed as a discriminated record so any
+ * collaborator — a canonical parser output, a hand-built test double, or a
+ * cross-realm facade — can satisfy the contract without sharing a prototype
+ * chain with the parser's concrete class.
+ *
+ * The `body` shape mirrors the {@link GameMakerAstNode.body} field and is
+ * required to be an array so consumers can iterate the top-level statements
+ * without a secondary `Array.isArray` guard. Producers that omit or
+ * mis-shape `body` should fail the {@link isProgramNode} contract check
+ * rather than silently ship a malformed program.
+ */
+export interface ProgramNode extends GameMakerAstNode {
+    type: "Program";
+    body: Array<unknown>;
 }

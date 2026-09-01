@@ -150,6 +150,27 @@ function collectProjectManifestReferenceCandidates(root: Record<string, unknown>
         }
     }
 
+    for (const textureGroupCollectionName of ["TextureGroups", "textureGroups"]) {
+        const textureGroups = root[textureGroupCollectionName];
+        if (!Array.isArray(textureGroups)) {
+            continue;
+        }
+
+        for (const [index, textureGroup] of textureGroups.entries()) {
+            if (!Core.isObjectLike(textureGroup)) {
+                continue;
+            }
+
+            const groupReference = Core.isObjectLike(textureGroup.id) ? textureGroup.id : textureGroup;
+            pushAssetReferenceCandidate(
+                collected,
+                `${textureGroupCollectionName}.${index}.path`,
+                groupReference.path,
+                groupReference.name
+            );
+        }
+    }
+
     return collected;
 }
 
@@ -202,7 +223,7 @@ function collectAssetReferenceCandidates(
  *
  * Project manifest files (.yyp) are handled via a dedicated collector that
  * extracts references from top-level arrays (resources, RoomOrderNodes, Options,
- * Folders) using their structural shape rather than the generic schema-driven
+ * Folders, TextureGroups) using their structural shape rather than the generic schema-driven
  * traversal. The @bscotch/yy "project" schema is intentionally avoided for
  * `.yyp` files to prevent data loss, so manifest detection is done by file path.
  */

@@ -23,6 +23,8 @@ interface VerboseLogger {
     log?: (message: string) => void;
 }
 
+export type { VerboseFlagOptions };
+
 export interface VerboseDurationLoggerOptions {
     verbose?: VerboseFlagOptions;
     formatMessage?: string | ((duration: string) => string);
@@ -32,6 +34,24 @@ export interface VerboseDurationLoggerOptions {
 export interface TimeSyncOptions {
     verbose?: VerboseFlagOptions;
     logger?: VerboseLogger;
+}
+
+export interface ResolveVerboseFlagOptions {
+    quiet?: boolean;
+}
+
+/**
+ * Translate a boolean `quiet` flag into the structured {@link VerboseFlagOptions}
+ * object consumed by {@link createVerboseDurationLogger}, {@link timeSync}, and
+ * other verbose-aware helpers. Centralising the mapping keeps generator
+ * commands from re-implementing the `quiet ? … : { parsing: true }` ternary
+ * in multiple places.
+ *
+ * @param options - Source `quiet` flag (defaults to `false`).
+ * @returns A {@link VerboseFlagOptions} with `parsing` set to the negation of `quiet`.
+ */
+export function resolveVerboseFlag({ quiet = false }: ResolveVerboseFlagOptions = {}): VerboseFlagOptions {
+    return { parsing: !quiet };
 }
 
 /**
@@ -120,19 +140,10 @@ export function timeSync<TResult>(
 }
 
 // Nanosecond-precision monotonic timing helpers used by CLI commands to report
-// per-file and overall processing durations.
-
-/**
- * Read the current monotonic timestamp in nanoseconds.
- *
- * Monotonic time avoids wall-clock jumps (NTP, DST, manual changes) so
- * duration measurements remain stable across long-running operations.
- *
- * @returns {bigint} Monotonic timestamp in nanoseconds.
- */
-export function readMonotonicNanoseconds(): bigint {
-    return process.hrtime.bigint();
-}
+// per-file and overall processing durations. Callers read the current monotonic
+// timestamp directly via `process.hrtime.bigint()` (monotonic time avoids
+// wall-clock jumps from NTP, DST, or manual changes, keeping duration
+// measurements stable across long-running operations).
 
 /**
  * Calculate elapsed nanoseconds between two monotonic timestamps.

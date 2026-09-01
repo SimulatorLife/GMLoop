@@ -37,6 +37,11 @@ mcpName = "playwright"
 decision = "allow"
 priority = 901
 
+[[rule]]
+mcpName = "lsp"
+decision = "allow"
+priority = 901
+
 # Auto-allow everything else.
 # Lower priority than the explicit deny rules above.
 

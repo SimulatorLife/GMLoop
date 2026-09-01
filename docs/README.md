@@ -17,7 +17,7 @@ then return here for deeper context.
   Flat ESLint config that composes the `@gmloop/lint` presets (without TypeScript
   requirement).
 - [`examples/example.eslint.all-rules.config.js`](examples/example.eslint.all-rules.config.js) —
-  Flat ESLint config with all available `@gmloop/lint` rules.
+  Flat ESLint config using the preset with all available `@gmloop/lint` rules.
 - [`examples/example.mcp.json`](examples/example.mcp.json) — MCP client config
   example that starts the MCP stdio server via the `gmloop mcp` CLI command
   through `pnpm`.
@@ -39,6 +39,28 @@ then return here for deeper context.
 - [CLI command guide](../src/cli/README.md) — Full command catalog and
   project-config behavior for parser, lint, refactor, transpile, watch, and
   graph workflows.
+- [Formatter workspace reference](../src/format/README.md) — Formatter
+  ownership boundaries, deprecated options, and layout conventions for
+  `@gmloop/format`.
+- [Runtime wrapper reference](../src/runtime-wrapper/README.md) — HTML5
+  hot-reload bridge, patch application, and live function swapping.
+- [Agent-pack reference](../src/agent-pack/README.md) — Standalone raw Agent
+  Skills package and the universal `gmloop agent-pack init` project flow.
+- [Fixture-runner reference](../src/fixture-runner/README.md) — Shared fixture
+  discovery, execution, assertion, and profiling framework used by
+  format, lint, refactor, and integration suites.
+- [Lint workspace reference](../src/lint/README.md) — ESLint v9 language plugin,
+  rule bundle, and `--write` content rewrites.
+- [Semantic workspace reference](../src/semantic/README.md) — Project
+  indexing, symbol resolution, and the dual-root graph index.
+- [Refactor workspace reference](../src/refactor/README.md) — Cross-file
+  rename transactions, codemod execution, and metadata migration.
+- [LSP workspace reference](../src/lsp/README.md) — Language Server Protocol
+  adapter over the parser/lint/format/semantic/refactor workspaces.
+- [Transpiler workspace reference](../src/transpiler/README.md) — GML
+  to JavaScript emission used by the hot-reload patch pipeline.
+- [UI workspace reference](../src/ui/README.md) — Cross-project UI surfaces
+  for graph, docs, fix, live-reload, and playground workflows.
 
 ## Contributor workflow
 
@@ -57,15 +79,89 @@ then return here for deeper context.
 ## Architecture, planning
 
 - [Project target state plan](target-state.md) — Canonical
-  ownership contract for formatter vs lint vs refactor responsibilities, including the two-tier malformed GML strategy and the native codemod model. Concepts, architecture, and integration HTML5 runtime fork, watcher pipeline, and runtime integration seams required for hot-reload tooling.
+  ownership contract for formatter vs lint vs refactor responsibilities, including the two-tier malformed GML strategy and the native codemod model.
+- [GML graph index plan](gml-graph-index-plan.md) — Architecture and
+  ownership contract for the semantic-owned graph index that backs the
+  `graph index`, `graph search`, and `graph doctor` CLI commands and the
+  MCP and UI graph surfaces.
+- [Autonomous GameMaker creator plan](autonomous-game-creator-plan.md) —
+  Long-running plan for the GameMaker-specific agent companion surface
+  that builds on top of the formatter, lint, refactor, semantic, transpiler,
+  runtime wrapper, CLI, UI, and MCP workspaces, including the HTML5 runtime
+  fork, watcher pipeline, hot-reload integration seams, independently
+  installable `@gmloop/agent-pack` initialization/update flow, the explicit
+  boundary with external agent coordinators, and the rule that official
+  `gm-cli` / ResourceTool MCP capabilities are companion surfaces that GMLoop
+  should extend or complement rather than mirror.
+- [Define directive fixing plan](define-directive-fixing.md) — Parser/
+  formatter/lint ownership plan for tolerating legacy `#define` spellings and
+  related legacy keywords, and producing a normalized macro representation.
+- [Stitch parser assessment](stitch-parser-assessment.md) — Comparative
+  evaluation of the Stitch (`bscotch/stitch`) Chevrotain-based GML parser and
+  project model, plus the decision notes for keeping the ANTLR-based pipeline.
 - [Feather Data Plan](feather-data-plan.md) — Describes the scraping pipeline
   that collects built-in Feather debugger metadata and how the generated files
   are versioned.
+- [GML Language Server overview](gml-lsp.md) — How GMLoop exposes parser,
+  lint, format, and semantic facts through a stdio Language Server, and how
+  to wire it via `lsp-mcp-server` and `.lsp-mcp.json`.
 - [Architecture overview](../README.md#architecture-overview) — High-level map
   of the workspace packages, where generated assets live, and which scripts
   refresh them.
+- [Agent coordination boundary](../README.md#agent-coordination-boundary) —
+  Canonical product boundary between GMLoop's GameMaker-specific agent tooling
+  and orchestration owned by external agent coordinators.
 
 ## Agent and automation surfaces
 
+GMLoop supplies GameMaker-specific tools, context, skills, guidance, and
+evidence to agents. External agent managers own scheduling, routing, approvals,
+retries, memory, budgets, queues, and durable workflow state.
+
 - [MCP workspace reference](../src/mcp/README.md) — Current
   `@gmloop/mcp` package docs for exposing CLI-adjacent workflows to AI tooling.
+- [CLI and MCP tool surface simplification](simplify_gmloop_cli_mcp_tool_surface_revised.md) —
+  Decision record for collapsing duplicate read, validation, inspection, and
+  lifecycle tools into a smaller set of owner-oriented commands, and letting
+  MCP follow the simplified CLI tree.
+
+- [`codex-tester-agent.md`](codex-tester-agent.md) — Configuration contract for
+  the read-only `tester` Codex subagent: `model = "gpt-5.6-luna"`,
+  `model_reasoning_effort = "max"`, `sandbox_mode = "read-only"`, and the
+  `gmloop` / `gm-cli` / `playwright` MCP allowlists the agent is restricted to.
+
+- [`codex-smart-agent.md`](codex-smart-agent.md) —
+  Configuration contract for the expensive, high-intelligence `smart`
+  Codex specialist: `model = "gpt-5.6-sol"`,
+  `model_reasoning_effort = "high"`, no `model_provider` (inherits the
+  main / orchestrator provider and capabilities), every MCP / shell /
+  sandbox / approval / tool surface inherited from the orchestrator
+  (no explicit allowlist), and a no-spawn `[features]` guard
+  (`multi_agent = false`, `enable_fanout = false`) so the role
+  cannot fan out or invoke child agents despite inheriting the
+  orchestrator's other capabilities. Reserved for complex assignments
+  and used sparingly because of cost.
+
+- [`codex-build-lint-test-agent.md`](codex-build-lint-test-agent.md) —
+  Configuration contract for the strict GMLoop `build-lint-test` Codex
+  subagent: `model = "gpt-5.4-mini"`, `model_reasoning_effort = "medium"`,
+  `sandbox_mode = "workspace-write"` with `[sandbox_workspace_write]
+network_access = false`, zero reachable MCP servers, and developer
+  instructions that limit it to running one assigned `pnpm run`
+  build/lint/test command and reporting exact verbatim failure excerpts.
+
+## Architectural audits
+
+Historical structural surveys that drove later refactors. Each entry is dated
+and self-contained so readers can follow the workspace-shape evolution
+without re-reading the broader plans.
+
+- [`architectural-audits/2026-07-11-cli-watch-dependency-updates.md`](architectural-audits/2026-07-11-cli-watch-dependency-updates.md) — Survey
+  of `src/cli/src/commands/watch.ts` that motivated splitting cohesive
+  watch-mode concerns out of the monolithic watch command into focused
+  submodules.
+- [`architectural-audits/2026-07-15-cli-refactor-bridge-dependencies.md`](architectural-audits/2026-07-15-cli-refactor-bridge-dependencies.md) — Review
+  of the CLI↔refactor bridge that locked down the current CLI-as-composition-root
+  ownership for refactor workflows.
+- [`architectural-audits/2026-07-18-cannonfather-html5-runtime.md`](architectural-audits/2026-07-18-cannonfather-html5-runtime.md) — Assessment
+  of the HTML5 runtime fork surface that feeds the live-reload patch pipeline.

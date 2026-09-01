@@ -6,18 +6,54 @@ This `src/semantic` subsystem is a semantic layer that annotates parse tree(s) t
 
 `@gmloop/semantic` is analysis-only.
 
-- Owns project indexing, scope/symbol metadata, identifier occurrence discovery, semantic classification, graph-index building and visualization
+- Owns project indexing, scope/symbol metadata, identifier occurrence discovery, semantic classification, graph-index building and visualization-data export.
 - Does **not** own refactor edit planning or rename application.
 - Does **not** depend on `@gmloop/refactor`.
+- Does **not** own graph layout, filtering, interaction, accessibility, tooltips, or other UI presentation behavior.
 
 The graph index is SQLite-backed through a semantic-owned adapter seam. The current runtime uses Node's `node:sqlite`, which is treated as a stable runtime capability and is surfaced through graph-doctor reporting rather than left as an implicit implementation detail.
+
+## Revision-qualified snapshot leases
+
+Semantic facts, whether durable or session-local, are acquired through `SemanticIndexStore.acquireSemanticSnapshot`, not by treating a cache row as an unqualified project index. A lease has an exact revision, generation, tier, capability set, coverage summary, validation state, and overlay version map. Callers query through `lease.queries` and must call `lease.release()` once the request is complete.
+
+Persisted leases hold a read transaction and execute indexed position, symbol, occurrence, resource, enum, and refactor queries directly against the pinned SQLite generation. Session-local overlay snapshots build the same immutable query interface once when published. Consumers therefore use one backend-independent contract without materializing or re-projecting the complete semantic snapshot for every request.
+
+- `definitions` supplies interactive declaration capabilities: completion, hover, definition, symbols, and semantic tokens.
+- `full` additionally supplies references and rename-safety facts, and is only leaseable when it matches the active definitions revision. Semantic diagnostics are not advertised until canonical diagnostic facts and queries exist.
+- A request with required files, resources, capabilities, or overlay versions that no exact snapshot can satisfy receives a typed failure. It must trigger compatible analysis rather than silently using a stale or lower-tier result.
+- Overlay-backed manifests are published through `publishSessionSemanticSnapshot`. They are bounded to the store session, require an exact overlay-version map, require a matching session `definitions` snapshot before `full`, and are never written to SQLite. A disk-backed refresh after save or close produces the next durable snapshot.
+- Every persisted occurrence and unresolved reference carries a discriminated resolution state. Canonical bindings are `exact`; unbound same-name references are explicitly `candidate` or `ambiguous`, while no-match references remain `unresolved` rather than becoming guessed references.
 
 Downstream tools consume semantic data:
 
 - `@gmloop/refactor` uses semantic data to validate and plan workspace edits.
+- Lease-backed refactor queries expose symbols, exact occurrences, file definitions, and rename-safety gaps without rebuilding a navigation projection or interpreting a raw project index.
 - `@gmloop/lint` uses semantic-backed/project-aware analysis services for lint rules.
 - `@gmloop/cli` composes semantic consumers for lint/refactor command execution and formatter identifier-case runtime integration.
 - `@gmloop/format` consumes only formatter runtime contracts, not semantic internals.
+
+## Project-index workload telemetry
+
+Every project-index build returns a metrics snapshot. The currently implemented workload fields are:
+
+- `buildMode`: `project` for a complete build or `incremental` for a change-selected build.
+- `analysisTier`: `definitions` or `full`.
+- `files.gmlRead`, `files.gmlParsed`, and `files.gmlAnalysed`: exact counts for the corresponding file phases.
+- `files.incrementalSelected`: files selected for an incremental build; it is initialized to zero for complete builds.
+- `total`, `gml.parse`, and `gml.analyse`: timings used by the synthetic workload tests.
+- `memory.sampledPeakRssBytes` and `memory.sampledPeakHeapUsedBytes`: maxima from process-memory samples taken around project phases and while each parsed AST is still live. They are sampled build peaks, not operating-system high-water marks.
+
+Graph-index refreshes reuse the persisted full project snapshot when the source
+revision is unchanged. When files do change, the graph builder passes the
+manifest change set into the project index's incremental path, so unchanged GML
+files are retained instead of being parsed again. The graph parser also keeps
+ANTLR's faster SLL prediction path enabled for medium-sized scripts and limits
+that optimization to bounded source sizes.
+
+Identifier, script-call, resource, and identifier-sink counters remain available in the same snapshot. These measurements establish the current baseline; cache reuse, recomputed semantic units, propagation boundaries, duplicate work, broad-invalidation causes, and retained generations remain target-state observability requirements rather than currently implemented workload counters.
+
+The serial CI workload generates 500 scripts and approximately 100,000 lines. It exercises cold definitions and full analysis, requires an unchanged warm Tier 1 lease within 500 ms with no GML parses or source reads, and measures warmed indexed position, definition, and document-symbol p95 latency against a 20 ms gate. Workspace and completion search use a 50 ms p95 gate. One hundred acquire/query/release cycles must return the active lease count to zero and, when explicit garbage collection is available, retain no more than 5% additional heap. Full Tier 2 completion remains capped at 30 seconds and sampled peak RSS at 768 MiB. The smaller workload separately verifies deterministic bounded-concurrency output and one-file incremental equivalence.
 
 ## Semantic Oracle
 
@@ -1045,12 +1081,4 @@ for (const p of sorted) {
 
 ## TODO
 
-- **FEAT**: Node types `Local variable`, `Instance variable`, and `Enum member` should be unchecked/disabled by default in the visualization, since they are very common and can create a lot of visual noise in the graph. Instead, the user can choose to enable them if they want to see those details.
-- **FEAT/BUG**: We should NOT have node types for these & they should not be included in the graph index:
-  1. ALL `*.gml` `*.yy`, `*.yyp` files should be excluded (these are currently being considered `File` type nodes). Just the *actual* node that the two files together define/represent should be in the index as a single node (e.g. a single `Object` node named `obj_spider` instead of `objects/obj_spider/obj_spider.yy` and `objects/obj_spider/obj_spider.gml`)
-  2. ALL options should be excluded/removed (`tvOS`, `Reddit`, `macOS`, `HTML5`, etc.) these are currently being considered 'Resource' type nodes in the graph index
-- **BUG**: A few node types like `Macro`, `Enum`, `global variable`, etc. do not show in the visualzation if their parent is disabled. So, for instance, if a global variable is defined in a script, the `global variable` node-type is enabled and the `script` node-type is *disabled*, then `global variable` are not viewable. Instead, do we want a way for the leaf-node (e.g. `global variable`) to go up a level in the hirerarchy to the next non-disabled ancestor? For instance, if ALL node types are disabled in the visualization EXCEPT `global variable`, then it would link directly to the center node; the `game` node itself.
-- **BUG**: The main/center node – the 'Project Node' should NOT be disable-able. And should NOT be included in the legend/key.
-- **FEAT/BUG**: When a node is selected in the Graph Index visualization, a tooltip with details about it is supposed to show (this used to work but now nothing shows). When a node is selected in the visualization, the tooltip box should stay open until another node is selected (will allow for future the user-interactions with the tooltip box)
-- **BUG**: The graph index and/or visualization has a `Script resource` node, a `Script` node, and a `Function` node. Instead, we should have the `Script` node which should be a child of the `Resource` node/category. A `Script` node should represent a script file/resource (e.g. `player.gml`). A `script` can contain one or many `Function` nodes (`Function` nodes can also be defined elswhere like in objects)
-- **BUG/FEAT**: The nodes are all equidistant from the center-project node. Instead, it can be a bit more freeform/less-contrained, and children of a node should be allowed to be attracted/near/grouped around their parent naturally (e.g. a `Local variable` node should be connected to and nearby its parent `Object Event` node where it is defined, and that `Object Event` node should be connected/nearby its parent `Object` node, etc.)
+- **FEAT**: For determining the file-diffs to trigger a file-level hot-reload and/or semantic re-analysis should/can we use the .git history to determine which files/lines have changed? This would allow us to avoid re-analyzing files that haven't changed, improving performance in large projects. Also we need to be sure that, for things like applying lint-fixes & formatting across a project we don't trigger a rebuild for each file that was changed, but instead we should be able to determine the set of files that were changed at the end of the operation and only re-analyze those files as/if needed. This would be a significant performance improvement for large projects.

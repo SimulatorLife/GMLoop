@@ -320,3 +320,16 @@ export function handleCliError(error: unknown, { exitCode = 1, prefix }: HandleC
 
     process.exit(exitCode);
 }
+
+/**
+ * Build a CLI command error handler that delegates to {@link handleCliError}
+ * with a fixed prefix and exit code.
+ *
+ * The returned handler matches the signature expected by
+ * {@link CliCommandRegistrationOptions.onError}; the command context is ignored
+ * because {@link handleCliError} already records the configured prefix in its
+ * output and terminates the process.
+ */
+export function createCliCommandErrorHandler(options: HandleCliErrorOptions = {}): (error: unknown) => never {
+    return (error: unknown) => handleCliError(error, options);
+}

@@ -1,17 +1,32 @@
-import { existsSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const PACKAGE_JSON_FILE_NAME = "package.json";
 const CORE_PACKAGE_NAME = "@gmloop/core";
 
+/**
+ * Attempt to read the `name` field from the `package.json` file located at
+ * `directoryPath`. Returns `null` when the file is missing, unreadable, or
+ * does not expose a string `name`.
+ *
+ * The previous implementation pre-checked file existence with `fs.existsSync`
+ * before issuing `readFileSync`, a pattern the rest of this workspace has
+ * moved away from (see `readExistingMetadata` in `project-metadata.ts`). The
+ * lookup is now folded into a single `readFileSync` call wrapped in
+ * `try/catch`, which removes the redundant stat syscall and matches the
+ * "open and catch ENOENT" idiom used elsewhere in this package.
+ */
 function tryReadPackageName(directoryPath: string): string | null {
     const packageJsonPath = path.resolve(directoryPath, PACKAGE_JSON_FILE_NAME);
-    if (!existsSync(packageJsonPath)) {
+
+    let packageContents: string;
+    try {
+        packageContents = readFileSync(packageJsonPath, "utf8");
+    } catch {
         return null;
     }
 
-    const packageContents = readFileSync(packageJsonPath, "utf8");
     const packageValue = JSON.parse(packageContents) as unknown;
     if (typeof packageValue !== "object" || packageValue === null || !("name" in packageValue)) {
         return null;

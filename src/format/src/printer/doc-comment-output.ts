@@ -9,63 +9,34 @@
  *  - Mark comment objects as printed so Prettier does not re-emit them as
  *    dangling comments.
  *
- * Dependency inversion: `buildPrintableDocCommentLines` is retrieved from
- * `options` so this module does not directly import the concrete adapter from
- * `../comments/description-doc.js`. The canonical implementation is injected by
- * `default-format-components.ts` via the `GmlFormatComponentContract` and reaches
- * this module through the Prettier options pipeline. (target-state.md §2.3)
+ * `buildPrintableDocCommentLines` is imported directly from the comments
+ * subsystem. The previous indirection through `options.gml` (with a fallback
+ * to the canonical implementation for callers that bypassed `createGmlFormat`)
+ * was a backward-compatibility shim; the printer always runs through
+ * `createGmlFormat`, so the read-side indirection served no callers and the
+ * canonical import is the single source of truth.
  */
 import { Core, type MutableDocCommentLines } from "@gmloop/core";
 import { util } from "prettier";
 
-import { buildPrintableDocCommentLines as buildPrintableDocCommentLinesFromComments } from "../comments/description-doc.js";
+import { buildPrintableDocCommentLines } from "../comments/description-doc.js";
 import { DOC_COMMENT_OUTPUT_FLAG, NUMBER_TYPE } from "./constants.js";
 import { safeGetParentNode } from "./path-utils.js";
 import { concat, hardline, join } from "./prettier-doc-builders.js";
-import { resolveNodeIndexRangeWithSource, resolvePrinterSourceMetadata } from "./source-text.js";
-
-/**
- * Resolves the buildPrintableDocCommentLines function for doc-comment rendering.
- *
- * This module avoids a direct cross-subsystem import by retrieving the function
- * from options.gml when available (injected by format-entry.ts via the
- * GmlFormatComponentContract). When running in test or standalone contexts
- * where options.gml is not populated, the canonical implementation from the
- * comments subsystem is used as a fallback. This keeps the dependency graph
- * clean for dependency-inversion tests while preserving backward compatibility
- * for callers that bypass createGmlFormat. (target-state.md §2.3)
- */
-function resolveBuildPrintableDocCommentLines(options: any) {
-    const injected = options?.gml?.buildPrintableDocCommentLines;
-    if (typeof injected === "function") {
-        return injected;
-    }
-    return buildPrintableDocCommentLinesFromComments;
-}
 
 /**
  * Builds and returns the formatted doc-comment block for `node`, ready to be
  * prepended to the node's own printed output. Returns an empty `concat("")`
  * when the node has no printable doc comments.
- *
- * The `buildPrintableDocCommentLines` function is retrieved from `options`
- * rather than imported directly, keeping this function decoupled from the
- * concrete adapter in `../comments/description-doc.js`.
  */
 export function printNodeDocComments(node: any, path: any, options: any): any {
-    const sourceMetadata = resolvePrinterSourceMetadata(options);
+    const sourceMetadata = Core.resolvePrinterSourceMetadata(options);
     const { originalText } = sourceMetadata;
-    const { startIndex: nodeStartIndex } = resolveNodeIndexRangeWithSource(node, sourceMetadata);
-
-    // Resolve buildPrintableDocCommentLines from options.gml (injected by
-    // format-entry.ts) with a fallback to the canonical comments subsystem
-    // implementation for backward compatibility. (target-state.md §2.3)
-    const buildPrintableDocCommentLines = resolveBuildPrintableDocCommentLines(options);
+    const { startIndex: nodeStartIndex } = Core.resolveNodeIndexRangeWithSource(node, sourceMetadata);
 
     const docCommentDocs: MutableDocCommentLines = Array.isArray(node.docComments)
         ? Core.toMutableArray(node.docComments as string[], { clone: true })
         : [];
-    const plainLeadingLines: string[] = Array.isArray(node.plainLeadingLines) ? node.plainLeadingLines : [];
 
     // The formatter trusts the AST's `docComments` as authoritative. Legacy doc
     // comment formats (e.g. `// @function`) are normalised by the lint rule
@@ -77,22 +48,29 @@ export function printNodeDocComments(node: any, path: any, options: any): any {
 
     sortDocCommentsBySourceOrder(docCommentDocs);
 
-    const docCommentEntriesForMetadata = [...docCommentDocs];
+    // `buildPrintableDocCommentLines` returns a fresh doc array without
+    // touching `docCommentDocs`, so the original entries (with their AST
+    // node boundaries) stay available for blank-line detection downstream.
+    // The previous implementation mutated the input in place, which forced
+    // callers to take a defensive snapshot; that snapshot is no longer
+    // required once the helper is pure.
     const printableDocComments = buildPrintableDocCommentLines(docCommentDocs, originalText);
     const printableDocCommentBlock = joinDocCommentsPreservingSourceSpacing(
         printableDocComments,
-        docCommentEntriesForMetadata,
+        docCommentDocs,
         originalText
     );
+    const mixedLeadingCommentBlock = buildMixedLeadingCommentBlock({
+        node,
+        printableDocComments,
+        docCommentEntries: docCommentDocs,
+        originalText,
+        nodeStartIndex
+    });
 
     const parts: any[] = [];
-    const shouldEmitPlainLeadingLines = plainLeadingLines.length > 0;
-
-    if (shouldEmitPlainLeadingLines) {
-        parts.push(join(hardline, plainLeadingLines), hardline);
-        if (docCommentDocs.length === 0) {
-            parts.push(hardline);
-        }
+    if (mixedLeadingCommentBlock !== null) {
+        parts.push(mixedLeadingCommentBlock, hardline);
     }
 
     if (docCommentDocs.length > 0) {
@@ -125,7 +103,9 @@ export function printNodeDocComments(node: any, path: any, options: any): any {
             parts.push(hardline);
         }
 
-        parts.push(printableDocCommentBlock, hardline);
+        if (mixedLeadingCommentBlock === null) {
+            parts.push(printableDocCommentBlock, hardline);
+        }
     } else {
         if (Object.hasOwn(node, DOC_COMMENT_OUTPUT_FLAG)) {
             delete node[DOC_COMMENT_OUTPUT_FLAG];
@@ -168,6 +148,209 @@ export function markDocCommentsAsPrinted(node: any, path: any): void {
 // Private helpers
 // ---------------------------------------------------------------------------
 
+type LeadingCommentItem = Readonly<{
+    doc: unknown;
+    endIndex: number | null;
+    sourceIndex: number;
+    stableIndex: number;
+}>;
+
+function buildMixedLeadingCommentBlock({
+    node,
+    printableDocComments,
+    docCommentEntries,
+    originalText,
+    nodeStartIndex
+}: {
+    node: any;
+    printableDocComments: ReadonlyArray<unknown>;
+    docCommentEntries: MutableDocCommentLines;
+    originalText: string | null;
+    nodeStartIndex: number | null;
+}): unknown {
+    if (
+        originalText === null ||
+        typeof nodeStartIndex !== NUMBER_TYPE ||
+        !Core.isNonEmptyArray(printableDocComments) ||
+        printableDocComments.length !== docCommentEntries.length ||
+        !docCommentEntries.every(isLineStyleDocCommentEntry) ||
+        (!Array.isArray(node.comments) && !Core.isNonEmptyArray(node._gmlEmbeddedLeadingComments))
+    ) {
+        return null;
+    }
+
+    const docItems = printableDocComments.map((doc, index) =>
+        resolveDocLeadingCommentItem(doc, docCommentEntries[index], originalText, nodeStartIndex, index)
+    );
+    const hasDocPositions = docItems.every((item) => Number.isFinite(item.sourceIndex));
+    if (!hasDocPositions) {
+        return null;
+    }
+
+    const earliestDocStartIndex = Math.min(...docItems.map((item) => item.sourceIndex));
+    const plainItems = resolveEmbeddedLeadingCommentItems(
+        node,
+        docCommentEntries,
+        originalText,
+        earliestDocStartIndex,
+        nodeStartIndex
+    );
+    if (plainItems.length === 0) {
+        return null;
+    }
+
+    return joinLeadingCommentItemsPreservingSourceSpacing(
+        [...docItems, ...plainItems].toSorted((left, right) => {
+            if (left.sourceIndex !== right.sourceIndex) {
+                return left.sourceIndex - right.sourceIndex;
+            }
+
+            return left.stableIndex - right.stableIndex;
+        }),
+        originalText
+    );
+}
+
+function resolveEmbeddedLeadingCommentItems(
+    node: any,
+    docCommentEntries: MutableDocCommentLines,
+    originalText: string,
+    leadingBlockStartIndex: number,
+    nodeStartIndex: number
+): LeadingCommentItem[] {
+    if (!Array.isArray(node._gmlEmbeddedLeadingComments)) {
+        return [];
+    }
+
+    const docCommentEntrySet = new Set(docCommentEntries.filter(Core.isObjectLike));
+    const items: LeadingCommentItem[] = [];
+
+    for (const comment of node._gmlEmbeddedLeadingComments) {
+        if (!Core.isObjectLike(comment) || docCommentEntrySet.has(comment)) {
+            continue;
+        }
+
+        const sourceIndex = Core.getCommentBoundaryIndex(comment, "start");
+        if (sourceIndex === null || sourceIndex < leadingBlockStartIndex || sourceIndex >= nodeStartIndex) {
+            continue;
+        }
+
+        const rawText = resolveRawAttachedCommentText(comment, originalText);
+        if (rawText === null) {
+            continue;
+        }
+
+        items.push({
+            doc: rawText,
+            endIndex: Core.getCommentBoundaryIndex(comment, "end"),
+            sourceIndex,
+            stableIndex: docCommentEntries.length + items.length
+        });
+    }
+
+    return items;
+}
+
+function resolveRawAttachedCommentText(comment: Record<string, unknown>, originalText: string): string | null {
+    if (comment.type === "CommentLine") {
+        return Core.getLineCommentRawText(comment, { originalText });
+    }
+
+    if (comment.type !== "CommentBlock") {
+        return null;
+    }
+
+    const startIndex = Core.getCommentBoundaryIndex(comment, "start");
+    const endIndex = Core.getCommentBoundaryIndex(comment, "end");
+    if (startIndex === null || endIndex === null || endIndex < startIndex) {
+        return null;
+    }
+
+    return originalText.slice(startIndex, endIndex + 1);
+}
+
+function isLineStyleDocCommentEntry(commentEntry: unknown): boolean {
+    if (typeof commentEntry === "string") {
+        return commentEntry.trimStart().startsWith("///");
+    }
+
+    if (!Core.isObjectLike(commentEntry)) {
+        return false;
+    }
+
+    return (commentEntry as { type?: unknown }).type === "CommentLine";
+}
+
+function resolveDocLeadingCommentItem(
+    doc: unknown,
+    docCommentEntry: unknown,
+    originalText: string,
+    nodeStartIndex: number,
+    stableIndex: number
+): LeadingCommentItem {
+    const metadataStartIndex = Core.getCommentBoundaryIndex(docCommentEntry, "start");
+    if (metadataStartIndex !== null) {
+        return {
+            doc,
+            endIndex: Core.getCommentBoundaryIndex(docCommentEntry, "end"),
+            sourceIndex: metadataStartIndex,
+            stableIndex
+        };
+    }
+
+    if (typeof doc === "string") {
+        const sourceIndex = originalText.lastIndexOf(doc, nodeStartIndex);
+        if (sourceIndex !== -1) {
+            return {
+                doc,
+                endIndex: sourceIndex + doc.length - 1,
+                sourceIndex,
+                stableIndex
+            };
+        }
+    }
+
+    return {
+        doc,
+        endIndex: null,
+        sourceIndex: Number.NaN,
+        stableIndex
+    };
+}
+
+function joinLeadingCommentItemsPreservingSourceSpacing(
+    leadingCommentItems: ReadonlyArray<LeadingCommentItem>,
+    originalText: string
+): any {
+    const parts: any[] = [];
+    for (let index = 0; index < leadingCommentItems.length; index += 1) {
+        const item = leadingCommentItems[index];
+        parts.push(item.doc);
+
+        if (index >= leadingCommentItems.length - 1) {
+            continue;
+        }
+
+        const nextItem = leadingCommentItems[index + 1];
+        if (
+            !isRawBlockCommentDoc(item.doc) &&
+            item.endIndex !== null &&
+            nextItem.sourceIndex > item.endIndex &&
+            /\r?\n[ \t]*\r?\n/u.test(originalText.slice(item.endIndex + 1, nextItem.sourceIndex))
+        ) {
+            parts.push(hardline, hardline);
+        } else {
+            parts.push(hardline);
+        }
+    }
+
+    return concat(parts);
+}
+
+function isRawBlockCommentDoc(doc: unknown): boolean {
+    return typeof doc === "string" && doc.trimStart().startsWith("/*");
+}
+
 function joinDocCommentsPreservingSourceSpacing(
     printableDocComments: ReadonlyArray<unknown>,
     docCommentDocs: MutableDocCommentLines,
@@ -202,8 +385,8 @@ function joinDocCommentsPreservingSourceSpacing(
 }
 
 function hasBlankLineBetweenDocCommentEntries(leftEntry: unknown, rightEntry: unknown, originalText: string): boolean {
-    const leftEndIndex = resolveDocCommentEndIndex(leftEntry);
-    const rightStartIndex = resolveDocCommentStartIndex(rightEntry);
+    const leftEndIndex = Core.getCommentBoundaryIndex(leftEntry, "end");
+    const rightStartIndex = Core.getCommentBoundaryIndex(rightEntry, "start");
     if (leftEndIndex === null || rightStartIndex === null || rightStartIndex <= leftEndIndex) {
         return false;
     }
@@ -216,45 +399,11 @@ function hasBlankLineBetweenDocCommentEntries(leftEntry: unknown, rightEntry: un
     return /\r?\n[ \t]*\r?\n/u.test(slice);
 }
 
-function resolveDocCommentStartIndex(commentEntry: unknown): number | null {
-    if (!Core.isObjectLike(commentEntry)) {
-        return null;
-    }
-
-    const startValue = (commentEntry as { start?: unknown }).start;
-    if (typeof startValue === NUMBER_TYPE) {
-        return startValue as number;
-    }
-
-    if (Core.isObjectLike(startValue)) {
-        const startIndex = (startValue as { index?: unknown }).index;
-        if (typeof startIndex === NUMBER_TYPE) {
-            return startIndex as number;
-        }
-    }
-
-    return null;
-}
-
-function resolveDocCommentEndIndex(commentEntry: unknown): number | null {
-    if (!Core.isObjectLike(commentEntry)) {
-        return null;
-    }
-
-    const endValue = (commentEntry as { end?: unknown }).end;
-    if (typeof endValue === NUMBER_TYPE) {
-        return endValue as number;
-    }
-
-    if (Core.isObjectLike(endValue)) {
-        const endIndex = (endValue as { index?: unknown }).index;
-        if (typeof endIndex === NUMBER_TYPE) {
-            return endIndex as number;
-        }
-    }
-
-    return null;
-}
+// `start` and `end` boundaries on doc-comment entries are read through
+// `Core.getCommentBoundaryIndex`, the canonical helper for parser-produced
+// comment boundary shapes. Keeping the call sites uniform here (instead of
+// re-implementing the same `number | { index }` discrimination twice) makes
+// any future change to boundary handling apply everywhere at once.
 
 function sortDocCommentsBySourceOrder(docCommentDocs: MutableDocCommentLines): void {
     if (!Array.isArray(docCommentDocs) || docCommentDocs.length <= 1) {
@@ -264,7 +413,7 @@ function sortDocCommentsBySourceOrder(docCommentDocs: MutableDocCommentLines): v
     const indexedEntries = docCommentDocs.map((entry, index) => ({
         entry,
         index,
-        startIndex: resolveDocCommentStartIndex(entry)
+        startIndex: Core.getCommentBoundaryIndex(entry, "start")
     }));
 
     const hasSourcePositions = indexedEntries.some((entry) => typeof entry.startIndex === NUMBER_TYPE);

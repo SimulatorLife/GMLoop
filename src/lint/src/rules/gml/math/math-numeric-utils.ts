@@ -1,0 +1,427 @@
+/**
+ * Pure numeric and literal evaluation utilities used by math transform passes.
+ * All functions in this module operate only on numeric values or AST literal nodes
+ * and have no dependencies on other transform-internal helpers.
+ */
+import { Core } from "@gmloop/core";
+
+const { BINARY_EXPRESSION, CALL_EXPRESSION, IDENTIFIER, LITERAL, UNARY_EXPRESSION, isApproximatelyZero, isObjectLike } =
+    Core;
+
+/**
+ * Return an epsilon-scaled tolerance for the given expected magnitude.
+ * An optional explicit tolerance can be supplied to bypass auto-scaling.
+ */
+export function computeNumericTolerance(expected: number, providedTolerance?: number): number {
+    if (typeof providedTolerance === "number") {
+        return providedTolerance;
+    }
+
+    const magnitude = Math.max(1, Math.abs(expected));
+    return Number.EPSILON * magnitude * 4;
+}
+
+/**
+ * Round `value` to `precision` significant digits and return the string
+ * representation, or `null` when the result is not finite.
+ * Negative zero is normalized to `"0"`.
+ */
+export function normalizeNumericCoefficient(value: number, precision = 12): string | null {
+    if (!Number.isFinite(value)) {
+        return null;
+    }
+
+    const effectivePrecision = Number.isInteger(precision) ? precision : 12;
+
+    const rounded = Number(value.toPrecision(effectivePrecision));
+    if (!Number.isFinite(rounded)) {
+        return null;
+    }
+
+    if (Object.is(rounded, -0)) {
+        return "0";
+    }
+
+    return rounded.toString();
+}
+
+/**
+ * Return the nearest integer to `value` when it falls within floating-point
+ * tolerance, or `null` if the value is not close to any integer.
+ */
+export function toApproxInteger(value: unknown): number | null {
+    if (!Number.isFinite(value)) {
+        return null;
+    }
+
+    const numValue = value as number;
+    const rounded = Math.round(numValue);
+    const tolerance = computeNumericTolerance(Math.max(1, Math.abs(numValue)));
+
+    if (Math.abs(numValue - rounded) <= tolerance) {
+        return rounded;
+    }
+
+    return null;
+}
+
+/** Greatest-common-divisor via the Euclidean algorithm. Returns 0 for non-finite inputs. */
+export function computeIntegerGcd(a: number, b: number): number {
+    let left = Math.abs(a);
+    let right = Math.abs(b);
+
+    if (!Number.isFinite(left) || !Number.isFinite(right)) {
+        return 0;
+    }
+
+    while (right !== 0) {
+        const temp = right;
+        right = left % right;
+        left = temp;
+    }
+
+    return left;
+}
+
+/**
+ * True when `node` is a numeric literal whose value is within `tolerance`
+ * (or the auto-scaled epsilon) of `expected`.
+ */
+export function isLiteralNumber(node: unknown, expected: number, tolerance?: number): boolean {
+    const value = Core.getLiteralNumberValue(node);
+    if (value == null) {
+        return false;
+    }
+
+    const effectiveTolerance = computeNumericTolerance(expected, tolerance);
+    return Math.abs(value - expected) <= effectiveTolerance;
+}
+
+/**
+ * True when `node` represents the exponent `0.5`, either as the literal `0.5`
+ * or the expression `1 / 2`.
+ */
+export function isHalfExponentLiteral(node: unknown): boolean {
+    if (!node) {
+        return false;
+    }
+
+    if (isLiteralNumber(node, 0.5)) {
+        return true;
+    }
+
+    if (Core.isBinaryOperator(node, "/")) {
+        return isLiteralNumber((node as any).left, 1) && isLiteralNumber((node as any).right, 2);
+    }
+
+    return false;
+}
+
+/** True when `node` is a numeric literal approximately equal to Euler's number. */
+export function isEulerLiteral(node: unknown): boolean {
+    const value = Core.getLiteralNumberValue(node);
+    if (value == undefined) {
+        return false;
+    }
+
+    return Math.abs(value - Math.E) <= 1e-9;
+}
+
+/**
+ * Constant-fold `node` as a numeric expression.
+ * Supports literals, unary `+`/`-`, and binary `+`, `-`, `*`, `/`.
+ * Returns `null` for any non-numeric sub-expression.
+ */
+export function evaluateNumericExpression(node: unknown): number | null {
+    const expression = Core.unwrapParenthesizedExpression(node);
+    if (!expression) {
+        return null;
+    }
+
+    if ((expression as any).type === LITERAL) {
+        return Core.getLiteralNumberValue(expression);
+    }
+
+    if ((expression as any).type === UNARY_EXPRESSION) {
+        const value = evaluateNumericExpression((expression as any).argument);
+        if (value === null) {
+            return null;
+        }
+
+        if ((expression as any).operator === "-") {
+            return -value;
+        }
+
+        if ((expression as any).operator === "+") {
+            return value;
+        }
+
+        return null;
+    }
+
+    if ((expression as any).type === BINARY_EXPRESSION) {
+        const operator = Core.getNormalizedOperator(expression);
+
+        if (operator === "+" || operator === "-") {
+            const left = evaluateNumericExpression((expression as any).left);
+            const right = evaluateNumericExpression((expression as any).right);
+
+            if (left === null || right === null) {
+                return null;
+            }
+
+            return operator === "+" ? left + right : left - right;
+        }
+
+        if (operator === "*" || operator === "/") {
+            const left = evaluateNumericExpression((expression as any).left);
+            const right = evaluateNumericExpression((expression as any).right);
+
+            if (left === null || right === null) {
+                return null;
+            }
+
+            if (operator === "*") {
+                return left * right;
+            }
+
+            if (isApproximatelyZero(right)) {
+                return null;
+            }
+
+            return left / right;
+        }
+    }
+
+    return null;
+}
+
+/** True when `node` evaluates as a numeric factor approximately equal to -1. */
+export function isNegativeOneFactor(node: unknown): boolean {
+    const value = parseNumericFactor(node);
+    if (value === null) {
+        return false;
+    }
+
+    return isApproximatelyZero(value + 1);
+}
+
+/**
+ * If `node` is a binary subtraction `1 - <expr>`, evaluate and return the
+ * numeric result of `1 - <expr>`.  Returns `null` for non-matching shapes.
+ */
+export function evaluateOneMinusNumeric(node: unknown): number | null {
+    const expression = Core.unwrapParenthesizedExpression(node);
+    if (!expression || (expression as any).type !== BINARY_EXPRESSION) {
+        return null;
+    }
+
+    const operator = Core.getNormalizedOperator(expression);
+
+    if (operator !== "-") {
+        return null;
+    }
+
+    const leftValue = evaluateNumericExpression((expression as any).left);
+    if (leftValue === null) {
+        return null;
+    }
+
+    if (!isApproximatelyZero(leftValue - 1)) {
+        return null;
+    }
+
+    const rightValue = evaluateNumericExpression((expression as any).right);
+    if (rightValue === null) {
+        return null;
+    }
+
+    return leftValue - rightValue;
+}
+
+/**
+ * Evaluate `node` as a product/quotient of numeric literals.
+ * Returns the computed value or `null` if any sub-expression is not purely numeric.
+ */
+export function parseNumericFactor(node: unknown): number | null {
+    const expression = Core.unwrapParenthesizedExpression(node);
+    if (!expression) {
+        return null;
+    }
+
+    if ((expression as any).type === BINARY_EXPRESSION) {
+        const operator = Core.getNormalizedOperator(expression);
+
+        if (operator === "*" || operator === "/") {
+            const leftValue = parseNumericFactor((expression as any).left);
+            const rightValue = parseNumericFactor((expression as any).right);
+
+            if (leftValue === null || rightValue === null) {
+                return null;
+            }
+
+            if (operator === "*") {
+                return leftValue * rightValue;
+            }
+
+            if (isApproximatelyZero(rightValue)) {
+                return null;
+            }
+
+            return leftValue / rightValue;
+        }
+    }
+
+    if ((expression as any).type === UNARY_EXPRESSION) {
+        const value = parseNumericFactor((expression as any).argument);
+        if (value === null) {
+            return null;
+        }
+
+        if ((expression as any).operator === "-") {
+            return -value;
+        }
+
+        if ((expression as any).operator === "+") {
+            return value;
+        }
+
+        return null;
+    }
+
+    const literalValue = Core.getLiteralNumberValue(expression);
+    return literalValue ?? null;
+}
+
+/** True when `node` (after unwrapping parentheses) is the identifier `pi` or `PI`. */
+export function isPiIdentifier(node: unknown): boolean {
+    const expression = Core.unwrapParenthesizedExpression(node);
+    return Boolean(
+        expression &&
+        (expression as any).type === IDENTIFIER &&
+        typeof (expression as any).name === "string" &&
+        (expression as any).name.toLowerCase() === "pi"
+    );
+}
+
+/** True when `node` is a numeric literal within floating-point tolerance of zero. */
+export function isNumericZeroLiteral(node: unknown): boolean {
+    const literalValue = Core.getLiteralNumberValue(node);
+    if (literalValue === null) {
+        return false;
+    }
+
+    return isApproximatelyZero(literalValue);
+}
+
+/** True when `node` is a call to `ln(…)` with exactly one argument. */
+export function isLnCall(node: unknown): boolean {
+    const expression = Core.unwrapParenthesizedExpression(node);
+    if (
+        !expression ||
+        (expression as any).type !== CALL_EXPRESSION ||
+        Core.getUnwrappedIdentifierName((expression as any).object) !== "ln"
+    ) {
+        return false;
+    }
+
+    const args = Core.asArray((expression as any).arguments);
+
+    return args.length === 1;
+}
+
+/**
+ * Mutate the numeric literal embedded in `node` (the first one found via DFS)
+ * by scaling it by `factor`.  Returns `true` on success.
+ */
+export function scaleNumericLiteralCoefficient(node: unknown, factor: number): boolean {
+    if (!Number.isFinite(factor)) {
+        return false;
+    }
+
+    const literal = findFirstNumericLiteral(node);
+    if (!literal) {
+        return false;
+    }
+
+    const literalValue = Core.getLiteralNumberValue(literal);
+    if (literalValue === null) {
+        return false;
+    }
+
+    const scaledValue = literalValue * factor;
+    const normalizedValue = normalizeNumericCoefficient(scaledValue);
+    if (normalizedValue === null) {
+        return false;
+    }
+
+    (literal as any).value = normalizedValue;
+    return true;
+}
+
+/**
+ * Depth-first search for the first AST node whose `type` is `Literal` and
+ * whose value is a finite number.
+ */
+export function findFirstNumericLiteral(node: unknown): unknown {
+    if (!isObjectLike(node)) {
+        return null;
+    }
+
+    if ((node as any).type === LITERAL) {
+        return Core.getLiteralNumberValue(node) === null ? null : node;
+    }
+
+    for (const key of Object.keys(node as object)) {
+        if (key === "parent") {
+            continue;
+        }
+
+        const value = (node as any)[key];
+        if (!isObjectLike(value)) {
+            continue;
+        }
+
+        if (Array.isArray(value)) {
+            for (const element of value) {
+                const result = findFirstNumericLiteral(element);
+                if (result) {
+                    return result;
+                }
+            }
+        } else {
+            const result = findFirstNumericLiteral(value);
+            if (result) {
+                return result;
+            }
+        }
+    }
+
+    return null;
+}
+
+/**
+ * Recursively collect all leaf operands of a chain of `*` binary expressions
+ * into `output`.  Returns `true` on success, `false` when a commented node
+ * prevents safe collection.
+ */
+export function collectProductOperands(node: unknown, output: unknown[]): boolean {
+    const expression = Core.unwrapParenthesizedExpression(node);
+    if (!expression) {
+        return false;
+    }
+
+    if (!Core.isBinaryOperator(expression, "*")) {
+        output.push(expression);
+        return true;
+    }
+
+    if (Core.hasComment(expression)) {
+        return false;
+    }
+
+    return (
+        collectProductOperands((expression as any).left, output) &&
+        collectProductOperands((expression as any).right, output)
+    );
+}

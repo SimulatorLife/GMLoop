@@ -20,15 +20,23 @@ import * as RenamePreview from "./rename-preview.js";
 import { RenameValidationCache } from "./rename-validation-cache.js";
 import { SemanticQueryCache } from "./semantic-cache.js";
 import {
+    ConflictSeverity,
     ConflictType,
+    isConflictSeverity,
     isConflictType,
+    isNamingCaseStyle,
     isOccurrenceKind,
     isSymbolKind,
+    NamingCaseStyle,
     OccurrenceKind,
+    parseConflictSeverity,
     parseConflictType,
+    parseNamingCaseStyle,
     parseOccurrenceKind,
     parseSymbolKind,
+    requireConflictSeverity,
     requireConflictType,
+    requireNamingCaseStyle,
     requireOccurrenceKind,
     requireSymbolKind,
     SymbolKind
@@ -55,6 +63,14 @@ export const Refactor = Object.freeze({
     isConflictType,
     parseConflictType,
     requireConflictType,
+    ConflictSeverity,
+    isConflictSeverity,
+    parseConflictSeverity,
+    requireConflictSeverity,
+    NamingCaseStyle,
+    isNamingCaseStyle,
+    parseNamingCaseStyle,
+    requireNamingCaseStyle,
     OccurrenceKind,
     isOccurrenceKind,
     parseOccurrenceKind,
@@ -79,7 +95,10 @@ export {
     listSemanticProjectIndexDependentCodemodIds
 } from "./codemod-registry.js";
 export * as Codemods from "./codemods/index.js";
-export { executeNamingConventionCodemod, planNamingConventionCodemod } from "./codemods/naming-convention/index.js";
+export {
+    executeNamingConventionCodemod,
+    planNamingConventionCodemod
+} from "./codemods/naming-convention/naming-convention-codemod.js";
 export {
     checkHotReloadSafety,
     computeHotReloadCascade,
@@ -109,31 +128,74 @@ export type {
     AddObjectEventRequest,
     AddProjectResourceRequest,
     AddRoomInstanceRequest,
+    CreateRoomLayerRequest,
+    CreateSolidColorPngRequest,
+    DeleteObjectEventRequest,
     DeleteRoomInstanceRequest,
+    DeleteRoomLayerRequest,
     DuplicateProjectResourceRequest,
+    FrameRoomCameraRequest,
+    InspectRoomInstanceRequest,
+    ListRoomInstancesRequest,
     MoveProjectResourceRequest,
     ObjectEventDescriptor,
+    ObjectEventInspectionResult,
     ObjectEventMutationResult,
+    ObjectEventParseSummary,
     ProjectResourceKindValue,
     ProjectResourceMutationResult,
     RemoveProjectResourceRequest,
     RenameProjectResourceRequest,
+    ReorderRoomLayerRequest,
+    RepairRoomRequest,
+    RgbaColor,
+    RoomCameraInspectionResult,
+    RoomCameraMutationResult,
+    RoomInstanceInspectionResult,
     RoomInstanceMutationResult,
+    RoomLayerInspectionResult,
+    RoomLayerMutationResult,
+    RoomRepairAppliedRepair,
+    RoomRepairDiagnostic,
+    RoomRepairResult,
+    RoomSettingsMutationResult,
     UpdateObjectEventRequest,
-    UpdateRoomInstanceRequest
+    UpdateRoomCameraRequest,
+    UpdateRoomInstanceRequest,
+    UpdateRoomLayerRequest,
+    UpdateRoomSettingsRequest
 } from "./project-resources/index.js";
 export * as ProjectResources from "./project-resources/index.js";
 export {
     addObjectEvent,
     addProjectResource,
     addRoomInstance,
+    createRoomLayer,
+    createSolidColorPng,
+    deleteObjectEvent,
     deleteRoomInstance,
+    deleteRoomLayer,
     duplicateProjectResource,
+    frameRoomCamera,
+    inspectObjectEvent,
+    inspectRoomCamera,
+    inspectRoomInstance,
+    inspectRoomLayer,
+    listObjectEvents,
+    listRoomCameras,
+    listRoomInstances,
+    listRoomLayers,
     moveProjectResource,
+    parseColor,
     removeProjectResource,
     renameProjectResource,
+    reorderRoomLayer,
+    repairRoom,
     updateObjectEvent,
-    updateRoomInstance
+    updateRoomCamera,
+    updateRoomInstance,
+    updateRoomLayer,
+    updateRoomSettings
 } from "./project-resources/index.js";
 export {
     isProjectResourceKind,
@@ -191,6 +253,7 @@ export type {
     ConfiguredCodemodRunResult,
     ConfiguredCodemodSummary,
     ConflictEntry,
+    ConflictSeverityValue,
     ConflictTypeValue,
     DependencyAnalyzer,
     DependentSymbol,
@@ -200,19 +263,22 @@ export type {
     ExecuteGlobalvarToGlobalCodemodResult,
     ExecuteRenameRequest,
     ExecuteRenameResult,
+    FeatherRenamePlanner,
     FileSymbol,
     FileSymbolProvider,
+    GlobalVarRewriteAssessor,
     GlobalvarToGlobalFileSummary,
     HotReloadCascadeMetadata,
     HotReloadCascadeResult,
     HotReloadSafetySummary,
     HotReloadUpdate,
     HotReloadValidationOptions,
+    IdentifierOccupancyChecker,
     KeywordProvider,
+    LoopHoistIdentifierResolver,
     MacroExpansionDependency,
     MacroExpansionDependencyProvider,
     MaybePromise,
-    NamingCaseStyle,
     NamingCategory,
     NamingConventionCodemodPlan,
     NamingConventionPolicy,
@@ -232,6 +298,7 @@ export type {
     RefactorCodemodId,
     RefactorEngineDependencies,
     RefactorHotReloadCoordinator,
+    RefactorProjectAnalysisContext,
     RefactorProjectAnalysisProvider,
     RefactorProjectConfig,
     RegisteredCodemod,
@@ -242,6 +309,9 @@ export type {
     RenameImpactSummary,
     RenamePlanSummary,
     RenameRequest,
+    RepairSpriteTextureUvResolutionCodemodOptions,
+    RepairSpriteTextureUvResolutionEdit,
+    RepairSpriteTextureUvResolutionResult,
     ResolvedNamingConventionRules,
     ResolvedNamingRule,
     SemanticAnalyzer,
@@ -260,6 +330,8 @@ export type {
 } from "./types.js";
 export { isSymbolKind, parseSymbolKind, requireSymbolKind, SymbolKind } from "./types.js";
 export { ConflictType, isConflictType, parseConflictType, requireConflictType } from "./types.js";
+export { ConflictSeverity, isConflictSeverity, parseConflictSeverity, requireConflictSeverity } from "./types.js";
+export { isNamingCaseStyle, NamingCaseStyle, parseNamingCaseStyle, requireNamingCaseStyle } from "./types.js";
 export { isOccurrenceKind, OccurrenceKind, parseOccurrenceKind, requireOccurrenceKind } from "./types.js";
 export type { WorkspaceRevisionProvider } from "./workspace-edit.js";
 export type {

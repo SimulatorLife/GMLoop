@@ -265,12 +265,15 @@ Interactive graph views should support:
 - node coloring/grouping by kind.
 - edge styling/filtering by type.
 - project/toolset scope filtering.
+- filtering that reconnects visible descendants to their nearest visible ancestor, or to the project root when every intermediate category is hidden, so enabling a leaf kind never makes its nodes unreachable.
 - search-to-highlight.
 - click-to-focus neighborhoods.
+- a persistent selected-node detail panel that remains open until another node is selected or the selection is explicitly cleared.
 - zoom and pan.
 - reset view.
 - accessible labels and keyboard-reachable controls.
-- legend for node kinds and edge types. The node legend uses the full supported visualization kind catalog, excluding the internal `project` and obsolete generic `file` kinds, so filters for resource and symbol categories remain discoverable even when the loaded project has none of that kind. `Resource` appears as a colorless organizational parent for concrete GameMaker resource kinds rather than as a node kind.
+- legend for node kinds and edge types. The project root is always visible and is not a filterable legend entry. The node legend uses the full supported visualization kind catalog, excluding the internal `project` and obsolete generic `file` kinds, so filters for resource and symbol categories remain discoverable even when the loaded project has none of that kind. `Resource` appears as a colorless organizational parent for concrete GameMaker resource kinds rather than as a node kind.
+- hierarchy-aware layout that keeps children near their semantic owner instead of forcing every node onto an equidistant spoke around the project root.
 - empty, loading, stale, and error states.
 - large-graph guardrails.
 

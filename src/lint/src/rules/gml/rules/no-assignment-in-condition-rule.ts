@@ -1,23 +1,25 @@
-import { Core } from "@gmloop/core";
 import type { Rule } from "eslint";
 
 import type { GmlRuleDefinition } from "../index.js";
-import { createMeta, reportFullTextRewrite } from "../rule-base-helpers.js";
+import { createMeta, reportFullTextRewrite, rewriteSourceLines } from "../rule-base-helpers.js";
 
 function normalizeConditionAssignments(conditionText: string): string {
-    return conditionText.replaceAll(/(?<![=!<>+\-*/%])=(?![=])/g, "==");
+    // The lookbehind set enumerates every GML operator whose terminal `=`
+    // must NOT be rewritten: `==`, `!=`, `<=`, `>=`, `+=`, `-=`, `*=`, `/=`,
+    // `%=`, `<<=`, `>>=`, `??=`, plus the bitwise compound forms `&=`, `^=`,
+    // `|=`. Omitting the bitwise characters mangles `if (x |= y)` into the
+    // syntactically invalid `if (x |== y)`, and omitting `?` mangles
+    // `if (x ??= y)` into the equally invalid `if (x ??== y)`.
+    return conditionText.replaceAll(/(?<![=!<>+\-*/%&|^?])=(?![=])/g, "==");
 }
 
 function rewriteControlConditionAssignments(sourceText: string): string {
-    const lineEnding = Core.dominantLineEnding(sourceText);
-    const lines = sourceText.split(/\r?\n/u);
-    const rewrittenLines = lines.map((line) =>
+    return rewriteSourceLines(sourceText, (line) =>
         line.replaceAll(/(if|while|do\s+until)\s*\(([^)]*)\)/giu, (_full, keyword: string, condition: string) => {
             const rewrittenCondition = normalizeConditionAssignments(condition);
             return `${keyword} (${rewrittenCondition})`;
         })
     );
-    return rewrittenLines.join(lineEnding);
 }
 
 export function createNoAssignmentInConditionRule(definition: GmlRuleDefinition): Rule.RuleModule {

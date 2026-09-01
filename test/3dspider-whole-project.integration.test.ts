@@ -20,6 +20,8 @@ const VENDOR_3DSPIDER_PROJECT_PATH = path.join(REPO_ROOT, "vendor", "3DSpider");
 const CLI_ENTRYPOINT_PATH = path.join(REPO_ROOT, "src", "cli", "dist", "index.js");
 const COMMAND_TIMEOUT_MS = 120_000;
 const WATCH_TIMEOUT_MS = 60_000;
+const SPIDER_OBJECT_RESOURCE_NAME = "oSpider";
+const INVERSE_KINEMATICS_SCRIPT_RESOURCE_NAME = "InverseKinematics";
 
 type CliRunResult = Readonly<{
     stdout: string;
@@ -30,14 +32,6 @@ type ResourceSearchPayload = Readonly<{
     ok?: unknown;
     payload?: {
         results?: ReadonlyArray<Readonly<{ name?: unknown; id?: unknown; kind?: unknown }>>;
-    };
-}>;
-
-type ResourceAuditPayload = Readonly<{
-    ok?: unknown;
-    payload?: {
-        kindCounts?: Record<string, number>;
-        total?: unknown;
     };
 }>;
 
@@ -112,15 +106,19 @@ function collectPatchesFromMessage(value: unknown): ReadonlyArray<HotReloadPatch
 }
 
 async function runCliCommand(args: ReadonlyArray<string>, cwd = REPO_ROOT): Promise<CliRunResult> {
-    const { stdout, stderr } = await execFileAsync(process.execPath, [CLI_ENTRYPOINT_PATH, ...args], {
-        cwd,
-        timeout: COMMAND_TIMEOUT_MS,
-        maxBuffer: 32 * 1024 * 1024,
-        env: {
-            ...process.env,
-            NO_COLOR: "1"
+    const { stdout, stderr } = await execFileAsync(
+        process.execPath,
+        ["--disable-warning=ExperimentalWarning", CLI_ENTRYPOINT_PATH, ...args],
+        {
+            cwd,
+            timeout: COMMAND_TIMEOUT_MS,
+            maxBuffer: 32 * 1024 * 1024,
+            env: {
+                ...process.env,
+                NO_COLOR: "1"
+            }
         }
-    });
+    );
 
     return {
         stdout,
@@ -154,12 +152,7 @@ async function waitForStatus(
     predicate: (payload: StatusPayload) => boolean,
     timeoutMs = WATCH_TIMEOUT_MS
 ): Promise<StatusPayload> {
-    return await FixtureRunner.waitForJsonEndpointPayload(
-        createStatusEndpointUrl(statusPort),
-        predicate,
-        timeoutMs,
-        100
-    );
+    return FixtureRunner.waitForJsonEndpointPayload(createStatusEndpointUrl(statusPort), predicate, timeoutMs, 100);
 }
 
 function startWatchProcess(
@@ -170,6 +163,7 @@ function startWatchProcess(
     return spawn(
         process.execPath,
         [
+            "--disable-warning=ExperimentalWarning",
             CLI_ENTRYPOINT_PATH,
             "watch",
             projectRoot,
@@ -327,34 +321,52 @@ void test("3DSpider resource CLI tools inspect the real whole project", async ()
         assert.equal(listPayload.ok, true);
         assert.ok(Array.isArray(listPayload.payload), "Resource list payload must be an array.");
 
-        const spiderSearch = await runCliCommand(["resource", "find", "oSpider", "--json", "--path", projectRoot]);
-        assertResourceSearchIncludes(spiderSearch.stdout, "oSpider");
-        const inverseKinematicsSearch = await runCliCommand([
+        const spiderSearch = await runCliCommand([
             "resource",
             "find",
-            "InverseKinematics",
+            SPIDER_OBJECT_RESOURCE_NAME,
             "--json",
             "--path",
             projectRoot
         ]);
-        assertResourceSearchIncludes(inverseKinematicsSearch.stdout, "InverseKinematics");
+        assertResourceSearchIncludes(spiderSearch.stdout, SPIDER_OBJECT_RESOURCE_NAME);
+        const inverseKinematicsSearch = await runCliCommand([
+            "resource",
+            "find",
+            INVERSE_KINEMATICS_SCRIPT_RESOURCE_NAME,
+            "--json",
+            "--path",
+            projectRoot
+        ]);
+        assertResourceSearchIncludes(inverseKinematicsSearch.stdout, INVERSE_KINEMATICS_SCRIPT_RESOURCE_NAME);
 
-        const inspectResult = await runCliCommand(["resource", "inspect", "oSpider", "--json", "--path", projectRoot]);
+        const inspectResult = await runCliCommand([
+            "symbol",
+            "inspect",
+            SPIDER_OBJECT_RESOURCE_NAME,
+            "--json",
+            "--path",
+            projectRoot
+        ]);
         const inspectPayload = FixtureRunner.assertJsonCliPayload(inspectResult.stdout);
         assert.equal(inspectPayload.ok, true);
 
-        const depsResult = await runCliCommand(["resource", "deps", "oSpider", "--json", "--path", projectRoot]);
+        const depsResult = await runCliCommand([
+            "symbol",
+            "inspect",
+            SPIDER_OBJECT_RESOURCE_NAME,
+            "--include",
+            "neighbors",
+            "--json",
+            "--path",
+            projectRoot
+        ]);
         const depsPayload = FixtureRunner.assertJsonCliPayload(depsResult.stdout);
         assert.equal(depsPayload.ok, true);
 
-        const auditResult = await runCliCommand(["resource", "audit", "--json", "--path", projectRoot]);
-        const auditPayload = FixtureRunner.assertJsonCliPayload(auditResult.stdout) as ResourceAuditPayload;
-        assert.equal(auditPayload.ok, true);
-        assert.equal(typeof auditPayload.payload?.total, "number");
-        assert.ok(Number(auditPayload.payload?.total) > 0, "Resource audit must count real graph entries.");
         assert.ok(
-            Object.keys(auditPayload.payload?.kindCounts ?? {}).length > 0,
-            "Resource audit must include kind counts."
+            listPayload.payload && listPayload.payload.length > 0,
+            "Resource list must count real graph entries."
         );
     });
 });

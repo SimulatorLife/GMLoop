@@ -5,7 +5,7 @@
   border: 1px solid var(--gm-border);
   border-radius: var(--gm-radius-xl);
   overflow: hidden;
-  background: var(--gm-bg-light);
+  background: var(--gm-bg-muted);
   box-shadow: var(--gm-shadow);
 }
 
@@ -17,7 +17,7 @@
   position: absolute;
   inset: 50%;
   z-index: 5;
-  width: min(520px, calc(100% - (2 * var(--gm-page-gutter))));
+  width: min(520px, calc(100% - (2 * var(--gm-space-xl))));
   transform: translate(-50%, -50%);
   padding: var(--gm-space-xl);
   border: 1px solid var(--gm-border);
@@ -25,8 +25,8 @@
   background: var(--gm-surface-overlay);
   color: var(--gm-text);
   text-align: center;
-  box-shadow: 0 22px 58px #0000004d;
-  backdrop-filter: blur(16px);
+  box-shadow: var(--gm-shadow);
+  backdrop-filter: var(--gm-blur-md);
 }
 
 .graph-empty-state p {
@@ -36,11 +36,11 @@
 
 .graph-empty-state-indicator {
   display: inline-flex;
-  gap: var(--gm-space-control-gap);
+  gap: var(--gm-space-md);
   align-items: center;
   margin-bottom: var(--gm-space-md);
   color: var(--gm-text-secondary);
-  font-size: 13px;
+  font-size: var(--gm-text-sm);
 }
 
 .graph-empty-state-spinner {
@@ -50,7 +50,7 @@
 
 .graph-empty-state-error {
   margin-bottom: var(--gm-space-md);
-  color: var(--gm-danger, #ff9b9b);
+  color: var(--gm-danger-dot);
 }
 
 .loading-overlay {
@@ -59,28 +59,27 @@
   z-index: 30;
   display: grid;
   place-items: center;
-  background: #050a139e;
-  backdrop-filter: blur(6px);
+  background: var(--gm-bg-overlay);
+  backdrop-filter: var(--gm-blur-sm);
 }
 
 .loading-indicator {
   display: inline-flex;
-  gap: var(--gm-space-control-gap);
-  align-items: center;
+  gap: var(--gm-space-md);
   padding: var(--gm-space-md) var(--gm-space-lg);
-  border: 1px solid var(--gm-border-accent);
-  border-radius: 999px;
+  border: 1px solid var(--gm-border);
+  border-radius: var(--gm-radius-full);
   background: var(--gm-surface-overlay);
   color: var(--gm-text);
-  box-shadow: 0 18px 40px #0000003d;
+  box-shadow: var(--gm-shadow-sm);
 }
 
 .loading-spinner {
   width: 18px;
   height: 18px;
-  border: 2px solid #ffffff3d;
+  border: 2px solid var(--gm-spinner-track-light);
   border-top-color: var(--gm-accent);
-  border-radius: 999px;
+  border-radius: var(--gm-radius-full);
   animation: graph-button-spin 0.82s linear infinite;
 }
 
@@ -95,13 +94,13 @@ svg:active {
 }
 
 .node {
-  stroke: #050c14f5;
+  stroke: var(--gm-graph-node-stroke);
   stroke-width: 1.5px;
   cursor: pointer;
 }
 
 .node.toolset {
-  stroke: #aaa;
+  stroke: var(--gm-graph-toolset-stroke);
   stroke-width: 2px;
   stroke-dasharray: 2, 2;
 }
@@ -111,13 +110,13 @@ svg:active {
 }
 
 .node.highlighted {
-  stroke: #fff;
+  stroke: var(--gm-graph-highlight-stroke);
   stroke-width: 3px;
 }
 
 .link {
   fill: none;
-  stroke-opacity: 0.72;
+  stroke-opacity: var(--gm-graph-link-opacity);
   stroke-linecap: round;
   vector-effect: non-scaling-stroke;
 }
@@ -127,20 +126,20 @@ svg:active {
 }
 
 text {
-  font-size: 11px;
+  font-size: var(--gm-text-xs);
   pointer-events: none;
-  fill: #f1f6fc;
+  fill: var(--gm-graph-text);
   text-shadow:
-    0 1px 2px #060a12f2,
-    0 -1px 2px #060a12f2,
-    1px 0 2px #060a12f2,
-    -1px 0 2px #060a12f2;
+    0 1px 2px var(--gm-graph-text-shadow),
+    0 -1px 2px var(--gm-graph-text-shadow),
+    1px 0 2px var(--gm-graph-text-shadow),
+    -1px 0 2px var(--gm-graph-text-shadow);
 }
 
 #arrow-calls path,
 #arrow-inherits path,
 #arrow-depends_on path {
-  fill: #80c8ff;
+  fill: var(--gm-graph-arrow);
 }
 
 #tooltip {
@@ -156,14 +155,14 @@ text {
   user-select: text;
   z-index: 20;
   padding: var(--gm-space-md);
-  border-radius: 16px;
+  border-radius: var(--gm-radius-lg);
   border: 1px solid var(--gm-border-strong);
   background: var(--gm-surface-overlay);
   color: var(--gm-text);
-  font-size: 13px;
-  line-height: 1.5;
+  font-size: var(--gm-text-sm);
+  line-height: var(--gm-leading-relaxed);
   box-shadow: var(--gm-shadow-overlay);
-  backdrop-filter: blur(14px);
+  backdrop-filter: var(--gm-blur-md);
 }
 
 #tooltip.visible {
@@ -172,8 +171,8 @@ text {
 
 #tooltip h3 {
   margin: 0 0 var(--gm-space-xs);
-  color: #fff;
-  font-size: 15px;
+  color: var(--gm-text);
+  font-size: var(--gm-text-lg);
   overflow-wrap: anywhere;
 }
 
@@ -187,10 +186,10 @@ text {
   margin: var(--gm-space-md) 0 0;
   padding: var(--gm-space-sm);
   border-radius: var(--gm-radius-sm);
-  background: #0308109e;
+  background: var(--gm-surface-inset);
   color: var(--gm-text-secondary);
-  font-size: 12px;
-  line-height: 1.45;
+  font-size: var(--gm-text-sm);
+  line-height: var(--gm-leading-normal);
   white-space: pre-wrap;
 }
 
@@ -198,17 +197,33 @@ text {
   position: absolute;
   inset: 0;
   display: none;
-  overflow: auto;
   margin: 0;
   padding: var(--gm-space-lg) var(--gm-space-xl) var(--gm-space-xl);
-  font-size: 13px;
-  line-height: 1.55;
+  font-size: var(--gm-text-sm);
+  line-height: var(--gm-leading-relaxed);
   color: var(--gm-text-secondary);
-  background: #050a13eb;
+  background: var(--gm-surface-elevated);
 }
 
 #json-view.visible {
   display: block;
+}
+
+#json-view-shell {
+  position: absolute;
+  inset: 0;
+  display: none;
+}
+
+#json-view-shell.visible {
+  display: block;
+}
+
+#json-view-shell > #json-view {
+  position: static;
+  inset: auto;
+  width: 100%;
+  height: 100%;
 }
 
 #legend {
@@ -219,26 +234,26 @@ text {
   max-height: 72%;
   overflow-y: auto;
   padding: var(--gm-space-md);
-  border-radius: 18px;
+  border-radius: var(--gm-radius-lg);
   border: 1px solid var(--gm-border);
   background: var(--gm-surface-overlay-translucent);
   color: var(--gm-text);
-  font-size: 13px;
-  box-shadow: 0 18px 40px #00000047;
-  backdrop-filter: blur(14px);
+  font-size: var(--gm-text-sm);
+  box-shadow: var(--gm-shadow-sm);
+  backdrop-filter: var(--gm-blur-md);
 }
 
 .legend-swatch {
-  width: 11px;
-  height: 11px;
+  width: var(--gm-text-xs);
+  height: var(--gm-text-xs);
   flex: 0 0 auto;
-  border-radius: 999px;
-  box-shadow: 0 0 0 1px #ffffff33;
+  border-radius: var(--gm-radius-full);
+  box-shadow: 0 0 0 1px var(--gm-border-subtle);
 }
 
 .legend-swatch-group {
   background: transparent;
-  border: 1px solid #ffffff57;
+  border: 1px solid var(--gm-border-strong);
   box-shadow: none;
 }
 
@@ -250,12 +265,12 @@ text {
 
 .filter-item {
   display: flex;
-  gap: var(--gm-space-control-gap-tight);
+  gap: var(--gm-space-sm);
   align-items: center;
   margin-top: var(--gm-space-xs);
   cursor: pointer;
-  font-size: 13px;
-  line-height: 1.45;
+  font-size: var(--gm-text-sm);
+  line-height: var(--gm-leading-normal);
 }
 
 .child-filter-item {
@@ -275,6 +290,44 @@ text {
   display: block;
   margin-bottom: var(--gm-space-sm);
   cursor: pointer;
+}
+
+.graph-index-progress-summary {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gm-space-xs);
+  margin-top: var(--gm-space-xs);
+}
+
+.graph-index-progress-slowest-files {
+  font-size: var(--gm-text-sm);
+}
+
+.graph-index-progress-slowest-files .gm-collapsible__summary {
+  color: var(--gm-text-subdued);
+}
+
+.graph-index-progress-slowest-files ul {
+  margin: var(--gm-space-xs) 0 0;
+  padding-left: var(--gm-space-lg);
+}
+
+.graph-index-progress-slowest-files li {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--gm-space-md);
+}
+
+.graph-index-progress-slowest-file-path {
+  font-family: var(--gm-font-mono);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.graph-index-progress-slowest-file-duration {
+  color: var(--gm-text-subdued);
+  flex-shrink: 0;
 }
 
 .sub-filter {

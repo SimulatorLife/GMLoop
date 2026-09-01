@@ -198,10 +198,6 @@ function local_assignment_container(seed) {
     return seed;
 }
 
-var assigned_local_with_params = function (left, right = 10) {
-    var total = left + right;
-};
-
 /// @param left
 /// @param [right=10]
 /// @returns {undefined}
