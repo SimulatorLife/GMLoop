@@ -10,6 +10,7 @@ import {
     coalesceTrimmedString,
     createListSplitPattern,
     describeValueForError,
+    escapeHtmlEntities,
     formatWithIndefiniteArticle,
     getNonEmptyString,
     isIdentifierBoundaryCharacter,
@@ -395,6 +396,18 @@ void test("describeValueForError defers to a custom toString when one is provide
     // With stringifyUnknown disabled, the helper falls back to toSafeString
     // and honors the custom toString override.
     assert.strictEqual(describeValueForError(new TaggedValue("enemy"), { stringifyUnknown: false }), "tag:enemy");
+});
+
+void test("escapeHtmlEntities escapes all five reserved markup characters", () => {
+    assert.strictEqual(
+        escapeHtmlEntities(`Tom & Jerry <script>"quoted" 'single'</script>`),
+        "Tom &amp; Jerry &lt;script&gt;&quot;quoted&quot; &#39;single&#39;&lt;/script&gt;"
+    );
+});
+
+void test("escapeHtmlEntities leaves text without reserved characters unchanged", () => {
+    assert.strictEqual(escapeHtmlEntities("plain text"), "plain text");
+    assert.strictEqual(escapeHtmlEntities(""), "");
 });
 
 void test("stripStringQuotes removes matching single and double quotes", () => {

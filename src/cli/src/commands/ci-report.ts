@@ -568,14 +568,7 @@ function parseEslintResults(value: unknown): Array<EslintResult> {
     });
 }
 
-function escapeXml(value: string): string {
-    return value
-        .replaceAll("&", "&amp;")
-        .replaceAll("<", "&lt;")
-        .replaceAll(">", "&gt;")
-        .replaceAll('"', "&quot;")
-        .replaceAll("'", "&apos;");
-}
+const escapeXml = Core.escapeHtmlEntities;
 
 function createCheckstyleXml(results: ReadonlyArray<EslintResult>): string {
     const files = results
