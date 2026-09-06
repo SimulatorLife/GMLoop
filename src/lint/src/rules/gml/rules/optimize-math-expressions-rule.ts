@@ -608,6 +608,127 @@ function shouldSkipBinaryExpressionCandidate(parentNode: unknown, parentKey: str
     return evaluateSkipDecision(parentNode, parentKey);
 }
 
+/** A statement/expression shape that exposes a rewrite candidate, and whether that candidate sits in a boolean test position (and so needs parenthesizing if the replacement is itself a comma-like expression). */
+type MathOptimizationTargetMatch = Readonly<{ targetNode: any; isIfTest: boolean }>;
+
+/**
+ * Decide whether a visited AST node exposes a sub-expression that is worth
+ * evaluating for math-optimization rewrites, based purely on the node's
+ * shape and its parent context. Returns `null` when the node isn't a
+ * recognized candidate-bearing shape (or the candidate is explicitly
+ * excluded, e.g. a chained binary operand already covered by its parent).
+ */
+function resolveMathOptimizationTarget(
+    visitedNode: any,
+    parent: unknown,
+    parentKey: string | null
+): MathOptimizationTargetMatch | null {
+    if (visitedNode.type === "VariableDeclarator" && visitedNode.init) {
+        return { targetNode: visitedNode.init, isIfTest: false };
+    }
+
+    switch (visitedNode.type) {
+        case "AssignmentExpression": {
+            return { targetNode: visitedNode.right, isIfTest: false };
+        }
+        case "IfStatement": {
+            return { targetNode: visitedNode.test, isIfTest: true };
+        }
+        case "ReturnStatement": {
+            return visitedNode.argument ? { targetNode: visitedNode.argument, isIfTest: false } : null;
+        }
+        case "ParenthesizedExpression": {
+            const expression = unwrapParenthesized(visitedNode);
+            if (
+                expression?.type === "BinaryExpression" &&
+                (parent as { type?: unknown } | null)?.type === "CallExpression" &&
+                parentKey === "arguments"
+            ) {
+                return { targetNode: visitedNode, isIfTest: false };
+            }
+            return null;
+        }
+        case "BinaryExpression": {
+            if (shouldSkipBinaryExpressionCandidate(parent, parentKey)) {
+                return null;
+            }
+            return { targetNode: visitedNode, isIfTest: false };
+        }
+        default: {
+            return null;
+        }
+    }
+}
+
+/**
+ * Compute the optimized replacement text for a single candidate node by
+ * running the manual-math strategy cascade (constant folding, fast dot
+ * product, manual normalization, division simplification), memoizing the
+ * result per unique candidate text so repeated identical expressions in the
+ * same file are only evaluated once.
+ *
+ * Returns `null` when no strategy produces a change.
+ */
+function computeCachedMathOptimizationReplacement(
+    sourceText: string,
+    targetNode: any,
+    sourceTextOfNode: string,
+    replacementByCandidateText: Map<string, string | null>
+): string | null {
+    const replacementCacheKey = `${targetNode.type}:${sourceTextOfNode}`;
+    const cachedReplacement = replacementByCandidateText.get(replacementCacheKey);
+    if (cachedReplacement !== undefined) {
+        return cachedReplacement;
+    }
+
+    let replacement: string | null = null;
+    let shouldApplyCanonicalSourceAwareReplacement = true;
+
+    if (NUMERIC_LITERAL_SIGNAL_PATTERN.test(sourceTextOfNode)) {
+        replacement = tryBuildConstantNumericReplacement(sourceText, targetNode);
+    }
+
+    if (!replacement) {
+        replacement = tryBuildFastDotProductReplacement(sourceText, targetNode);
+        if (replacement) {
+            shouldApplyCanonicalSourceAwareReplacement = false;
+        }
+    }
+
+    if (
+        !replacement &&
+        evaluateMathOptimizationCandidate({
+            sourceText: sourceTextOfNode,
+            nodeType: targetNode.type
+        }).shouldAttemptManualNormalization
+    ) {
+        replacement = attemptManualNormalization(sourceText, targetNode);
+    }
+
+    if (!replacement && DIVISION_BASED_OPTIMIZATION_SIGNAL_PATTERN.test(sourceTextOfNode)) {
+        replacement = simplifyMathExpression(sourceText, targetNode, sourceTextOfNode);
+    } else if (replacement && DIVISION_BASED_OPTIMIZATION_SIGNAL_PATTERN.test(sourceTextOfNode)) {
+        const divisionFallbackReplacement = simplifyMathExpression(sourceText, targetNode, sourceTextOfNode);
+        if (
+            divisionFallbackReplacement &&
+            countDivisionLikeOperators(divisionFallbackReplacement) < countDivisionLikeOperators(replacement)
+        ) {
+            replacement = divisionFallbackReplacement;
+            shouldApplyCanonicalSourceAwareReplacement = true;
+        }
+    }
+
+    replacement =
+        replacement && replacement !== sourceTextOfNode
+            ? shouldApplyCanonicalSourceAwareReplacement
+                ? applySourceAwareCanonicalMathReplacement(sourceText, targetNode, replacement)
+                : replacement
+            : null;
+
+    replacementByCandidateText.set(replacementCacheKey, replacement);
+    return replacement;
+}
+
 function performGeneralExpressionSimplification(node: any, sourceText: string, edits: SourceTextEdit[]) {
     const normalizedExpressionRanges: SourceTextRange[] = [];
     const commentTokenRangeIndex = createCommentTokenRangeIndex(sourceText);
@@ -617,179 +738,91 @@ function performGeneralExpressionSimplification(node: any, sourceText: string, e
     walkAstNodesWithParent(node, (visitContext) => {
         const { node: visitedNode, parent, parentKey } = visitContext;
 
-        let targetNode: any = null;
-        let isIfTest = false;
+        const match = resolveMathOptimizationTarget(visitedNode, parent, parentKey);
+        if (!match) {
+            return;
+        }
 
-        if (visitedNode.type === "VariableDeclarator" && visitedNode.init) {
-            targetNode = visitedNode.init;
-        } else
-            switch (visitedNode.type) {
-                case "AssignmentExpression": {
-                    targetNode = visitedNode.right;
+        const { targetNode, isIfTest } = match;
+        const start = getNodeStartIndex(targetNode);
+        const end = getNodeEndIndex(targetNode);
+        if (typeof start !== "number" || typeof end !== "number") {
+            return;
+        }
 
-                    break;
-                }
-                case "IfStatement": {
-                    targetNode = visitedNode.test;
-                    isIfTest = true;
+        const targetRange: SourceTextRange = { start, end };
+        if (isRangeInsideAnyRange(targetRange, normalizedExpressionRanges)) {
+            return;
+        }
 
-                    break;
-                }
-                case "ReturnStatement": {
-                    targetNode = visitedNode.argument;
-                    break;
-                }
-                case "ParenthesizedExpression": {
-                    const expression = unwrapParenthesized(visitedNode);
-                    if (
-                        expression?.type === "BinaryExpression" &&
-                        (parent as { type?: unknown } | null)?.type === "CallExpression" &&
-                        parentKey === "arguments"
-                    ) {
-                        targetNode = visitedNode;
-                    }
-                    break;
-                }
-                case "BinaryExpression": {
-                    if (shouldSkipBinaryExpressionCandidate(parent, parentKey)) {
-                        break;
-                    }
+        if (!canAstShapeContainMathOptimizationCandidate(targetNode)) {
+            return;
+        }
 
-                    targetNode = visitedNode;
+        const fastDotProductReplacement = tryBuildFastDotProductReplacement(sourceText, targetNode);
+        if (
+            fastDotProductReplacement &&
+            !rangeContainsCommentToken(commentTokenRangeIndex, start, end) &&
+            !hasOverlapWithLastScheduledEdit(start, end, lastScheduledEdit) &&
+            !hasOverlappingRange(start, end, edits)
+        ) {
+            const replacementText =
+                isIfTest && !fastDotProductReplacement.startsWith("(")
+                    ? `(${fastDotProductReplacement})`
+                    : fastDotProductReplacement;
+            const scheduledEdit = { start, end, text: replacementText };
+            edits.push(scheduledEdit);
+            lastScheduledEdit = scheduledEdit;
+            normalizedExpressionRanges.push(targetRange);
+            return;
+        }
 
-                    break;
-                }
-                // No default
-            }
+        const sourceTextOfNode = gmlRuleAutofixServices.readNodeText(sourceText, targetNode);
+        if (!sourceTextOfNode) {
+            return;
+        }
 
-        if (targetNode) {
-            const start = getNodeStartIndex(targetNode);
-            const end = getNodeEndIndex(targetNode);
-            if (typeof start !== "number" || typeof end !== "number") {
-                return;
-            }
+        if (hasComment(targetNode)) {
+            return;
+        }
 
-            const targetRange: SourceTextRange = { start, end };
-            if (isRangeInsideAnyRange(targetRange, normalizedExpressionRanges)) {
-                return;
-            }
+        if (rangeContainsCommentToken(commentTokenRangeIndex, start, end) && containsCommentSyntax(sourceTextOfNode)) {
+            return;
+        }
 
-            if (!canAstShapeContainMathOptimizationCandidate(targetNode)) {
-                return;
-            }
+        if (!containsMathOptimizationSyntax(sourceTextOfNode)) {
+            return;
+        }
 
-            const fastDotProductReplacement = tryBuildFastDotProductReplacement(sourceText, targetNode);
-            if (
-                fastDotProductReplacement &&
-                !rangeContainsCommentToken(commentTokenRangeIndex, start, end) &&
-                !hasOverlapWithLastScheduledEdit(start, end, lastScheduledEdit) &&
-                !hasOverlappingRange(start, end, edits)
-            ) {
-                const replacementText =
-                    isIfTest && !fastDotProductReplacement.startsWith("(")
-                        ? `(${fastDotProductReplacement})`
-                        : fastDotProductReplacement;
-                const scheduledEdit = { start, end, text: replacementText };
-                edits.push(scheduledEdit);
-                lastScheduledEdit = scheduledEdit;
-                normalizedExpressionRanges.push(targetRange);
-                return;
-            }
+        // Large expressions can trigger prohibitively expensive normalization
+        // paths and unbounded allocation spikes without providing practical
+        // autofix value in a single lint pass.
+        if (sourceTextOfNode.length > MAX_MATH_OPTIMIZATION_CANDIDATE_TEXT_LENGTH) {
+            return;
+        }
 
-            const sourceTextOfNode = gmlRuleAutofixServices.readNodeText(sourceText, targetNode);
-            if (sourceTextOfNode) {
-                if (hasComment(targetNode)) {
-                    return;
-                }
+        let replacement = computeCachedMathOptimizationReplacement(
+            sourceText,
+            targetNode,
+            sourceTextOfNode,
+            replacementByCandidateText
+        );
+        if (!replacement || replacement === sourceTextOfNode) {
+            return;
+        }
 
-                if (
-                    rangeContainsCommentToken(commentTokenRangeIndex, start, end) &&
-                    containsCommentSyntax(sourceTextOfNode)
-                ) {
-                    return;
-                }
+        if (isIfTest && !replacement.startsWith("(")) {
+            replacement = `(${replacement})`;
+        }
 
-                if (!containsMathOptimizationSyntax(sourceTextOfNode)) {
-                    return;
-                }
-
-                // Large expressions can trigger prohibitively expensive normalization
-                // paths and unbounded allocation spikes without providing practical
-                // autofix value in a single lint pass.
-                if (sourceTextOfNode.length > MAX_MATH_OPTIMIZATION_CANDIDATE_TEXT_LENGTH) {
-                    return;
-                }
-
-                const replacementCacheKey = `${targetNode.type}:${sourceTextOfNode}`;
-                let replacement = replacementByCandidateText.get(replacementCacheKey);
-                if (replacement === undefined) {
-                    let shouldApplyCanonicalSourceAwareReplacement = true;
-
-                    if (NUMERIC_LITERAL_SIGNAL_PATTERN.test(sourceTextOfNode)) {
-                        replacement = tryBuildConstantNumericReplacement(sourceText, targetNode);
-                    }
-
-                    if (!replacement) {
-                        replacement = tryBuildFastDotProductReplacement(sourceText, targetNode);
-                        if (replacement) {
-                            shouldApplyCanonicalSourceAwareReplacement = false;
-                        }
-                    }
-
-                    if (
-                        !replacement &&
-                        evaluateMathOptimizationCandidate({
-                            sourceText: sourceTextOfNode,
-                            nodeType: targetNode.type
-                        }).shouldAttemptManualNormalization
-                    ) {
-                        replacement = attemptManualNormalization(sourceText, targetNode);
-                    }
-
-                    if (!replacement && DIVISION_BASED_OPTIMIZATION_SIGNAL_PATTERN.test(sourceTextOfNode)) {
-                        replacement = simplifyMathExpression(sourceText, targetNode, sourceTextOfNode);
-                    } else if (replacement && DIVISION_BASED_OPTIMIZATION_SIGNAL_PATTERN.test(sourceTextOfNode)) {
-                        const divisionFallbackReplacement = simplifyMathExpression(
-                            sourceText,
-                            targetNode,
-                            sourceTextOfNode
-                        );
-                        if (
-                            divisionFallbackReplacement &&
-                            countDivisionLikeOperators(divisionFallbackReplacement) <
-                                countDivisionLikeOperators(replacement)
-                        ) {
-                            replacement = divisionFallbackReplacement;
-                            shouldApplyCanonicalSourceAwareReplacement = true;
-                        }
-                    }
-
-                    replacement =
-                        replacement && replacement !== sourceTextOfNode
-                            ? shouldApplyCanonicalSourceAwareReplacement
-                                ? applySourceAwareCanonicalMathReplacement(sourceText, targetNode, replacement)
-                                : replacement
-                            : null;
-
-                    replacementByCandidateText.set(replacementCacheKey, replacement);
-                }
-
-                if (replacement && replacement !== sourceTextOfNode) {
-                    if (isIfTest && !replacement.startsWith("(")) {
-                        replacement = `(${replacement})`;
-                    }
-
-                    if (
-                        !hasOverlapWithLastScheduledEdit(start, end, lastScheduledEdit) &&
-                        !hasOverlappingRange(start, end, edits)
-                    ) {
-                        const scheduledEdit = { start, end, text: replacement };
-                        edits.push(scheduledEdit);
-                        lastScheduledEdit = scheduledEdit;
-                        normalizedExpressionRanges.push(targetRange);
-                    }
-                }
-            }
+        if (
+            !hasOverlapWithLastScheduledEdit(start, end, lastScheduledEdit) &&
+            !hasOverlappingRange(start, end, edits)
+        ) {
+            const scheduledEdit = { start, end, text: replacement };
+            edits.push(scheduledEdit);
+            lastScheduledEdit = scheduledEdit;
+            normalizedExpressionRanges.push(targetRange);
         }
     });
 }
