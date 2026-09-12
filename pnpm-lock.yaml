@@ -28,8 +28,8 @@ catalogs:
       specifier: ^6
       version: 6.0.3
     ws:
-      specifier: ^8
-      version: 8.21.1
+      specifier: ^8.21.3
+      version: 8.21.3
 
 importers:
 
@@ -169,7 +169,7 @@ importers:
         version: 5.3.0
       ws:
         specifier: 'catalog:'
-        version: 8.21.1
+        version: 8.21.3
       yaml-eslint-parser:
         specifier: ^2
         version: 2.1.0
@@ -228,7 +228,7 @@ importers:
         version: 0.18.13
       ws:
         specifier: 'catalog:'
-        version: 8.21.1
+        version: 8.21.3
     devDependencies:
       typescript:
         specifier: 'catalog:'
@@ -3686,8 +3686,8 @@ packages:
     resolution: {integrity: sha512-+QU2zd6OTD8XWIJCbffaiQeH9U73qIqafo1x6V1snCWYGJf6cVE0cDR4D8xRzcEnfI21IFrUPzPGtcPf8AC+Rw==}
     engines: {node: ^14.17.0 || ^16.13.0 || >=18.0.0}
 
-  ws@8.21.1:
-    resolution: {integrity: sha512-+0NTnW77fFN/DjQi6k/Sq/Yvk4Sgajw7urW8V+asjXnRgDs9gyGkdb7EzgfhA4goXsRIZKE28fzIXBHEzhuiWw==}
+  ws@8.21.3:
+    resolution: {integrity: sha512-201TZ/kPWxoPr/OKWjquZR1SWKXcvxdH+e1xrx89b3YbmzLMFCLfnaG1HFIgWzJOEWZ7MvpK++odZufgYR50Rw==}
     engines: {node: '>=10.0.0'}
     peerDependencies:
       bufferutil: ^4.0.1
@@ -7135,7 +7135,7 @@ snapshots:
       imurmurhash: 0.1.4
       signal-exit: 4.1.0
 
-  ws@8.21.1: {}
+  ws@8.21.3: {}
 
   wsl-utils@0.1.0:
     dependencies:
