@@ -96,6 +96,54 @@ function getTokenStream(recognizer: Recognizer | null | undefined): TokenStream 
     return recognizer?._input ?? null;
 }
 
+/**
+ * Read a numeric `line`/`column` value from a token coordinate that may be
+ * either a number or an object exposing both fields. Returns `undefined` for
+ * any shape the caller cannot use so callers can fall through to the next
+ * candidate.
+ *
+ * @param value Candidate coordinate from a token's `start` field.
+ * @param key Either `"line"` or `"column"`.
+ * @returns The numeric coordinate when available, otherwise `undefined`.
+ */
+function readNestedPosition(value: unknown, key: "line" | "column"): number | undefined {
+    if (typeof value === "number") {
+        return value;
+    }
+
+    if (Core.isObjectLike(value)) {
+        const nested = (value as Record<string, unknown>)[key];
+        return typeof nested === "number" ? nested : undefined;
+    }
+
+    return undefined;
+}
+
+/**
+ * Resolve a numeric position-like field (`line` or `column`) for a token by
+ * probing the fallback candidate's matching field, then its `start`
+ * coordinate, then the token's own `start` coordinate, before falling back to
+ * {@link INVALID_INDEX_FALLBACK}. Centralizing the resolution order avoids
+ * duplicating the nested-ternary chain between the `line` and `column` arms
+ * of {@link ensureTokenMetadata}.
+ *
+ * @param token Token whose `start` coordinate may carry the position.
+ * @param fallback Candidate token whose own fields may carry the position.
+ * @param key Either `"line"` or `"column"`.
+ * @returns A finite number, preferring real values over the fallback constant.
+ */
+export function resolveTokenPosition(
+    token: Record<string, unknown>,
+    fallback: Record<string, unknown> | undefined,
+    key: "line" | "column"
+): number {
+    const fallbackDirect = Core.isObjectLike(fallback) ? fallback[key] : undefined;
+    const fallbackStart = Core.isObjectLike(fallback) ? fallback.start : undefined;
+    const fallbackStartValue = readNestedPosition(fallbackStart, key);
+    const tokenStartValue = readNestedPosition(token.start, key);
+    return firstNumber(fallbackDirect, fallbackStartValue, tokenStartValue) ?? INVALID_INDEX_FALLBACK;
+}
+
 function ensureTokenMetadata(
     token: Token | number | null | undefined,
     { fallbackCandidates = [], stream }: TokenMetadataOptions = {}
@@ -106,48 +154,32 @@ function ensureTokenMetadata(
 
     const candidates = Core.toArray(fallbackCandidates);
     const fallback = candidates.find((candidate) => candidate && typeof candidate === "object");
+    const tokenRecord = token as Record<string, unknown>;
 
-    if (typeof token.type !== "number") {
-        token.type =
-            typeof fallback === "object" && typeof fallback.type === "number"
+    if (typeof tokenRecord.type !== "number") {
+        tokenRecord.type =
+            Core.isObjectLike(fallback) && typeof fallback.type === "number"
                 ? fallback.type
                 : antlr4.Token.INVALID_TYPE;
     }
 
-    if (typeof token.tokenIndex !== "number") {
+    if (typeof tokenRecord.tokenIndex !== "number") {
         const fallbackIndex = firstNumber(
-            typeof fallback === "object" ? fallback.tokenIndex : undefined,
-            token.index,
-            token.startIndex
+            Core.isObjectLike(fallback) ? fallback.tokenIndex : undefined,
+            tokenRecord.index,
+            tokenRecord.startIndex
         );
 
-        token.tokenIndex = fallbackIndex ?? (typeof stream?.index === "number" ? stream.index : INVALID_INDEX_FALLBACK);
+        tokenRecord.tokenIndex =
+            fallbackIndex ?? (typeof stream?.index === "number" ? stream.index : INVALID_INDEX_FALLBACK);
     }
 
-    if (typeof token.line !== "number") {
-        token.line =
-            firstNumber(
-                typeof fallback === "object" ? fallback.line : undefined,
-                typeof fallback === "object"
-                    ? typeof fallback.start === "number"
-                        ? fallback.start
-                        : fallback.start?.line
-                    : undefined,
-                typeof token.start === "number" ? token.start : token.start?.line
-            ) ?? INVALID_INDEX_FALLBACK;
+    if (typeof tokenRecord.line !== "number") {
+        tokenRecord.line = resolveTokenPosition(tokenRecord, fallback, "line");
     }
 
-    if (typeof token.column !== "number") {
-        token.column =
-            firstNumber(
-                typeof fallback === "object" ? fallback.column : undefined,
-                typeof fallback === "object"
-                    ? typeof fallback.start === "number"
-                        ? fallback.start
-                        : fallback.start?.column
-                    : undefined,
-                typeof token.start === "number" ? token.start : token.start?.column
-            ) ?? INVALID_INDEX_FALLBACK;
+    if (typeof tokenRecord.column !== "number") {
+        tokenRecord.column = resolveTokenPosition(tokenRecord, fallback, "column");
     }
 
     return token;
