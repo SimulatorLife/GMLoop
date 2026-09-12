@@ -1,6 +1,7 @@
 import { Core } from "@gmloop/core";
 
 import {
+    DEFAULT_INLINE_CONTROL_FLOW_BLOCK_MARGIN,
     DEFAULT_PRINT_WIDTH,
     INLINE_BLOCK_TOTAL_OVERHEAD,
     INLINEABLE_SINGLE_STATEMENT_TYPES,
@@ -12,19 +13,10 @@ import { concat, group, ifBreak, indent, line } from "./prettier-doc-builders.js
 import { optionalSemicolon } from "./semicolons.js";
 
 /**
- * Default margin (in characters) added to the inline-length estimate before it
- * is compared to `printWidth`. A value of `0` reproduces the legacy behavior
- * exactly: the inline form is kept whenever its estimated length fits within
- * `printWidth`. Adjusting this value is the only knob that controls how
- * aggressively the formatter chooses the inline form.
- */
-const INLINE_BLOCK_MARGIN_FALLBACK = 0;
-
-/**
  * Resolve the user-provided `inlineControlFlowBlockMargin` option to a safe,
  * finite number. Missing, non-numeric, or non-finite values fall back to
- * {@link INLINE_BLOCK_MARGIN_FALLBACK} so the print-width check is never
- * bypassed.
+ * {@link DEFAULT_INLINE_CONTROL_FLOW_BLOCK_MARGIN} so the print-width check
+ * is never bypassed.
  *
  * The resolved margin is added to the inline-length estimate before it is
  * compared to `printWidth`:
@@ -36,7 +28,7 @@ const INLINE_BLOCK_MARGIN_FALLBACK = 0;
 function resolveInlineControlFlowBlockMargin(options) {
     const rawMargin = options?.inlineControlFlowBlockMargin;
     if (typeof rawMargin !== NUMBER_TYPE || !Number.isFinite(rawMargin)) {
-        return INLINE_BLOCK_MARGIN_FALLBACK;
+        return DEFAULT_INLINE_CONTROL_FLOW_BLOCK_MARGIN;
     }
     return rawMargin;
 }
