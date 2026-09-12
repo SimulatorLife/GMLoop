@@ -21,6 +21,9 @@ catalogs:
     eslint-plugin-boundaries:
       specifier: ^6
       version: 6.0.2
+    globals:
+      specifier: ^17
+      version: 17.7.0
     prettier:
       specifier: ^3
       version: 3.9.6
@@ -144,7 +147,7 @@ importers:
         specifier: ^3
         version: 3.6.0(eslint@10.7.0)
       globals:
-        specifier: ^17
+        specifier: 'catalog:'
         version: 17.7.0
       husky:
         specifier: ^9
