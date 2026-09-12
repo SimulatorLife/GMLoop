@@ -66,6 +66,24 @@ void test("lint reports when no .gml files are found in the provided path", asyn
     }
 });
 
+void test("lint emits an empty JSON array when no .gml files are found", async () => {
+    const temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "gmloop-cli-lint-empty-json-"));
+
+    try {
+        await writeFile(path.join(temporaryDirectory, "readme.txt"), "not gml\n", "utf8");
+
+        const result = await runCliTestCommand({
+            argv: ["lint", "--formatter", "json", "--no-default-config", temporaryDirectory]
+        });
+
+        assert.equal(result.exitCode, 0);
+        assert.deepEqual(JSON.parse(result.stdout), []);
+        assert.match(result.stderr, /No \.gml files were linted in/);
+    } finally {
+        await rm(temporaryDirectory, { recursive: true, force: true });
+    }
+});
+
 void test("lint prints a clean-run summary when all files pass with no diagnostics", async () => {
     const temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "gmloop-cli-lint-clean-"));
 
