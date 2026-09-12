@@ -36,8 +36,15 @@ function buildCreateRequireGpuToggleResetRule(
     // between uses, so sharing the regex across rules would couple their state.
     // `String.raw` keeps the regex source readable by avoiding the doubled
     // backslashes that an interpolated `\\b`/`\\(` would otherwise require.
-    const disablePattern = new RegExp(String.raw`\bgpu_set_${config.functionName}\s*\(\s*false\s*\)\s*;`, "gu");
-    const enablePattern = new RegExp(String.raw`\bgpu_set_${config.functionName}\s*\(\s*true\s*\)\s*;`, "gu");
+    //
+    // The trailing `;?` keeps the semicolon optional: GML permits statement
+    // calls without a terminating semicolon, and the reset-tracking intent
+    // (matching a `disable`/`true` pair) does not depend on the source's
+    // punctuation. Without `;?` the rule missed valid code such as
+    // `gpu_set_ztestenable(false)\n` even though the corresponding
+    // `gpu_set_ztestenable(true);` rewrite still restores correct state.
+    const disablePattern = new RegExp(String.raw`\bgpu_set_${config.functionName}\s*\(\s*false\s*\)\s*;?`, "gu");
+    const enablePattern = new RegExp(String.raw`\bgpu_set_${config.functionName}\s*\(\s*true\s*\)\s*;?`, "gu");
     const resetLine = `gpu_set_${config.functionName}(true);`;
 
     return function createRequireGpuToggleResetRule(definition: GmlRuleDefinition): Rule.RuleModule {
