@@ -4,7 +4,7 @@ import process from "node:process";
 import { Core } from "@gmloop/core";
 
 import { getPackageJsonStringField, parsePackageJsonContents } from "../shared/package-resolution.js";
-import { CLI_PACKAGE_DIRECTORY, REPO_ROOT } from "../shared/workspace-paths.js";
+import { CLI_PACKAGE_DIRECTORY, resolveFromRepoRoot } from "../shared/workspace-paths.js";
 
 const { getNonEmptyTrimmedString, readTextFileSync } = Core;
 
@@ -12,8 +12,8 @@ const FALLBACK_CLI_VERSION_LABEL = "development build";
 
 const PACKAGE_VERSION_CANDIDATES = Object.freeze([
     path.resolve(CLI_PACKAGE_DIRECTORY, "package.json"),
-    path.resolve(REPO_ROOT, "package.json"),
-    path.resolve(REPO_ROOT, "src", "format", "package.json")
+    resolveFromRepoRoot("package.json"),
+    resolveFromRepoRoot("src", "format", "package.json")
 ]);
 
 function readPackageVersion(candidate: string): string | null {
