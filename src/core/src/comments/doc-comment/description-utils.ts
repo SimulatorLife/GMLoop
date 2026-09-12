@@ -118,6 +118,67 @@ function findDescriptionLineIndex(docCommentDocs: MutableDocCommentLines | reado
 }
 
 /**
+ * Shared iteration engine for walking the lines that immediately follow a
+ * `@description` tag, applying `classifyDescriptionContinuationLine` and
+ * yielding structured payloads for each non-stop, non-empty line.
+ *
+ * @param docCommentDocs - The doc comment lines to iterate.
+ * @param descriptionIndex - The 0-based index of the `@description` line.
+ * @param yieldOriginal - When true, yields `originalLine` (raw source text);
+ *                        when false, yields `suffix` (content without comment prefix).
+ * @param baseIndentSpaces - Used only when `yieldOriginal` is false to compute
+ *                           relative indentation; pass `0` when not needed.
+ * @param onEmpty - Optional callback invoked for each "empty" continuation line.
+ * @param onText - Callback invoked for each "text" continuation line, receiving
+ *                either the raw line or a suffix+extra-indent payload depending on
+ *                `yieldOriginal`, along with the line's 0-based index within the
+ *                doc comment array.
+ * @param onStop - Callback invoked when a "stop" classification is reached.
+ */
+function iterateDescriptionContinuations(
+    docCommentDocs: MutableDocCommentLines | readonly unknown[],
+    descriptionIndex: number,
+    {
+        yieldOriginal,
+        baseIndentSpaces = 0,
+        onEmpty,
+        onText,
+        onStop
+    }: {
+        yieldOriginal: boolean;
+        baseIndentSpaces?: number;
+        onEmpty?: () => void;
+        onText: (payload: string, index: number) => void;
+        onStop?: () => void;
+    }
+): void {
+    for (let index = descriptionIndex + 1; index < docCommentDocs.length; index += 1) {
+        const line = docCommentDocs[index];
+        const classification = classifyDescriptionContinuationLine(line);
+
+        if (classification.kind === "stop") {
+            onStop?.();
+            break;
+        }
+
+        if (classification.kind === "empty") {
+            onEmpty?.();
+            continue;
+        }
+
+        if (yieldOriginal) {
+            onText(classification.originalLine, index);
+        } else if (typeof line === "string") {
+            const indentSpaces = getDocCommentIndentSpaces(line);
+            const extraIndent = Math.max(0, indentSpaces - baseIndentSpaces);
+            onText(`${" ".repeat(extraIndent)}${classification.suffix}`, index);
+        } else {
+            onText(classification.suffix, index);
+        }
+    }
+}
+
+/**
  * Extract all raw continuation lines that immediately follow a `@description` tag.
  *
  * @param docCommentDocs - The lines of a doc comment, including the `@description` line.
@@ -130,22 +191,10 @@ export function collectDescriptionContinuations(docCommentDocs: MutableDocCommen
     }
 
     const continuations: string[] = [];
-
-    for (let index = descriptionIndex + 1; index < docCommentDocs.length; index += 1) {
-        const line = docCommentDocs[index];
-        const classification = classifyDescriptionContinuationLine(line);
-
-        if (classification.kind === "stop") {
-            break;
-        }
-
-        if (classification.kind === "empty") {
-            continue;
-        }
-
-        continuations.push(classification.originalLine);
-    }
-
+    iterateDescriptionContinuations(docCommentDocs, descriptionIndex, {
+        yieldOriginal: true,
+        onText: (originalLine) => continuations.push(originalLine)
+    });
     return continuations;
 }
 
@@ -163,33 +212,21 @@ export function collectDescriptionContinuationText(
         return { continuations: [], linesConsumed: 0 };
     }
 
+    let linesConsumed = 0;
     const continuations: string[] = [];
-    let lookahead = startIndex + 1;
-
-    while (lookahead < docCommentDocs.length) {
-        const candidate = docCommentDocs[lookahead];
-        const classification = classifyDescriptionContinuationLine(candidate);
-        if (classification.kind === "stop") {
-            break;
-        }
-
-        if (classification.kind === "empty") {
+    iterateDescriptionContinuations(docCommentDocs, startIndex, {
+        yieldOriginal: false,
+        baseIndentSpaces,
+        onEmpty: () => {
             continuations.push("");
-            lookahead += 1;
-            continue;
+            linesConsumed += 1;
+        },
+        onText: (payload) => {
+            continuations.push(payload);
+            linesConsumed += 1;
         }
-
-        if (typeof candidate === "string") {
-            const indentSpaces = getDocCommentIndentSpaces(candidate);
-            const extraIndent = Math.max(0, indentSpaces - baseIndentSpaces);
-            continuations.push(`${" ".repeat(extraIndent)}${classification.suffix}`);
-        } else {
-            continuations.push(classification.suffix);
-        }
-        lookahead += 1;
-    }
-
-    return { continuations, linesConsumed: lookahead - startIndex };
+    });
+    return { continuations, linesConsumed };
 }
 
 /**
@@ -285,27 +322,18 @@ export function ensureDescriptionContinuations(docCommentDocs: MutableDocComment
     const continuationPrefix = "/// ";
 
     let foundContinuation = false;
-
-    for (let index = descriptionIndex + 1; index < docCommentDocs.length; index += 1) {
-        const line = docCommentDocs[index];
-
-        const classification = classifyDescriptionContinuationLine(line);
-        if (classification.kind === "stop") {
-            break;
+    iterateDescriptionContinuations(docCommentDocs, descriptionIndex, {
+        yieldOriginal: true,
+        onText: (_originalLine, index) => {
+            const line = docCommentDocs[index];
+            const formatted = formatDescriptionContinuationLine(line, continuationPrefix);
+            if (!formatted) {
+                return;
+            }
+            docCommentDocs[index] = formatted;
+            foundContinuation = true;
         }
-
-        if (classification.kind === "empty") {
-            continue;
-        }
-
-        const formatted = formatDescriptionContinuationLine(line, continuationPrefix);
-        if (!formatted) {
-            continue;
-        }
-
-        docCommentDocs[index] = formatted;
-        foundContinuation = true;
-    }
+    });
 
     if (foundContinuation) {
         docCommentDocs._preserveDescriptionBreaks = true;
