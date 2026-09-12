@@ -40,6 +40,32 @@ const RESOURCE_KINDS = new Set([
     "path"
 ]);
 
+const INCLUDE_FLAG_KEYS = ["node", "context", "neighbors", "usages", "dependents"] as const;
+type IncludeFlag = (typeof INCLUDE_FLAG_KEYS)[number];
+
+type GraphNodeRecord = NonNullable<ReturnType<typeof Semantic.getGraphNode>>;
+
+type GraphQueryContext = Readonly<{
+    databasePath?: string;
+    projectConfig: Record<string, unknown>;
+    projectRoot: string;
+    toolsetRoot?: string;
+}>;
+
+type ResolvedSymbolNode = Readonly<{
+    kind: string;
+    matchesRequestedKind: boolean;
+    node: GraphNodeRecord;
+    nodeId: string;
+}>;
+
+type AmbiguousSymbolCandidate = Readonly<{ id: string; kind: string; name: string }>;
+
+type ResolutionOutcome =
+    | { candidates: ReadonlyArray<AmbiguousSymbolCandidate>; query: string; status: "ambiguous" }
+    | { status: "missing" }
+    | { resolution: ResolvedSymbolNode; status: "resolved" };
+
 function isResourceKind(kind: string): boolean {
     return RESOURCE_KINDS.has(kind);
 }
@@ -74,89 +100,146 @@ function printSymbolResult(result: unknown, asJson: boolean): void {
     console.log(typeof result === "string" ? result : JSON.stringify(result, null, 2));
 }
 
-async function runSymbolInspectAction(identifierOrNodeId: string, options: SymbolInspectOptions): Promise<void> {
-    const context = await ensureProjectGraphIndex(options);
-    const query = identifierOrNodeId;
-    const requestedKind = options.kind ?? "auto";
+/**
+ * Parse the comma-separated `--include` value into a normalised set of
+ * recognised include flags. Unknown entries are silently dropped so that
+ * future additions don't require the CLI command to ship a parallel change.
+ *
+ * Exposed for unit testing; not part of the command's public surface.
+ */
+export function parseIncludeFlags(rawValue: string | undefined): Set<IncludeFlag> {
+    const flags = new Set<IncludeFlag>();
+    for (const entry of rawValue?.split(",") ?? []) {
+        const normalized = entry.trim().toLowerCase();
+        if ((INCLUDE_FLAG_KEYS as ReadonlyArray<string>).includes(normalized)) {
+            flags.add(normalized as IncludeFlag);
+        }
+    }
+    return flags;
+}
 
-    let resolvedNode = null;
+/**
+ * Narrow an ambiguous candidate set to a single best match by preferring
+ * exact case-sensitive name equality, then case-insensitive equality. The
+ * prior inline implementation combined these two filters with the caller's
+ * ambiguity check, which made both the matching strategy and its empty-set
+ * behaviour hard to verify in isolation.
+ *
+ * Exposed for unit testing; not part of the command's public surface.
+ */
+export function narrowSymbolCandidatesByName<T extends { name: string }>(
+    candidates: ReadonlyArray<T>,
+    query: string
+): Array<T> {
+    const exactCaseSensitive = candidates.filter((candidate) => candidate.name === query);
+    if (exactCaseSensitive.length > 0) {
+        return [...exactCaseSensitive];
+    }
 
-    // 1. Try direct lookup first (if it's a valid ID)
+    const loweredQuery = query.toLowerCase();
+    const exactCaseInsensitive = candidates.filter((candidate) => candidate.name.toLowerCase() === loweredQuery);
+    return [...exactCaseInsensitive];
+}
+
+/**
+ * Resolve `query` to a single graph node, preferring an exact direct lookup
+ * over the wider graph search. Returns the resolution shape that captures
+ * whether the symbol was resolved, the search produced multiple candidates
+ * with the same name, or no kind-matching candidate was found.
+ *
+ * The narrowing contract preserves the legacy behaviour exactly: when the
+ * search returns at least one kind-matching candidate but the query matches
+ * none of them by exact or case-insensitive name, the resolution is
+ * "ambiguous" rather than "missing" so the CLI still surfaces the
+ * kind-filtered candidate set instead of pretending nothing was found.
+ *
+ * Exposed for unit testing; not part of the command's public surface.
+ */
+export function resolveSymbolNode(query: string, requestedKind: string, context: GraphQueryContext): ResolutionOutcome {
     const directNode = Semantic.getGraphNode({
-        databasePath: options.databasePath,
+        databasePath: context.databasePath,
         nodeId: query,
         projectConfig: context.projectConfig,
         projectRoot: context.projectRoot,
-        toolsetRoot: options.toolsetRoot
+        toolsetRoot: context.toolsetRoot
     });
 
     if (directNode && matchesKind(directNode.kind, requestedKind)) {
-        resolvedNode = directNode;
+        return {
+            status: "resolved",
+            resolution: {
+                kind: directNode.kind,
+                matchesRequestedKind: true,
+                node: directNode,
+                nodeId: directNode.id
+            }
+        };
     }
 
-    // 2. Fallback to graph search if direct lookup didn't yield a matching node
-    if (!resolvedNode) {
-        const searchResult = Semantic.searchGraphIndex({
-            databasePath: options.databasePath,
-            limit: 100,
+    const searchResult = Semantic.searchGraphIndex({
+        databasePath: context.databasePath,
+        limit: 100,
+        projectConfig: context.projectConfig,
+        projectRoot: context.projectRoot,
+        query,
+        toolsetRoot: context.toolsetRoot
+    });
+
+    const kindMatchingCandidates = searchResult.results.filter((entry) => matchesKind(entry.kind, requestedKind));
+    if (kindMatchingCandidates.length === 0) {
+        return { status: "missing" };
+    }
+
+    const narrowedCandidates = narrowSymbolCandidatesByName(kindMatchingCandidates, query);
+    const finalCandidates = narrowedCandidates.length > 0 ? narrowedCandidates : kindMatchingCandidates;
+
+    if (finalCandidates.length === 1) {
+        const uniqueMatch = finalCandidates[0];
+        const resolved = Semantic.getGraphNode({
+            databasePath: context.databasePath,
+            nodeId: uniqueMatch.id,
             projectConfig: context.projectConfig,
             projectRoot: context.projectRoot,
-            query,
-            toolsetRoot: options.toolsetRoot
+            toolsetRoot: context.toolsetRoot
         });
-
-        let candidates = searchResult.results.filter((entry) => matchesKind(entry.kind, requestedKind));
-
-        if (candidates.length > 0) {
-            // Narrow by exact case-sensitive name match
-            const exactMatches = candidates.filter((c) => c.name === query);
-            if (exactMatches.length > 0) {
-                candidates = exactMatches;
-            } else {
-                // Narrow by exact case-insensitive name match
-                const caseInsensitiveMatches = candidates.filter((c) => c.name.toLowerCase() === query.toLowerCase());
-                if (caseInsensitiveMatches.length > 0) {
-                    candidates = caseInsensitiveMatches;
+        if (resolved) {
+            return {
+                status: "resolved",
+                resolution: {
+                    kind: resolved.kind,
+                    matchesRequestedKind: true,
+                    node: resolved,
+                    nodeId: resolved.id
                 }
-            }
-
-            if (candidates.length === 1) {
-                const candidateId = candidates[0].id;
-                resolvedNode = Semantic.getGraphNode({
-                    databasePath: options.databasePath,
-                    nodeId: candidateId,
-                    projectConfig: context.projectConfig,
-                    projectRoot: context.projectRoot,
-                    toolsetRoot: options.toolsetRoot
-                });
-            } else if (candidates.length > 1) {
-                const payload = {
-                    command: "symbol inspect",
-                    ok: false,
-                    error: `Ambiguous symbol '${query}'. Multiple candidates found.`,
-                    code: "ambiguous",
-                    candidates: candidates.map((c) => ({ id: c.id, name: c.name, kind: c.kind }))
-                };
-                printSymbolResult(payload, true);
-                process.exit(1);
-            }
+            };
         }
     }
 
-    if (!resolvedNode) {
-        const payload = {
-            command: "symbol inspect",
-            ok: false,
-            error: `Symbol '${query}' not found.`,
-            code: "unresolved"
-        };
-        printSymbolResult(payload, true);
-        process.exit(1);
-    }
+    return {
+        candidates: finalCandidates.map((candidate) => ({
+            id: candidate.id,
+            kind: candidate.kind,
+            name: candidate.name
+        })),
+        query,
+        status: "ambiguous"
+    };
+}
 
-    const includeOption = options.include ?? "node";
-    const includes = new Set(includeOption.split(",").map((s) => s.trim().toLowerCase()));
-
+/**
+ * Materialise the inspection payload for a resolved symbol by reading each
+ * requested graph relation (context, neighbors, usages) once. Keeping the
+ * include-driven branching in a single helper means the orchestrator can
+ * stay focused on top-level success/failure paths and the per-include
+ * contract stays trivially unit-testable.
+ *
+ * Exposed for unit testing; not part of the command's public surface.
+ */
+export function buildSymbolInspectionPayload(
+    resolvedNode: GraphNodeRecord,
+    includes: ReadonlySet<IncludeFlag>,
+    options: Readonly<{ context: GraphQueryContext; depth?: number }>
+): Record<string, unknown> {
     const payload: Record<string, unknown> = {
         resolvedId: resolvedNode.id,
         resolvedKind: resolvedNode.kind
@@ -167,32 +250,32 @@ async function runSymbolInspectAction(identifierOrNodeId: string, options: Symbo
     }
     if (includes.has("context")) {
         payload.context = Semantic.getGraphContext({
-            databasePath: options.databasePath,
+            databasePath: options.context.databasePath,
             depth: options.depth,
             nodeId: resolvedNode.id,
-            projectConfig: context.projectConfig,
-            projectRoot: context.projectRoot,
-            toolsetRoot: options.toolsetRoot
+            projectConfig: options.context.projectConfig,
+            projectRoot: options.context.projectRoot,
+            toolsetRoot: options.context.toolsetRoot
         });
     }
     if (includes.has("neighbors")) {
         payload.neighbors = Semantic.getGraphNeighbors({
-            databasePath: options.databasePath,
+            databasePath: options.context.databasePath,
             depth: options.depth,
             nodeId: resolvedNode.id,
-            projectConfig: context.projectConfig,
-            projectRoot: context.projectRoot,
-            toolsetRoot: options.toolsetRoot
+            projectConfig: options.context.projectConfig,
+            projectRoot: options.context.projectRoot,
+            toolsetRoot: options.context.toolsetRoot
         });
     }
     if (includes.has("usages") || includes.has("dependents")) {
         const usages = Semantic.getGraphUsages({
-            databasePath: options.databasePath,
+            databasePath: options.context.databasePath,
             depth: options.depth,
             nodeId: resolvedNode.id,
-            projectConfig: context.projectConfig,
-            projectRoot: context.projectRoot,
-            toolsetRoot: options.toolsetRoot
+            projectConfig: options.context.projectConfig,
+            projectRoot: options.context.projectRoot,
+            toolsetRoot: options.context.toolsetRoot
         });
         if (includes.has("usages")) {
             payload.usages = usages;
@@ -202,6 +285,59 @@ async function runSymbolInspectAction(identifierOrNodeId: string, options: Symbo
         }
     }
 
+    return payload;
+}
+
+function emitSymbolFailure(payload: Record<string, unknown>, exitCode: 1): void {
+    printSymbolResult(payload, true);
+    process.exit(exitCode);
+}
+
+async function runSymbolInspectAction(identifierOrNodeId: string, options: SymbolInspectOptions): Promise<void> {
+    const context = await ensureProjectGraphIndex(options);
+    const query = identifierOrNodeId;
+    const requestedKind = options.kind ?? "auto";
+    const graphContext: GraphQueryContext = {
+        databasePath: options.databasePath,
+        projectConfig: context.projectConfig,
+        projectRoot: context.projectRoot,
+        toolsetRoot: options.toolsetRoot
+    };
+
+    const resolution = resolveSymbolNode(query, requestedKind, graphContext);
+
+    if (resolution.status === "ambiguous") {
+        emitSymbolFailure(
+            {
+                candidates: resolution.candidates,
+                code: "ambiguous",
+                command: "symbol inspect",
+                error: `Ambiguous symbol '${resolution.query}'. Multiple candidates found.`,
+                ok: false
+            },
+            1
+        );
+        return;
+    }
+
+    if (resolution.status === "missing") {
+        emitSymbolFailure(
+            {
+                code: "unresolved",
+                command: "symbol inspect",
+                error: `Symbol '${query}' not found.`,
+                ok: false
+            },
+            1
+        );
+        return;
+    }
+
+    const includes = parseIncludeFlags(options.include);
+    const payload = buildSymbolInspectionPayload(resolution.resolution.node, includes, {
+        context: graphContext,
+        depth: options.depth
+    });
     printSymbolResult({ command: "symbol inspect", ok: true, payload }, true);
 }
 
@@ -237,3 +373,10 @@ export function createSymbolCommand(): Command {
     command.addCommand(inspect);
     return command;
 }
+
+export const __symbolInspectTest__ = Object.freeze({
+    buildSymbolInspectionPayload,
+    narrowSymbolCandidatesByName,
+    parseIncludeFlags,
+    resolveSymbolNode
+});
