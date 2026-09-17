@@ -96,6 +96,50 @@ function use_shared_value() {
         assert.ok(patch.js_body.includes("return 4"));
     });
 
+    void it("expands deep macro chains deterministically", () => {
+        const depth = 100;
+        const declarations = Array.from(
+            { length: depth },
+            (_, index) => `#macro VALUE_${index} ${index === depth - 1 ? "1" : `VALUE_${index + 1} + 1`}`
+        );
+        const source = `${declarations.join("\n")}\nfunction use_deep_value() { return VALUE_0; }`;
+        const ast = Parser.GMLParser.parse(source);
+        const definitions = Transpiler.extractMacroDefinitionsFromAst(ast, "/project/deep-macros.gml", source);
+        const transpiler = new Transpiler.GmlTranspiler();
+        const input = {
+            sourceText: source,
+            symbolId: "gml/script/use_deep_value",
+            ast,
+            macroDefinitions: definitions
+        };
+
+        const firstPatch = transpiler.transpileScript(input);
+        const secondPatch = transpiler.transpileScript(input);
+
+        assert.equal(secondPatch.js_body, firstPatch.js_body);
+        assert.ok(firstPatch.js_body.includes("return"));
+        assert.ok(!firstPatch.js_body.includes("VALUE_"));
+    });
+
+    void it("reports the complete cycle after expanding a previous macro", () => {
+        const source = `#macro FIRST SECOND
+#macro SECOND FIRST
+function use_cycle() { return FIRST; }`;
+        const ast = Parser.GMLParser.parse(source);
+        const definitions = Transpiler.extractMacroDefinitionsFromAst(ast, "/project/cyclic-macros.gml", source);
+
+        assert.throws(
+            () =>
+                new Transpiler.GmlTranspiler().transpileScript({
+                    sourceText: source,
+                    symbolId: "gml/script/use_cycle",
+                    ast,
+                    macroDefinitions: definitions
+                }),
+            /FIRST -> SECOND -> FIRST/u
+        );
+    });
+
     void it("expands statement macros into the surrounding statement list", () => {
         const source = `#macro EARLY_RETURN if (should_return) { return true; }
 function maybe_return() {
