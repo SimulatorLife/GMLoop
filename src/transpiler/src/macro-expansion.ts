@@ -613,9 +613,12 @@ function expandMacroDefinition(
     }
 
     const macroAst = parseMacroExpression(definition);
-    const nextStack = new Set(expansionStack);
-    nextStack.add(definition.name);
-    return transformAstValue(macroAst, definitions, sourcePath, nextStack, null, parameterBindings);
+    expansionStack.add(definition.name);
+    try {
+        return transformAstValue(macroAst, definitions, sourcePath, expansionStack, null, parameterBindings);
+    } finally {
+        expansionStack.delete(definition.name);
+    }
 }
 
 function expandMacroCall(
@@ -679,18 +682,19 @@ function expandMacroStatements(
         throw new TypeError(`Cyclic macro expansion while transpiling ${sourcePath}: ${chain}`);
     }
 
-    const nextStack = new Set(expansionStack);
-    nextStack.add(definition.name);
+    expansionStack.add(definition.name);
     try {
         const statements = parseMacroFunctionBody(definition.value);
         return statements.map((statement) =>
-            transformAstValue(statement, definitions, sourcePath, nextStack, null, new Map())
+            transformAstValue(statement, definitions, sourcePath, expansionStack, null, new Map())
         );
     } catch (error) {
         const message = Core.getErrorMessage(error, { fallback: "invalid macro statement replacement" });
         throw new TypeError(`Could not expand macro ${definition.name} from ${definition.sourcePath}: ${message}`, {
             cause: error
         });
+    } finally {
+        expansionStack.delete(definition.name);
     }
 }
 
