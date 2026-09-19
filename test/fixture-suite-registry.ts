@@ -7,6 +7,7 @@ import { Lint } from "@gmloop/lint";
 import { Refactor } from "@gmloop/refactor";
 import { ESLint } from "eslint";
 
+import { resolveFixtureLintRecoveryMode } from "../src/lint/test/rules/recovery-mode.js";
 import { createIntegrationFixtureSuiteDefinition } from "./integration-fixture-suite-definition.js";
 import {
     collectRefactorProjectGmlFiles,
@@ -111,7 +112,7 @@ function createLintFixtureSuiteRegistration(): FixtureSuiteRegistration {
                             },
                             language: "gml/gml",
                             languageOptions: {
-                                recovery: "limited"
+                                recovery: resolveFixtureLintRecoveryMode(ruleEntries)
                             },
                             rules: ruleEntries
                         }
