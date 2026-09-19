@@ -2,10 +2,18 @@ import assert from "node:assert/strict";
 import path from "node:path";
 import { describe, it } from "node:test";
 
+import { resolveFromRepoRoot } from "../src/shared/workspace-paths.js";
 import * as WorkflowFixtureRoots from "../src/workflow/path-filter.js";
 import { DEFAULT_FIXTURE_DIRECTORIES, normalizeFixtureRoots } from "../src/workflow/path-filter.js";
 
 void describe("workflow fixture root normalization", () => {
+    void it("anchors default fixture directories at the repository root", () => {
+        assert.deepStrictEqual(DEFAULT_FIXTURE_DIRECTORIES, [
+            resolveFromRepoRoot("src", "parser", "test", "input"),
+            resolveFromRepoRoot("src", "format", "test")
+        ]);
+    });
+
     void it("deduplicates additional roots that overlap defaults", () => {
         const firstDefault = DEFAULT_FIXTURE_DIRECTORIES[0];
         const normalized = normalizeFixtureRoots([firstDefault, firstDefault]);
