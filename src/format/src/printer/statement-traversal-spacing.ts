@@ -2,11 +2,38 @@ import { Core } from "@gmloop/core";
 import { util } from "prettier";
 
 import { countTrailingBlankLines, getNextNonWhitespaceCharacter } from "../shared/layout-helpers.js";
-import { DOC_COMMENT_OUTPUT_FLAG, NUMBER_TYPE, STRING_TYPE } from "./constants.js";
+import {
+    DOC_COMMENT_OUTPUT_FLAG,
+    MIN_VARIABLE_DECLARATIONS_BEFORE_LOOP_PADDING,
+    NUMBER_TYPE,
+    STRING_TYPE
+} from "./constants.js";
 import { safeGetParentNode } from "./path-utils.js";
 import { shouldAddNewlinesAroundStatement, shouldSuppressEmptyLineBetween } from "./statement-spacing-policy.js";
 
-const MIN_VARIABLE_DECLARATIONS_BEFORE_LOOP_PADDING = 4;
+/**
+ * Resolve the `minVariablesBeforeLoopPadding` formatter option to a safe,
+ * non-negative integer. Missing, non-numeric, or negative values fall back
+ * to {@link MIN_VARIABLE_DECLARATIONS_BEFORE_LOOP_PADDING} so the loop-padding
+ * heuristic is never bypassed by malformed user input.
+ *
+ * The resolved threshold is the smallest number of contiguous top-level
+ * variable declarations that must precede a loop before the formatter
+ * inserts an extra blank-line padding between the variable block and the
+ * loop.
+ */
+function resolveMinVariablesBeforeLoopPadding(options: unknown): number {
+    if (typeof options !== "object" || options === null) {
+        return MIN_VARIABLE_DECLARATIONS_BEFORE_LOOP_PADDING;
+    }
+
+    const rawValue = (options as { minVariablesBeforeLoopPadding?: unknown }).minVariablesBeforeLoopPadding;
+    if (typeof rawValue !== NUMBER_TYPE || !Number.isFinite(rawValue) || rawValue < 0) {
+        return MIN_VARIABLE_DECLARATIONS_BEFORE_LOOP_PADDING;
+    }
+
+    return Math.floor(rawValue);
+}
 
 function isStaticFunctionVariableDeclaration(node) {
     if (node?.type !== Core.VARIABLE_DECLARATION || node.kind !== "static" || !Array.isArray(node.declarations)) {
@@ -179,14 +206,19 @@ function shouldForceVariableBlockBeforeLoopPadding(
     node,
     nextNode,
     originalText: string | null,
-    isTopLevel = false
+    isTopLevel = false,
+    minVariablesBeforeLoopPadding: number = MIN_VARIABLE_DECLARATIONS_BEFORE_LOOP_PADDING
 ): boolean {
     if (node?.type !== Core.VARIABLE_DECLARATION || !isLoopLikeStatement(nextNode)) {
         return false;
     }
 
     const variableBlockSize = countContiguousVariableDeclarationsBeforeIndexWithSource(statements, index, originalText);
-    if (isTopLevel && variableBlockSize >= MIN_VARIABLE_DECLARATIONS_BEFORE_LOOP_PADDING) {
+
+    // The configurable threshold acts as an opt-in gate: when callers set it
+    // to `0` the heuristic is fully disabled and the source-defined blank
+    // line (or absence thereof) is preserved verbatim.
+    if (minVariablesBeforeLoopPadding > 0 && isTopLevel && variableBlockSize >= minVariablesBeforeLoopPadding) {
         return true;
     }
 
@@ -290,7 +322,8 @@ function handleIntermediateTrailingSpacing({
             node,
             nextNode,
             typeof options.originalText === STRING_TYPE ? options.originalText : null,
-            isTopLevel
+            isTopLevel,
+            resolveMinVariablesBeforeLoopPadding(options)
         );
     const shouldForceConstructorStaticSectionPadding =
         hasAutomaticPaddingCapacityWithSuppressionGuard &&

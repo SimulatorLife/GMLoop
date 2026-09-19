@@ -100,7 +100,7 @@ void test("createDefaultGmlFormatComponents honours an injected resolver", () =>
     });
     const noopNormalizer = (_formatted: string) => "noop";
     const noopSourceFormatter = async () => "formatted";
-    const customLayoutDefaults = Object.freeze({ printWidth: 100, tabWidth: 2 });
+    const customLayoutDefaults = Object.freeze({ printWidth: 100, tabWidth: 2, minVariablesBeforeLoopPadding: 3 });
     const resolver = {
         resolveAdapters: () => {
             resolveCalls += 1;
