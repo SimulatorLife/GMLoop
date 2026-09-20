@@ -70,8 +70,8 @@ The plugin registers `gml/gml` as an ESLint v9 language implementation and retur
 
 Recovery mode is controlled by language options:
 
-- `recovery: "limited"` (default)
-- `recovery: "none"`
+- `recovery: "none"` (default)
+- `recovery: "limited"` for malformed-safe Phase A rules such as `gml/no-scientific-notation` and `gml/require-argument-separators`
 
 ## Public API
 
