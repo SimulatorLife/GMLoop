@@ -83,6 +83,32 @@ export const INLINE_BLOCK_SUFFIX_OVERHEAD = " }".length;
 export const INLINE_BLOCK_TOTAL_OVERHEAD =
     INLINE_BLOCK_PREFIX_OVERHEAD + INLINE_BLOCK_MIDDLE_OVERHEAD + INLINE_BLOCK_SUFFIX_OVERHEAD;
 
+/**
+ * Default fallback value for the `inlineControlFlowBlockMargin` formatter
+ * option. Used when the option is missing from the Prettier options bag,
+ * is not a finite number, or is otherwise unusable.
+ *
+ * Centralising the value here keeps the printer fallback, the
+ * `default-format-components` plugin defaults, and the
+ * `project-config-catalog` documentation entry in lockstep so the catalog
+ * entry, the resolved plugin default, and the runtime fallback can never
+ * silently drift apart.
+ */
+export const DEFAULT_INLINE_CONTROL_FLOW_BLOCK_MARGIN = 0;
+
+/**
+ * Minimum number of contiguous top-level variable declarations that must
+ * precede a loop before the formatter inserts an extra blank-line padding
+ * between the variable block and the loop. Smaller variable blocks keep
+ * the source's natural spacing; larger blocks receive a visual separator
+ * to make the loop's entry point easier to scan.
+ *
+ * The value is exposed as the `minVariablesBeforeLoopPadding` formatter
+ * option so projects with different house styles can tune the heuristic
+ * without forking the printer.
+ */
+export const MIN_VARIABLE_DECLARATIONS_BEFORE_LOOP_PADDING = 4;
+
 // String constants to avoid duplication warnings
 export const STRING_TYPE = "string";
 export const OBJECT_TYPE = "object";
