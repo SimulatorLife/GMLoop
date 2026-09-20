@@ -31,6 +31,16 @@ void test("lint --help output documents --path and --list options", async () => 
     assert.match(stdout, /--config <path>/);
     assert.match(stdout, /--list/);
     assert.match(stdout, /--verbose/);
+    assert.match(stdout, /Suppress progress and clean-run summaries; hide config, overlay, and project-root warnings/);
+});
+
+void test("lint rejects conflicting --quiet and --verbose options", async () => {
+    const result = await runCliTestCommand({ argv: ["lint", "--quiet", "--verbose"] });
+
+    assert.equal(result.exitCode, 2);
+    assert.equal(result.stdout, "");
+    assert.match(result.stderr, /--quiet.*--verbose options cannot be used together/);
+    assert.match(result.stderr, /Remove one of these options and try again/);
 });
 
 void test("lint --list prints command settings and exits without linting", async () => {
