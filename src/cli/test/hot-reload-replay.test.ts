@@ -3,10 +3,11 @@
  *
  * This test writes a GML file to trigger transpilation before any WebSocket
  * client is connected, then connects a client and expects the cached patch to
- * be replayed immediately.
+ * be replayed immediately. Strict assertions keep payload type regressions from
+ * passing through the coercive equality semantics of the legacy assert API.
  */
 
-import assert from "node:assert";
+import assert from "node:assert/strict";
 import type { WatchListener } from "node:fs";
 import { mkdir, rm, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -77,7 +78,7 @@ void describe("Hot reload replay for late subscribers", () => {
             (latestPatch as { id?: string }).id?.includes("late_join_patch"),
             "Patch ID should include the script name"
         );
-        assert.equal((latestPatch as { kind?: string }).kind, "script", "Patch kind should be script");
+        assert.strictEqual((latestPatch as { kind?: string }).kind, "script", "Patch kind should be script");
     });
 
     void it("does not replay deleted file patches to new WebSocket clients", async () => {
@@ -141,7 +142,7 @@ void describe("Hot reload replay for late subscribers", () => {
             const replayedDeletedPatch = websocketClient.receivedPatches.find((patch) =>
                 patch.id.includes("deleted_before_connect")
             );
-            assert.equal(replayedDeletedPatch, undefined, "Deleted files should not replay cached patches");
+            assert.strictEqual(replayedDeletedPatch, undefined, "Deleted files should not replay cached patches");
         } finally {
             abortController.abort();
 
@@ -215,7 +216,7 @@ void describe("Hot reload replay for late subscribers", () => {
             );
 
             const replayedDeletedPatch = receivedPatches.find((patch) => patch.id.includes("removed_by_codemod"));
-            assert.equal(replayedDeletedPatch, undefined, "Deleted files should be pruned before replay");
+            assert.strictEqual(replayedDeletedPatch, undefined, "Deleted files should be pruned before replay");
         } finally {
             abortController.abort();
 
