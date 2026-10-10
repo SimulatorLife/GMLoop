@@ -76,10 +76,6 @@ function applyLogicalOperatorsStyle(operator, style) {
     return Core.getOperatorVariant(operator, coreStyle);
 }
 
-function isMacroStyleIdentifier(node) {
-    return node?.type === "Identifier" && typeof node.name === "string" && /^_*[A-Z][A-Z0-9_]*$/u.test(node.name);
-}
-
 function _printImpl(path, options, print) {
     const node = path.getValue();
 
@@ -388,11 +384,12 @@ function printBinaryExpressionNode(node, path, options, print) {
     const right = print("right");
     const styledOperator = applyLogicalOperatorsStyle(operator, logicalOperatorsStyle);
 
-    // A bare identifier may be a project macro. Keep it attached to its operator
-    // so the formatter cannot emit a macro reference as a standalone GML line.
-    const keepsBareMacroOperandInline =
-        MULTIPLICATIVE_BINARY_OPERATORS.has(operator) && isMacroStyleIdentifier(node.right);
-    const parts = keepsBareMacroOperandInline
+    // Macro references parse like identifiers and GML permits macros with any
+    // casing. Keep a bare identifier RHS attached to multiplicative operators
+    // because this file-scoped printer cannot distinguish variables from macros.
+    const keepsIdentifierOperandInline =
+        MULTIPLICATIVE_BINARY_OPERATORS.has(operator) && node.right?.type === "Identifier";
+    const parts = keepsIdentifierOperandInline
         ? [left, " ", styledOperator, " ", right]
         : [left, " ", styledOperator, line, right];
 

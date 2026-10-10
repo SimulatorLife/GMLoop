@@ -32,10 +32,11 @@ void test("keeps a bare macro operand on the same line as its binary operator", 
     assert.equal(await Format.format(formatted, { printWidth: 70 }), formatted);
 });
 
-void test("still wraps multiplicative expressions ending in ordinary identifiers", async () => {
+void test("keeps lowercase identifier operands attached to multiplicative operators", async () => {
     const formatted = await Format.format("var result = left_operand * right_operand;", { printWidth: 20 });
 
-    assert.match(formatted, /\*\n[ \t]*right_operand;/u);
+    assert.match(formatted, /\* right_operand;/u);
+    assert.doesNotMatch(formatted, /\*\n[ \t]*right_operand;/u);
 });
 
 void test("wraps long arithmetic and string-concatenation expressions after their operators", async () => {
