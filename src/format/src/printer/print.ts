@@ -31,7 +31,7 @@ import {
     resolveObjectWrapOption
 } from "../options/index.js";
 import { buildCallLikeArgumentDocs, hasForcedStructArgumentBreak } from "./call-argument-layout.js";
-import { NUMBER_TYPE, OBJECT_TYPE, STRING_TYPE, UNDEFINED_TYPE } from "./constants.js";
+import { MULTIPLICATIVE_BINARY_OPERATORS, NUMBER_TYPE, OBJECT_TYPE, STRING_TYPE, UNDEFINED_TYPE } from "./constants.js";
 import {
     buildFunctionParameterDocs,
     joinDeclaratorPartsWithCommas,
@@ -74,6 +74,10 @@ import { isInLValueChain } from "./type-guards.js";
 function applyLogicalOperatorsStyle(operator, style) {
     const coreStyle = style === LogicalOperatorsStyle.KEYWORDS ? "keyword" : "symbol";
     return Core.getOperatorVariant(operator, coreStyle);
+}
+
+function isMacroStyleIdentifier(node) {
+    return node?.type === "Identifier" && typeof node.name === "string" && /^_*[A-Z][A-Z0-9_]*$/u.test(node.name);
 }
 
 function _printImpl(path, options, print) {
@@ -384,7 +388,13 @@ function printBinaryExpressionNode(node, path, options, print) {
     const right = print("right");
     const styledOperator = applyLogicalOperatorsStyle(operator, logicalOperatorsStyle);
 
-    const parts = [left, " ", styledOperator, line, right];
+    // A bare identifier may be a project macro. Keep it attached to its operator
+    // so the formatter cannot emit a macro reference as a standalone GML line.
+    const keepsBareMacroOperandInline =
+        MULTIPLICATIVE_BINARY_OPERATORS.has(operator) && isMacroStyleIdentifier(node.right);
+    const parts = keepsBareMacroOperandInline
+        ? [left, " ", styledOperator, " ", right]
+        : [left, " ", styledOperator, line, right];
 
     // Walk up synthetic-parenthesized-expression ancestors directly via the
     // Prettier AstPath's stack at fixed -2 intervals. The stack is laid out
