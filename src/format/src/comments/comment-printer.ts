@@ -9,7 +9,7 @@ import { countTrailingBlankLines } from "../shared/layout-helpers.js";
 const { isObjectLike } = Core;
 
 const { addDanglingComment, addLeadingComment } = util;
-const { join, hardline } = builders;
+const { join, hardline, lineSuffixBoundary } = builders;
 
 type PrinterComment = {
     type?: "CommentLine" | "CommentBlock";
@@ -277,6 +277,12 @@ function printComment(commentPath, options) {
                         hasSimpleLeadingBlankLineInSource(comment, options?.originalText));
                 if (shouldPrependBlankLine) {
                     return [hardline, rawText];
+                }
+                if (isOwnLineComment && hasPreviousLineCommentContent(comment, options?.originalText)) {
+                    if (hasSimpleLeadingBlankLineInSource(comment, options?.originalText)) {
+                        return [lineSuffixBoundary, hardline, rawText];
+                    }
+                    return [lineSuffixBoundary, rawText];
                 }
                 return rawText;
             }
@@ -735,14 +741,37 @@ function handleDetachedOwnLineComment(comment, _text, options /*, ast */) {
     comment.leading = true;
     comment.trailing = false;
     comment.placement = "ownLine";
+    const followsLineComment = hasPreviousLineCommentContent(comment, options?.originalText);
     const leadingWhitespace = typeof comment.leadingWS === "string" ? comment.leadingWS : "";
-    if (!/[\r\n]/.test(leadingWhitespace)) {
+    const hasSourceBlankLine =
+        /[\r\n][\t ]*[\r\n]/.test(leadingWhitespace) ||
+        hasSimpleLeadingBlankLineInSource(comment, options?.originalText);
+    if (followsLineComment && !hasSourceBlankLine) {
+        comment.leadingWS = "\n";
+    } else if (!/[\r\n]/.test(leadingWhitespace)) {
         comment.leadingWS = "\n\n";
     } else if (!/[\r\n][\t ]*[\r\n]/.test(leadingWhitespace)) {
         comment.leadingWS = `${leadingWhitespace}\n`;
     }
     comment.trailingWS = "\n";
     return true;
+}
+
+function hasPreviousLineCommentContent(comment, originalText): boolean {
+    const previousSignificantIndex = resolvePreviousSignificantSourceIndexBeforeComment(comment, originalText);
+    if (previousSignificantIndex === null || !isSourceIndexInsideLineComment(previousSignificantIndex, originalText)) {
+        return false;
+    }
+
+    const lineStart = originalText.lastIndexOf("\n", previousSignificantIndex - 1) + 1;
+    const commentStart = originalText.lastIndexOf("//", previousSignificantIndex);
+    if (commentStart < lineStart) {
+        return false;
+    }
+
+    const lineEnd = originalText.indexOf("\n", previousSignificantIndex);
+    const commentBody = originalText.slice(commentStart + 2, lineEnd === -1 ? originalText.length : lineEnd);
+    return !/^[\s/]*$/u.test(commentBody);
 }
 
 function attachTrailingDocLineInsideExistingDocBlock(comment, followingNode, originalText) {

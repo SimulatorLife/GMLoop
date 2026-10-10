@@ -265,7 +265,7 @@ export function printTernaryExpressionNode(_node: any, path: any, _options: any,
     const consequentDoc = path.call(print, "consequent");
     const alternateDoc = path.call(print, "alternate");
 
-    const ternaryDoc = group([testDoc, indent([line, "? ", consequentDoc, line, ": ", alternateDoc])]);
+    const ternaryDoc = group([testDoc, " ?", indent([line, consequentDoc, " :", line, alternateDoc])]);
 
     return shouldWrapTernaryExpression(path) ? concat(["(", ternaryDoc, ")"]) : ternaryDoc;
 }

@@ -3,7 +3,7 @@
     "manualRoot": "vendor/GameMaker-Manual",
     "packageName": null,
     "packageVersion": null,
-    "manualCommitHash": "120be6779f91ae5b974c961edb7cb7ee9e1fe600"
+    "manualCommitHash": "b4459e222d18d7ef28b8da96f29a8c7afe72325d"
   },
   "identifiers": {
     "abs": {
@@ -15937,10 +15937,10 @@
           {
             "description": "The colour to check",
             "name": "col",
-            "type": ""
+            "type": "Colour"
           }
         ],
-        "returnType": "",
+        "returnType": "Real",
         "signature": "colour_get_saturation(col)"
       }
     },
@@ -24290,7 +24290,7 @@
       "deprecated": false,
       "legacyUsage": "call",
       "hover": {
-        "description": "With this function you can set the base draw alpha for the game. This value can be set from 0 to 1 with 0 being fully transparent and 1 being fully opaque (the default value), and will affect all further drawing, including backgrounds, sprites, fonts, primitives and 3D.",
+        "description": "With this function you can set the base draw alpha for the game. This value can be set from 0 to 1 with 0 being fully transparent and 1 being fully opaque (the default value), and will affect further drawing, including backgrounds, sprites, fonts, primitives and 3D.",
         "parameters": [
           {
             "description": "The alpha to set (between 0 and 1)",
@@ -24833,7 +24833,7 @@
             "type": "Sprite Asset"
           },
           {
-            "description": "The sub-image (frame) of the sprite to draw (image_index or -1 correlate to the current frame of animation in the object).",
+            "description": "",
             "name": "subimg",
             "type": "Real"
           },
@@ -24874,7 +24874,7 @@
             "type": "Sprite Asset"
           },
           {
-            "description": "The sub-image (frame) of the sprite to draw (image_index or -1 correlate to the current frame of animation in the object).",
+            "description": "",
             "name": "subimg",
             "type": "Real"
           },
@@ -24940,7 +24940,7 @@
             "type": "Sprite Asset"
           },
           {
-            "description": "The subimg (frame) of the sprite to draw (image_index or -1 correlate to the current frame of animation in the object).",
+            "description": "",
             "name": "subimg",
             "type": "Real"
           },
@@ -25041,7 +25041,7 @@
             "type": "Sprite Asset"
           },
           {
-            "description": "The sub-image (frame) of the sprite to draw (image_index or -1 correlate to the current frame of animation in the instance).",
+            "description": "",
             "name": "subimg",
             "type": "Real"
           },
@@ -25102,7 +25102,7 @@
             "type": "Sprite Asset"
           },
           {
-            "description": "The sub-image (frame) of the sprite to draw (image_index or -1 correlate to the current frame of animation in the object).",
+            "description": "",
             "name": "subimg",
             "type": "Real"
           },
@@ -25183,7 +25183,7 @@
             "type": "Sprite Asset"
           },
           {
-            "description": "The subimg (frame) of the sprite to draw (image_index or -1 correlate to the current frame of animation in the object).",
+            "description": "",
             "name": "subimg",
             "type": "Real"
           },
@@ -25256,32 +25256,32 @@
           {
             "description": "The sprite to draw.",
             "name": "sprite",
-            "type": ""
+            "type": "Sprite Asset"
           },
           {
-            "description": "The subimg (frame) of the sprite to draw (image_index or -1 correlate to the current frame of animation in the object).",
+            "description": "",
             "name": "subimg",
-            "type": ""
+            "type": "Real"
           },
           {
             "description": "The x coordinate of where to draw the sprite.",
             "name": "x",
-            "type": ""
+            "type": "Real"
           },
           {
             "description": "The y coordinate of where to draw the sprite.",
             "name": "y",
-            "type": ""
+            "type": "Real"
           },
           {
             "description": "The width of the area the stretched sprite will occupy.",
             "name": "w",
-            "type": ""
+            "type": "Real"
           },
           {
             "description": "The height of the area the stretched sprite will occupy.",
             "name": "h",
-            "type": ""
+            "type": "Real"
           }
         ],
         "returnType": "N/A",
@@ -25310,7 +25310,7 @@
             "type": "Sprite Asset"
           },
           {
-            "description": "The subimg (frame) of the sprite to draw (image_index or -1 correlate to the current frame of animation in the object).",
+            "description": "",
             "name": "subimg",
             "type": "Real"
           },
@@ -25371,7 +25371,7 @@
             "type": "Sprite Asset"
           },
           {
-            "description": "The subimg (frame) of the sprite to draw (image_index or -1 correlate to the current frame of animation in the object).",
+            "description": "",
             "name": "subimg",
             "type": "Real"
           },
@@ -25412,7 +25412,7 @@
             "type": "Sprite Asset"
           },
           {
-            "description": "The subimg (frame) of the sprite to draw (image_index or -1 correlate to the current frame of animation in the object).",
+            "description": "",
             "name": "subimg",
             "type": "Real"
           },
@@ -28729,7 +28729,7 @@
       "deprecated": false,
       "legacyUsage": "call",
       "hover": {
-        "description": "With this function you can clear all data from the given list data structure. This does NOT destroy the data structure (for that you should use ds_list_destroy()) it only wipes all data from it and makes the list empty (zero in size). Note that clearing a list will de-reference any data structures stored in it giving a memory leak, so you would need to go through the list and destroy all data structure items manually before clearing it to prevent this. The only time this is not required is when you have flagged any items in the list as another DS list or as a DS map, in which case these items will be destroyed (not cleared!) and their memory cleaned up automatically when the parent is cleared.",
+        "description": "With this function you can clear all data from the given list data structure. This does NOT destroy the data structure (for that you should use ds_list_destroy()) it only wipes all data from it and makes the list empty (zero in size).",
         "parameters": [
           {
             "description": "The handle of the data structure to clear.",
@@ -29447,7 +29447,7 @@
       "deprecated": false,
       "legacyUsage": "call",
       "hover": {
-        "description": "This function will clear the (previously created) DS map of all key/value pairs, but it will not delete the DS map itself from memory. For that you should use the function ds_map_destroy(). Note that clearing a map will de-reference any data structures stored in the map giving a memory leak, so you would need to go through it and destroy all data structure items manually before clearing the map to prevent this. The only time this is not required is when you have flagged any items in the map as a DS list or as another DS map, in which case these items will be destroyed (not cleared!) and their memory cleaned up automatically when the parent map is cleared.",
+        "description": "This function will clear the (previously created) DS map of all key/value pairs, but it will not delete the DS map itself from memory. For that you should use the function ds_map_destroy().",
         "parameters": [
           {
             "description": "The handle of the data structure to clear.",
@@ -30333,7 +30333,7 @@
       "deprecated": false,
       "legacyUsage": "call",
       "hover": {
-        "description": "With this function you can clear all data from the given priority queue data structure. This does NOT destroy the data structure (for that you should use ds_priority_destroy()), it only wipes all data from it and returns an empty priority queue.",
+        "description": "With this function you can clear all data from the given priority queue data structure. This does NOT destroy the data structure (for that you should use ds_priority_destroy()), it only wipes all data from it.",
         "parameters": [
           {
             "description": "The handle of the data structure to clear.",
@@ -30729,7 +30729,7 @@
       "deprecated": false,
       "legacyUsage": "call",
       "hover": {
-        "description": "With this function you can clear all data from the given queue data structure. This does NOT destroy the data structure (for that you should use ds_queue_destroy()), it only wipes all data from it and returns an empty queue.",
+        "description": "With this function you can clear all data from the given queue data structure. This does NOT destroy the data structure (for that you should use ds_queue_destroy()), it only wipes all data from it.",
         "parameters": [
           {
             "description": "The handle of the data structure to clear.",
@@ -31099,7 +31099,7 @@
       "deprecated": false,
       "legacyUsage": "call",
       "hover": {
-        "description": "With this function you can clear all data from the given stack data structure. This does NOT destroy the data structure (for that you should use ds_stack_destroy()), it only wipes all data from it and returns an empty stack.",
+        "description": "With this function you can clear all data from the given stack data structure. This does NOT destroy the data structure (for that you should use ds_stack_destroy()), it only wipes all data from it.",
         "parameters": [
           {
             "description": "The handle of the data structure to clear.",
@@ -64605,7 +64605,7 @@
             "type": "Real"
           }
         ],
-        "returnType": "Real",
+        "returnType": "N/A",
         "signature": "math_set_epsilon(epsilon)"
       }
     },
@@ -70041,7 +70041,7 @@
           {
             "description": "The index of the particle emitter",
             "name": "ind",
-            "type": "Particle Emitter ID"
+            "type": "Particle Emitter"
           },
           {
             "description": "The minimum possible value for the interval, expressed in interval_unit",

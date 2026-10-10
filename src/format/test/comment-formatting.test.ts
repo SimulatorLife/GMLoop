@@ -68,6 +68,41 @@ void test("does not add a second blank line before nested leading comments", asy
     );
 });
 
+void test("preserves source order for adjacent line comments after else", async () => {
+    const source = toGmlSource([
+        "if (is_dynamic) {",
+        "} else // If the transformation queue is empty, this is the first dynamic to be added.",
+        "// If it's static as well, there's no point in adding it to the transformation queue",
+        "if (is_static) {",
+        "}",
+        ""
+    ]);
+    const formatted = await Format.format(source);
+    const firstCommentIndex = formatted.indexOf("// If the transformation queue is empty");
+    const secondCommentIndex = formatted.indexOf("// If it's static as well");
+
+    assert.ok(firstCommentIndex !== -1);
+    assert.ok(secondCommentIndex > firstCommentIndex);
+    assert.match(formatted, /queue is empty, this is the first dynamic to be added\.\r?\n\/\/ If it's static/u);
+    assert.equal(await Format.format(formatted), formatted);
+});
+
+void test("preserves blank lines between adjacent line comments after else", async () => {
+    const source = toGmlSource([
+        "if (is_dynamic) {",
+        "} else // If the transformation queue is empty, this is the first dynamic to be added.",
+        "",
+        "// If it's static as well, there's no point in adding it to the transformation queue",
+        "if (is_static) {",
+        "}",
+        ""
+    ]);
+    const formatted = await Format.format(source);
+
+    assert.match(formatted, /queue is empty, this is the first dynamic to be added\.\r?\n\r?\n\/\/ If it's static/u);
+    assert.equal(await Format.format(formatted), formatted);
+});
+
 void test("preserves triple-slash continuation lines adjacent to doc tags", async () => {
     const source = [
         "/// @description Base doc line.",
