@@ -24,7 +24,7 @@ catalog:
   eslint-plugin-boundaries: "^6"
   prettier: "^3"
   typescript: "^6"
-  ws: "^8"
+  ws: "^8.21.3"
 
 onlyBuiltDependencies:
   - esbuild
