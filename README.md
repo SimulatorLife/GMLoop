@@ -258,7 +258,7 @@ pnpm run test:lint
 pnpm run test:cli
 
 # formatter
-pnpm run format:gml -- /path/to/project
+pnpm run format:gml -- --path /path/to/project
 
 # parser AST inspection
 pnpm run cli -- parse --path /path/to/project/scripts/demo.gml
