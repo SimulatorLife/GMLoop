@@ -1377,7 +1377,11 @@ export function createLintCommand(): Command {
             .addOption(createPathOption())
             .option("--project-strict", `Fail when lint targets fall outside forced ${PATH_OPTION_FLAGS} root`, false)
             .addOption(createListOption())
-            .option("--quiet", "Suppress fallback warnings", false)
+            .option(
+                "--quiet",
+                "Suppress progress and clean-run summaries; hide config, overlay, and project-root warnings",
+                false
+            )
             .addOption(createVerboseOption())
             .addHelpText("after", () =>
                 [
@@ -1400,6 +1404,14 @@ export function createLintCommand(): Command {
 export async function runLintCommand(command: CommanderCommandLike): Promise<void> {
     const options = resolveCommandOptions(command);
     const targets = await normalizeLintTargets(command);
+
+    if (options.quiet && options.verbose) {
+        console.error(
+            "The --quiet and --verbose options cannot be used together. Remove one of these options and try again."
+        );
+        setProcessExitCode(2);
+        return;
+    }
 
     if (options.list) {
         printLintCommandSettings(options, targets);
