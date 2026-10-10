@@ -202,19 +202,24 @@ export async function probeStdioMcpServer(
             });
         });
 
-        sendMessage({
-            id: 1,
-            jsonrpc: "2.0",
-            method: "initialize",
-            params: {
-                capabilities: {},
-                clientInfo: {
-                    name: "gmloop-config-probe",
-                    version: "0.0.1"
-                },
-                protocolVersion: "2025-03-26"
-            }
-        });
+        try {
+            sendMessage({
+                id: 1,
+                jsonrpc: "2.0",
+                method: "initialize",
+                params: {
+                    capabilities: {},
+                    clientInfo: {
+                        name: "gmloop-config-probe",
+                        version: "0.0.1"
+                    },
+                    protocolVersion: "2025-03-26"
+                }
+            });
+        } catch (error) {
+            finalize(() => reject(error instanceof Error ? error : new Error(String(error))));
+            return;
+        }
 
         waitForMessage(
             (message) => message.id === 1,
@@ -227,17 +232,22 @@ export async function probeStdioMcpServer(
                     return;
                 }
 
-                sendMessage({
-                    jsonrpc: "2.0",
-                    method: "notifications/initialized",
-                    params: {}
-                });
-                sendMessage({
-                    id: 2,
-                    jsonrpc: "2.0",
-                    method: "tools/list",
-                    params: {}
-                });
+                try {
+                    sendMessage({
+                        jsonrpc: "2.0",
+                        method: "notifications/initialized",
+                        params: {}
+                    });
+                    sendMessage({
+                        id: 2,
+                        jsonrpc: "2.0",
+                        method: "tools/list",
+                        params: {}
+                    });
+                } catch (error) {
+                    finalize(() => reject(error instanceof Error ? error : new Error(String(error))));
+                    return;
+                }
 
                 waitForMessage(
                     (toolsMessage) => toolsMessage.id === 2,
