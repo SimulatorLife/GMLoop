@@ -26,7 +26,9 @@ function createContext(): CleanupContext {
         sourcePathToPatchIds: new Map<string, Set<string>>(),
         debouncedHandlers: new Map(),
         macroDefinitionsBySourcePath: new Map() as MacroDefinitionsBySourcePath,
-        macroDefinitions: new Map<string, MacroDefinition>()
+        macroDefinitions: new Map<string, MacroDefinition>(),
+        roomResources: new Map<string, Record<string, unknown>>(),
+        resourcePatches: new Map()
     };
 }
 

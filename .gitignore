@@ -216,3 +216,5 @@ dist
 .pnp.*
 
 .agents/skills/repomix-reference-gmloop/
+# CocoIndex Code (ccc)
+/.cocoindex_code/

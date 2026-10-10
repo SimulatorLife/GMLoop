@@ -8,7 +8,8 @@ import {
     isTrustedValidationProducer,
     planAutoMergePr,
     selectNewestValidationRuns,
-    summarizeFinalizerRuns} from "../src/commands/ci-automerge-plan.js";
+    summarizeFinalizerRuns
+} from "../src/commands/ci-automerge-plan.js";
 import { normalizeAutoMergeState } from "../src/commands/ci-automerge-state.js";
 
 const HEAD = "a".repeat(40);
