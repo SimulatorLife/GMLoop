@@ -44,29 +44,29 @@ void describe("areAstValuesEquivalentIgnoringParentheses", () => {
         assert.ok(!areAstValuesEquivalentIgnoringParentheses(left, right));
     });
 
-    void it("ignores position metadata keys", () => {
-        const left = { type: "Identifier", name: "x", start: 0, end: 5 };
-        const right = { type: "Identifier", name: "x", start: 100, end: 200 };
-        assert.ok(areAstValuesEquivalentIgnoringParentheses(left, right));
-    });
-
-    void it("ignores loc and range keys", () => {
-        const left = { type: "Literal", value: "42", loc: { start: { line: 1 } }, range: [0, 2] };
-        const right = { type: "Literal", value: "42", loc: { start: { line: 99 } }, range: [50, 52] };
-        assert.ok(areAstValuesEquivalentIgnoringParentheses(left, right));
-    });
-
-    void it("ignores comments and tokens keys", () => {
-        const left = { type: "Literal", value: "1", comments: ["a"], tokens: ["b"] };
-        const right = { type: "Literal", value: "1" };
-        assert.ok(areAstValuesEquivalentIgnoringParentheses(left, right));
-    });
-
-    void it("ignores parent key", () => {
-        const parentA = { type: "Program" };
-        const parentB = { type: "Block" };
-        const left = { type: "Identifier", name: "x", parent: parentA };
-        const right = { type: "Identifier", name: "x", parent: parentB };
+    void it("ignores every metadata key group simultaneously (position, loc/range, comments/tokens, parent)", () => {
+        // Varying all ignored-key groups at once (rather than one group per test)
+        // proves they are ignored in combination, not just in isolation.
+        const left = {
+            type: "Identifier",
+            name: "x",
+            start: 0,
+            end: 5,
+            loc: { start: { line: 1 } },
+            range: [0, 2],
+            comments: ["a"],
+            tokens: ["b"],
+            parent: { type: "Program" }
+        };
+        const right = {
+            type: "Identifier",
+            name: "x",
+            start: 100,
+            end: 200,
+            loc: { start: { line: 99 } },
+            range: [50, 52],
+            parent: { type: "Block" }
+        };
         assert.ok(areAstValuesEquivalentIgnoringParentheses(left, right));
     });
 
