@@ -1519,6 +1519,9 @@ export async function runLintCommand(command: CommanderCommandLike): Promise<voi
         await warnOverlayWithoutLanguageWiringIfNeeded({ eslint, results, quiet: options.quiet });
 
         if (results.length === 0) {
+            if (options.formatter === "json") {
+                process.stdout.write("[]\n");
+            }
             emitNoLintableFilesMessage(targets);
             setProcessExitCode(0);
             return;
