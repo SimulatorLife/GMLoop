@@ -139,8 +139,10 @@ pnpm run cli -- lint --write path/to/project
 - `--no-default-config` - Disable bundled fallback config
 - `--path <path>` - Force project root directory or `.yyp` path
 - `--project-strict` - Fail when linted files are outside forced project root
-- `--quiet` - Suppress fallback/config discovery warnings
+- `--quiet` - Suppress progress and clean-run summaries; hide config, overlay, and project-root warnings
 - `--verbose` - Emit per-file lint/format timing and total run duration diagnostics
+
+`--quiet` and `--verbose` cannot be used together. Choose one output mode for each run.
 
 `lint` processes targets file-by-file in sequence. With `--write`, each processed file path is emitted immediately to `stderr` as progress output while fixes are written incrementally.
 
