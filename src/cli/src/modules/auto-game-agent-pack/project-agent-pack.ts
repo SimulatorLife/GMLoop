@@ -458,12 +458,65 @@ async function writeProjectFile(projectRoot: string, packagedFile: PackagedProje
     await writeFile(targetPath, packagedFile.contents);
 }
 
+/**
+ * Build a diagnostic message for the "expected a JSON object, got <kind>"
+ * shape failures raised by {@link parseJsonObject}.
+ *
+ * Delegates value classification to {@link Core.describeValueWithArticle} so
+ * the phrasing (`"an array"`, `"a number"`, `"a boolean"`, `"null"`, …)
+ * matches every other input-parsing call site in the monorepo. The empty
+ * string label (`"an empty string"`) is reused so the same diagnostic reads
+ * identically whether the failure originates from this module or from the
+ * shared `parsePackageJsonContents` helper.
+ */
+function buildProjectJsonObjectErrorMessage(sourcePath: string, payload: unknown): string {
+    return (
+        `${AGENT_PACK_NAME} project file must contain a JSON object at ${sourcePath}. ` +
+        `Received ${Core.describeValueWithArticle(payload, { emptyStringLabel: "an empty string" })}.`
+    );
+}
+
+/**
+ * Parse a JSON file used by the merge routines and assert the result is a
+ * plain object suitable for in-place key insertion.
+ *
+ * The previous implementation let the raw `SyntaxError` from `JSON.parse`
+ * escape through and surfaced a single-shape `"Expected a JSON object"`
+ * error when the parsed value was an array or primitive. That made it
+ * impossible to distinguish hand-truncated files (which crashed the CLI
+ * with an opaque "Unexpected token" message) from hand-edited files of the
+ * wrong shape (which surfaced as a bare `"Expected a JSON object in …"`
+ * error without naming the actual kind).
+ *
+ * The hardened variant delegates the syntactic parse to
+ * {@link Core.parseJsonObjectWithContext}, which decorates any
+ * {@link SyntaxError} with the source path and the description of the
+ * document being parsed and preserves the underlying parser failure via
+ * `cause`. Shape mismatches now surface as a {@link TypeError} whose
+ * message names both the offending file and the actual value kind
+ * (`"an array"`, `"a number"`, `"null"`, …), so the `try`/`catch` blocks
+ * around the call sites can still downgrade them to a `"conflict"`
+ * disposition while diagnostic logs identify the root cause without
+ * additional plumbing.
+ *
+ * @param source Raw file contents exactly as read from disk.
+ * @param sourcePath Path surfaced in error messages so callers can map
+ *                   the failure back to a specific template or user
+ *                   project file.
+ * @returns A plain object parsed from {@link source}.
+ * @throws {TypeError} | {SyntaxError} When the payload fails the syntactic
+ *                     or shape contract. The thrown error always names
+ *                     {@link sourcePath} and, for shape failures, the
+ *                     actual value kind.
+ */
 function parseJsonObject(source: string, sourcePath: string): Record<string, unknown> {
-    const parsed: unknown = JSON.parse(source);
-    if (!isRecord(parsed)) {
-        throw new Error(`Expected a JSON object in ${sourcePath}`);
-    }
-    return { ...parsed };
+    return Core.parseJsonObjectWithContext(source, {
+        source: sourcePath,
+        description: `${AGENT_PACK_NAME} project file`,
+        createAssertOptions: (payload) => ({
+            errorMessage: buildProjectJsonObjectErrorMessage(sourcePath, payload)
+        })
+    });
 }
 
 async function mergeJsonObjectProjectFile(
@@ -884,10 +937,16 @@ export async function initializeAgentPack(
  * directly without having to drive the full project initialization pipeline.
  * The named `__agentPackTest__` marker keeps these references out of the
  * public API while still being discoverable for the internal test suite.
+ *
+ * `parseJsonObject` is exposed alongside the receipt parser so the merge
+ * helper has parity with `parseAgentPackReceipt` — both surface structured
+ * `TypeError`s that name the offending source path and the actual value
+ * kind, and both are covered by dedicated hardening tests.
  */
 export const __agentPackTest__ = Object.freeze({
     agentPackReceiptsMatch,
     areStringArraysEqual,
     areStringRecordsEqual,
-    parseAgentPackReceipt
+    parseAgentPackReceipt,
+    parseJsonObject
 });
