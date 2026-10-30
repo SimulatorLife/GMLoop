@@ -1527,128 +1527,120 @@ export function createNormalizeDocCommentsRule(definition: GmlRuleDefinition): R
         create(context) {
             return Object.freeze({
                 Program(programNode) {
-                    const text = context.sourceCode.text;
-                    const lineEnding = Core.dominantLineEnding(text);
-                    const lines = text.split(/\r?\n/u);
-                    const lineStartOffsets = computeLineStartOffsets(text);
-                    const functionNodesByLineIndex = collectFunctionNodesByStartLine(programNode, lineStartOffsets);
-                    const rewrittenLines: Array<string> = [];
-
-                    let pendingDocBlock: Array<string> = [];
-                    let pendingGapLinesAfterDocBlock: Array<string> = [];
-                    for (const [lineIndex, line] of lines.entries()) {
-                        if (
-                            /^\s*\/\/\//u.test(line) ||
-                            /^\s*\/\/\s*@/u.test(line) ||
-                            /^\s*\/\/\s*\/(?!\/)/u.test(line)
-                        ) {
-                            if (pendingDocBlock.length > 0 && pendingGapLinesAfterDocBlock.length > 0) {
-                                flushDetachedDocCommentBlock(
-                                    rewrittenLines,
-                                    pendingDocBlock,
-                                    pendingGapLinesAfterDocBlock,
-                                    true
-                                );
-                                pendingDocBlock = [];
-                                pendingGapLinesAfterDocBlock = [];
-                            }
-                            pendingDocBlock.push(line);
-                            continue;
-                        }
-
-                        if (pendingDocBlock.length > 0 && /^\s*$/u.test(line)) {
-                            pendingGapLinesAfterDocBlock.push(line);
-                            continue;
-                        }
-
-                        const astFunctionCandidate = functionNodesByLineIndex.get(lineIndex)?.[0] ?? null;
-                        const hasAstNode = astFunctionCandidate !== null;
-
-                        // when running under the minimalist test harness the AST will be
-                        // just `{type:"Program"}` so the map will be empty; fall back to a
-                        // simple regex to recognize function headers in that case.
-                        const isTextualFunctionDeclaration = isTextualNamedFunctionDeclarationLine(line);
-                        const hasLeadingIndentation = /^\s+/u.test(line);
-                        const isTextualFunctionAssignment =
-                            /^\s*(?:var\s+|static\s+)?(?:[A-Za-z_]\w*\.)?[A-Za-z_]\w*\s*=\s*function\b/u.test(line);
-                        const isTextualFunction =
-                            isTextualFunctionDeclaration ||
-                            (isTextualFunctionAssignment && (pendingDocBlock.length > 0 || !hasLeadingIndentation));
-                        const isFunctionLine = hasAstNode || isTextualFunction;
-
-                        if (isFunctionLine) {
-                            const indentationMatch = /^(\s*)/.exec(line);
-                            const indentation = indentationMatch ? indentationMatch[1] : "";
-
-                            const processedBlock = pendingDocBlock.length > 0 ? processDocBlock(pendingDocBlock) : [];
-                            const synthesized = astFunctionCandidate
-                                ? synthesizeFunctionDocCommentBlock(
-                                      processedBlock,
-                                      text,
-                                      astFunctionCandidate.functionNode,
-                                      !astFunctionCandidate.assignmentStyle ||
-                                          !hasLeadingIndentation ||
-                                          astFunctionCandidate.staticStyle,
-                                      astFunctionCandidate.assignmentStyle,
-                                      astFunctionCandidate.propertyStyle,
-                                      astFunctionCandidate.staticStyle,
-                                      hasLeadingIndentation
-                                  )
-                                : synthesizeTextFallbackDocCommentBlock({
-                                      processedBlock,
-                                      line,
-                                      indentation,
-                                      lines,
-                                      lineIndex
-                                  });
-
-                            if (synthesized !== null) {
-                                if (synthesized.length > 0) {
-                                    if (
-                                        shouldSeparateTopLevelSynthesizedDocBlock(
-                                            rewrittenLines,
-                                            synthesized,
-                                            hasLeadingIndentation
-                                        )
-                                    ) {
-                                        rewrittenLines.push("");
-                                    }
-                                    rewrittenLines.push(...synthesized);
-                                }
-                            } else if (processedBlock.length > 0) {
-                                rewrittenLines.push(...canonicalizeDescriptionToDesc(processedBlock));
-                            }
-                            pendingDocBlock = [];
-                            pendingGapLinesAfterDocBlock = [];
-                        } else {
-                            flushDetachedDocCommentBlock(
-                                rewrittenLines,
-                                pendingDocBlock,
-                                pendingGapLinesAfterDocBlock,
-                                false
-                            );
-                            pendingDocBlock = [];
-                            pendingGapLinesAfterDocBlock = [];
-                        }
-
-                        rewrittenLines.push(normalizeDocCommentPrefixLine(line));
-                    }
-
-                    if (pendingDocBlock.length > 0) {
-                        flushDetachedDocCommentBlock(
-                            rewrittenLines,
-                            pendingDocBlock,
-                            pendingGapLinesAfterDocBlock,
-                            false
-                        );
-                    }
-
-                    const rewritten = rewrittenLines.join(lineEnding);
-                    reportFullTextRewrite(context, definition.messageId, text, rewritten);
+                    normalizeDocCommentsInProgram(context, definition, programNode);
                 }
             });
         }
     });
+}
+
+function normalizeDocCommentsInProgram(
+    context: Rule.RuleContext,
+    definition: GmlRuleDefinition,
+    programNode: unknown
+): void {
+    const text = context.sourceCode.text;
+    const lineEnding = Core.dominantLineEnding(text);
+    const lines = text.split(/\r?\n/u);
+    const lineStartOffsets = computeLineStartOffsets(text);
+    const functionNodesByLineIndex = collectFunctionNodesByStartLine(programNode, lineStartOffsets);
+    const rewrittenLines = iterateDocumentLinesForDocCommentNormalization(lines, text, functionNodesByLineIndex);
+    const rewritten = rewrittenLines.join(lineEnding);
+    reportFullTextRewrite(context, definition.messageId, text, rewritten);
+}
+
+function iterateDocumentLinesForDocCommentNormalization(
+    lines: ReadonlyArray<string>,
+    sourceText: string,
+    functionNodesByLineIndex: ReadonlyMap<number, ReadonlyArray<FunctionLineCandidate>>
+): Array<string> {
+    const rewrittenLines: Array<string> = [];
+
+    let pendingDocBlock: Array<string> = [];
+    let pendingGapLinesAfterDocBlock: Array<string> = [];
+    for (const [lineIndex, line] of lines.entries()) {
+        if (/^\s*\/\/\//u.test(line) || /^\s*\/\/\s*@/u.test(line) || /^\s*\/\/\s*\/(?!\/)/u.test(line)) {
+            if (pendingDocBlock.length > 0 && pendingGapLinesAfterDocBlock.length > 0) {
+                flushDetachedDocCommentBlock(rewrittenLines, pendingDocBlock, pendingGapLinesAfterDocBlock, true);
+                pendingDocBlock = [];
+                pendingGapLinesAfterDocBlock = [];
+            }
+            pendingDocBlock.push(line);
+            continue;
+        }
+
+        if (pendingDocBlock.length > 0 && /^\s*$/u.test(line)) {
+            pendingGapLinesAfterDocBlock.push(line);
+            continue;
+        }
+
+        const astFunctionCandidate = functionNodesByLineIndex.get(lineIndex)?.[0] ?? null;
+        const hasAstNode = astFunctionCandidate !== null;
+
+        // when running under the minimalist test harness the AST will be
+        // just `{type:"Program"}` so the map will be empty; fall back to a
+        // simple regex to recognize function headers in that case.
+        const isTextualFunctionDeclaration = isTextualNamedFunctionDeclarationLine(line);
+        const hasLeadingIndentation = /^\s+/u.test(line);
+        const isTextualFunctionAssignment =
+            /^\s*(?:var\s+|static\s+)?(?:[A-Za-z_]\w*\.)?[A-Za-z_]\w*\s*=\s*function\b/u.test(line);
+        const isTextualFunction =
+            isTextualFunctionDeclaration ||
+            (isTextualFunctionAssignment && (pendingDocBlock.length > 0 || !hasLeadingIndentation));
+        const isFunctionLine = hasAstNode || isTextualFunction;
+
+        if (isFunctionLine) {
+            const indentationMatch = /^(\s*)/.exec(line);
+            const indentation = indentationMatch ? indentationMatch[1] : "";
+
+            const processedBlock = pendingDocBlock.length > 0 ? processDocBlock(pendingDocBlock) : [];
+            const synthesized = astFunctionCandidate
+                ? synthesizeFunctionDocCommentBlock(
+                      processedBlock,
+                      sourceText,
+                      astFunctionCandidate.functionNode,
+                      !astFunctionCandidate.assignmentStyle ||
+                          !hasLeadingIndentation ||
+                          astFunctionCandidate.staticStyle,
+                      astFunctionCandidate.assignmentStyle,
+                      astFunctionCandidate.propertyStyle,
+                      astFunctionCandidate.staticStyle,
+                      hasLeadingIndentation
+                  )
+                : synthesizeTextFallbackDocCommentBlock({
+                      processedBlock,
+                      line,
+                      indentation,
+                      lines,
+                      lineIndex
+                  });
+
+            if (synthesized !== null) {
+                if (synthesized.length > 0) {
+                    if (shouldSeparateTopLevelSynthesizedDocBlock(rewrittenLines, synthesized, hasLeadingIndentation)) {
+                        rewrittenLines.push("");
+                    }
+                    rewrittenLines.push(...synthesized);
+                }
+            } else if (processedBlock.length > 0) {
+                rewrittenLines.push(...canonicalizeDescriptionToDesc(processedBlock));
+            }
+            pendingDocBlock = [];
+            pendingGapLinesAfterDocBlock = [];
+        } else {
+            flushDetachedDocCommentBlock(rewrittenLines, pendingDocBlock, pendingGapLinesAfterDocBlock, false);
+            pendingDocBlock = [];
+            pendingGapLinesAfterDocBlock = [];
+        }
+
+        rewrittenLines.push(normalizeDocCommentPrefixLine(line));
+    }
+
+    if (pendingDocBlock.length > 0) {
+        flushDetachedDocCommentBlock(rewrittenLines, pendingDocBlock, pendingGapLinesAfterDocBlock, false);
+    }
+
+    return rewrittenLines;
 }
 
 function getFunctionParameterNames(functionNode: any): { inOrder: string[]; set: Set<string> } {
