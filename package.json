@@ -175,7 +175,7 @@
     "eslint-plugin-unicorn": "^62",
     "eslint-plugin-unused-imports": "^4",
     "eslint-plugin-yml": "^3",
-    "globals": "^17",
+    "globals": "catalog:",
     "husky": "^9",
     "jscpd": "^4.2.3",
     "lsp-mcp-server": "^1.1.20",
