@@ -4,6 +4,7 @@
     "rootDir": ".",
     "outDir": "./dist",
     "tsBuildInfoFile": "./dist/.tsbuildinfo",
+    "strictBuiltinIteratorReturn": true,
     "paths": {
       "@gmloop/core": ["../core/index.ts"],
       "@gmloop/format": ["../format/index.ts"],

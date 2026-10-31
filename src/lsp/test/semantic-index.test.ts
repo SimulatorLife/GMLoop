@@ -1428,3 +1428,42 @@ void test("semantic index composite exposes every role interface to segregated c
         await fs.rm(projectRoot, { recursive: true, force: true }).catch(() => {});
     }
 });
+
+void test("project-root cache stays bounded across a long-running server session", async () => {
+    // Regression test for an unbounded module-level cache: `getProjectRoot`
+    // used to grow by one entry per distinct absolute file path ever queried,
+    // for the entire lifetime of the LSP server process. A multi-hour editing
+    // session touching thousands of files (document opens, watched-file
+    // changes, background re-indexing all call through `invalidateForFilePath`)
+    // would retain every entry forever. The fix caps the cache with LRU
+    // eviction; this test proves the cap holds even when far more distinct
+    // paths are queried than the configured limit.
+    const store = Lsp.createGmlDocumentStore();
+    const semanticIndex = createTestSemanticIndex(store);
+    const scratchDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "gmloop-lsp-project-root-cache-"));
+    // `PROJECT_ROOT_CACHE_MAX_ENTRIES` in identifier-index.ts. Kept as a local
+    // literal (rather than importing the private constant) so the test
+    // exercises the public cache-eviction contract, not the implementation.
+    const cacheCapacity = 2000;
+    const queriedPathCount = cacheCapacity + 200;
+
+    Lsp.clearProjectRootCacheForTesting();
+    try {
+        // Every synthetic path resolves to the same (marker-free) directory, so
+        // only the leaf filename varies. This keeps each `findProjectRoot` walk
+        // cheap while still producing a unique cache key per call.
+        for (let index = 0; index < queriedPathCount; index += 1) {
+            await semanticIndex.invalidateForFilePath(path.join(scratchDirectory, `synthetic-${index}.gml`));
+        }
+
+        const retainedEntries = Lsp.getProjectRootCacheSizeForTesting();
+        assert.ok(
+            retainedEntries <= cacheCapacity,
+            `Project-root cache must stay capped at ${cacheCapacity} entries; retained ${retainedEntries} after querying ${queriedPathCount} distinct paths.`
+        );
+    } finally {
+        Lsp.clearProjectRootCacheForTesting();
+        await semanticIndex.dispose();
+        await fs.rm(scratchDirectory, { recursive: true, force: true }).catch(() => {});
+    }
+});
