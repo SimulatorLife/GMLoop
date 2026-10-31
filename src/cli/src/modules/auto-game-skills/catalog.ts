@@ -3,7 +3,8 @@ import { access, readdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { Core } from "@gmloop/core";
-import matter from "gray-matter";
+
+import { parseSkillFrontmatter } from "./frontmatter.js";
 
 const PROJECT_SKILLS_RELATIVE_PATH = path.join(".agents", "skills");
 
@@ -107,9 +108,18 @@ async function readProjectSkill(
         );
     }
 
-    let parsedSkill: ReturnType<typeof matter>;
+    let parsedSkill: ReturnType<typeof parseSkillFrontmatter>;
     try {
-        parsedSkill = matter(source);
+        const result = parseSkillFrontmatter(source);
+        if (result === null) {
+            return createUnreadableSkill(
+                directoryName,
+                relativeSourcePath,
+                "Could not parse SKILL.md frontmatter: no well-formed `---` delimited metadata block was found.",
+                disabledSkills
+            );
+        }
+        parsedSkill = result;
     } catch (error) {
         return createUnreadableSkill(
             directoryName,
