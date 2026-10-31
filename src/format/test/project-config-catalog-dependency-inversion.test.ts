@@ -79,7 +79,7 @@ void test("project-config-catalog.ts depends on the printer-layout-defaults seam
 });
 
 void test("createProjectFormatOptionCatalog honours an injected layout defaults seam", () => {
-    const customLayoutDefaults = Object.freeze({ printWidth: 77, tabWidth: 3 });
+    const customLayoutDefaults = Object.freeze({ printWidth: 77, tabWidth: 3, minVariablesBeforeLoopPadding: 5 });
 
     const catalog = createProjectFormatOptionCatalog(customLayoutDefaults);
 
