@@ -16,4 +16,8 @@ export {
     getParseTreeListenerPrototype,
     getParseTreeVisitorPrototype
 } from "./generated-bindings.js";
-export { installRecognitionExceptionLikeGuard, isRecognitionExceptionLike } from "./recognition-exception-patch.js";
+export {
+    installRecognitionExceptionLikeGuard,
+    isRecognitionExceptionLike,
+    resolveTokenPosition
+} from "./recognition-exception-patch.js";
