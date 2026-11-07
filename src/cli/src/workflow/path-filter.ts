@@ -2,7 +2,7 @@ import path from "node:path";
 
 import { Core } from "@gmloop/core";
 
-import { REPO_ROOT } from "../shared/workspace-paths.js";
+import { resolveFromRepoRoot } from "../shared/workspace-paths.js";
 
 const {
     getNonEmptyTrimmedString,
@@ -32,8 +32,8 @@ export interface WorkflowPathFilter {
  * Canonical fixture directories used by workflow-based fixture discovery.
  */
 export const DEFAULT_FIXTURE_DIRECTORIES = Object.freeze([
-    path.resolve(REPO_ROOT, "src", "parser", "test", "input"),
-    path.resolve(REPO_ROOT, "src", "format", "test")
+    resolveFromRepoRoot("src", "parser", "test", "input"),
+    resolveFromRepoRoot("src", "format", "test")
 ]);
 
 /**
