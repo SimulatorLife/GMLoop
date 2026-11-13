@@ -284,6 +284,9 @@ importers:
       '@gmloop/parser':
         specifier: workspace:*
         version: link:../parser
+      eslint:
+        specifier: 'catalog:'
+        version: 10.7.0
     devDependencies:
       '@gmloop/fixture-runner':
         specifier: workspace:*
@@ -291,9 +294,6 @@ importers:
       '@gmloop/refactor':
         specifier: workspace:*
         version: link:../refactor
-      eslint:
-        specifier: 'catalog:'
-        version: 10.7.0
       typescript:
         specifier: 'catalog:'
         version: 6.0.3
