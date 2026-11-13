@@ -744,16 +744,60 @@ function getBuiltInsMetadata(): Record<string, unknown> {
     return builtInsMetadata;
 }
 
+/**
+ * Maximum number of resolved project-root lookups retained in memory.
+ *
+ * The LSP server process is long-running and `getProjectRoot` is called from
+ * every hot document-lifecycle path (document open, watched-file changes,
+ * background re-indexing), keyed by every distinct absolute file path ever
+ * seen. Without a cap this map grows for the entire lifetime of the server
+ * process. Bounding it with LRU eviction keeps steady-state memory
+ * proportional to recently-touched files instead of every file ever queried
+ * across a multi-hour editing session.
+ */
+const PROJECT_ROOT_CACHE_MAX_ENTRIES = 2000;
+
 const projectRootCache = new Map<string, string | null>();
 
 async function getProjectRoot(filepath: string): Promise<string | null> {
     const resolvedPath = path.resolve(filepath);
-    let root = projectRootCache.get(resolvedPath);
-    if (root === undefined) {
-        root = await Semantic.findProjectRoot({ filepath: resolvedPath });
-        projectRootCache.set(resolvedPath, root);
+    const cached = projectRootCache.get(resolvedPath);
+    if (cached !== undefined) {
+        // Reinsert to mark this entry as most-recently-used so the eviction
+        // below (which drops the oldest Map entry) implements LRU order.
+        projectRootCache.delete(resolvedPath);
+        projectRootCache.set(resolvedPath, cached);
+        return cached;
+    }
+
+    const root = await Semantic.findProjectRoot({ filepath: resolvedPath });
+    projectRootCache.set(resolvedPath, root);
+    if (projectRootCache.size > PROJECT_ROOT_CACHE_MAX_ENTRIES) {
+        const oldestKey = projectRootCache.keys().next().value;
+        if (oldestKey !== undefined) {
+            projectRootCache.delete(oldestKey);
+        }
     }
     return root;
+}
+
+/**
+ * Reports the number of entries retained by the module-level project-root
+ * cache. Exists exclusively for regression tests that verify the LRU bound
+ * introduced above actually caps memory growth; production code has no need
+ * to observe this count.
+ */
+export function getProjectRootCacheSizeForTesting(): number {
+    return projectRootCache.size;
+}
+
+/**
+ * Empties the module-level project-root cache. Exists exclusively so tests
+ * can isolate themselves from cache state left behind by earlier tests in
+ * the same process; production code never needs to evict this cache wholesale.
+ */
+export function clearProjectRootCacheForTesting(): void {
+    projectRootCache.clear();
 }
 
 interface SemanticIndexWorkerBuildOptions {
