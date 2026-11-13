@@ -225,7 +225,7 @@ void test("WebSocket client applies batch patches from messages", async () => {
         autoConnect: true
     });
 
-    await wait(50);
+    await flush();
 
     const patches = [
         {
@@ -245,8 +245,6 @@ void test("WebSocket client applies batch patches from messages", async () => {
     const mockSocket = ws as MockWebSocket;
 
     mockSocket.simulateMessage(JSON.stringify(patches));
-
-    await wait(10);
 
     assert.ok(wrapper.hasScript("script:batch_one"));
     assert.ok(wrapper.hasEvent("obj_batch#Create"));
@@ -652,7 +650,7 @@ void test("WebSocket client reports hot reload error notifications", async () =>
         }
     });
 
-    await wait(50);
+    await flush();
 
     const ws = client.getWebSocket();
     assert.ok(ws, "WebSocket should be available");
@@ -666,8 +664,6 @@ void test("WebSocket client reports hot reload error notifications", async () =>
             timestamp: Date.now()
         })
     );
-
-    await wait(10);
 
     assert.ok(reportedError, "Should surface hot reload errors");
     assert.strictEqual(reportedPhase, "patch");
@@ -699,7 +695,7 @@ void test("WebSocket client applies patches when script tables are ready without
     });
 
     try {
-        await wait(50);
+        await flush();
 
         const patch = {
             kind: "script",
@@ -711,8 +707,6 @@ void test("WebSocket client applies patches when script tables are ready without
         assert.ok(ws, "WebSocket should be available");
         const mockSocket = ws as MockWebSocket;
         mockSocket.simulateMessage(JSON.stringify(patch));
-
-        await wait(20);
 
         assert.ok(wrapper.hasScript(patch.id), "Patch should apply once script tables are ready");
         const fn = wrapper.getScript(patch.id);
@@ -857,7 +851,7 @@ void test("WebSocket client caches runtime readiness checks after first successf
     });
 
     try {
-        await wait(50);
+        await flush();
 
         const ws = client.getWebSocket();
         assert.ok(ws, "WebSocket should be available");
@@ -878,8 +872,6 @@ void test("WebSocket client caches runtime readiness checks after first successf
                 js_body: "return 2;"
             })
         );
-
-        await wait(10);
 
         assert.strictEqual(wrapper.hasScript("script:cached_ready_one"), true);
         assert.strictEqual(wrapper.hasScript("script:cached_ready_two"), true);
@@ -907,7 +899,7 @@ void test("WebSocket client accepts structured payloads", async () => {
         autoConnect: true
     });
 
-    await wait(50);
+    await flush();
 
     const patch = {
         kind: "event",
@@ -919,8 +911,6 @@ void test("WebSocket client accepts structured payloads", async () => {
     assert.ok(ws, "WebSocket should be available");
 
     (ws as MockWebSocket).simulateMessage(patch);
-
-    await wait(10);
 
     assert.ok(wrapper.hasEvent("obj_structured#Create"));
 
@@ -938,7 +928,7 @@ void test("WebSocket client decodes binary JSON payloads", async () => {
         autoConnect: true
     });
 
-    await wait(50);
+    await flush();
 
     const patch = {
         kind: "script",
@@ -952,8 +942,6 @@ void test("WebSocket client decodes binary JSON payloads", async () => {
     assert.ok(ws, "WebSocket should be available");
 
     (ws as MockWebSocket).simulateMessage(encoded);
-
-    await wait(10);
 
     assert.ok(wrapper.hasScript("script:binary"));
 
@@ -978,7 +966,7 @@ void test("WebSocket client prefers trySafeApply when available", async () => {
         autoConnect: true
     });
 
-    await wait(50);
+    await flush();
 
     const patch = {
         kind: "script",
@@ -991,8 +979,6 @@ void test("WebSocket client prefers trySafeApply when available", async () => {
     const mockSocket = ws as MockWebSocket;
 
     mockSocket.simulateMessage(JSON.stringify(patch));
-
-    await wait(10);
 
     assert.strictEqual(trySafeApplyCalls, 1);
     assert.ok(wrapper.hasScript("script:prefers_safe"));
@@ -1016,15 +1002,13 @@ void test("WebSocket client reports contextual errors for invalid JSON text", as
         autoConnect: true
     });
 
-    await wait(50);
+    await flush();
 
     const ws = client.getWebSocket();
     assert.ok(ws, "WebSocket should be available");
     const mockSocket = ws as MockWebSocket;
 
     mockSocket.simulateMessage("invalid json");
-
-    await wait(10);
 
     assert.ok(reportedError);
     assert.match(reportedError.message, /Failed to parse WebSocket patch payload from runtime websocket message:/);
@@ -1048,15 +1032,13 @@ void test("WebSocket client reports contextual errors for invalid binary JSON", 
         autoConnect: true
     });
 
-    await wait(50);
+    await flush();
 
     const ws = client.getWebSocket();
     assert.ok(ws, "WebSocket should be available");
 
     const encoded = new TextEncoder().encode("invalid json");
     (ws as MockWebSocket).simulateMessage(encoded);
-
-    await wait(10);
 
     assert.ok(reportedError);
     assert.match(
@@ -1091,7 +1073,7 @@ void test("WebSocket client surfaces trySafeApply failures", async () => {
         autoConnect: true
     });
 
-    await wait(50);
+    await flush();
 
     const ws = client.getWebSocket();
     assert.ok(ws, "WebSocket should be available");
@@ -1104,8 +1086,6 @@ void test("WebSocket client surfaces trySafeApply failures", async () => {
     };
 
     mockSocket.simulateMessage(JSON.stringify(failingPatch));
-
-    await wait(10);
 
     assert.ok(capturedError);
     assert.strictEqual(capturedContext, "patch");
@@ -1129,11 +1109,11 @@ void test("WebSocket client disconnects cleanly", async () => {
         autoConnect: true
     });
 
-    await wait(50);
+    await flush();
 
     client.disconnect();
 
-    await wait(50);
+    await flush();
 
     assert.ok(disconnectCalled);
     assert.strictEqual(client.isConnected(), false);
@@ -1415,7 +1395,7 @@ void test("WebSocket client does not reconnect after manual disconnect", async (
         autoConnect: true
     });
 
-    await wait(50);
+    await flush();
 
     assert.strictEqual(connectCount, 1);
 
@@ -1441,7 +1421,7 @@ void test("WebSocket send works when connected", async () => {
 
     const client = RuntimeWrapper.createWebSocketClient({ autoConnect: true });
 
-    await wait(50);
+    await flush();
 
     assert.doesNotThrow(() => {
         client.send({ kind: "ping" });
@@ -1468,15 +1448,13 @@ void test("WebSocket client reports malformed patch payloads", async () => {
         autoConnect: true
     });
 
-    await wait(50);
+    await flush();
 
     const ws = client.getWebSocket();
     assert.ok(ws, "WebSocket should be available");
     const mockSocket = ws as MockWebSocket;
 
     mockSocket.simulateMessage(JSON.stringify({ id: "script:missing_kind" }));
-
-    await wait(10);
 
     assert.strictEqual(errors.length, 1);
     assert.strictEqual(errors[0]?.context, "patch");
@@ -1520,8 +1498,6 @@ void test("WebSocket client tracks connection metrics", async () => {
             js_body: "return 42;"
         });
 
-        await wait(10);
-
         const metricsAfterPatch = client.getConnectionMetrics();
         assert.strictEqual(metricsAfterPatch.patchesReceived, 1);
         assert.strictEqual(metricsAfterPatch.patchesApplied, 1);
@@ -1530,7 +1506,7 @@ void test("WebSocket client tracks connection metrics", async () => {
         assert.ok(metricsAfterPatch.lastPatchAppliedAt);
 
         client.disconnect();
-        await wait(10);
+        await flush();
 
         const metricsAfterDisconnect = client.getConnectionMetrics();
         assert.strictEqual(metricsAfterDisconnect.totalDisconnections, 1);
@@ -1557,8 +1533,6 @@ void test("WebSocket client tracks failed patches in metrics", async () => {
                 id: "script:invalid",
                 js_body: "return {{ invalid syntax"
             });
-
-            await wait(10);
 
             const metrics = client.getConnectionMetrics();
             assert.strictEqual(metrics.patchesReceived, 1);
@@ -1619,7 +1593,6 @@ void test("WebSocket client tracks connection errors in metrics", async () => {
         const mockSocket = ws as MockWebSocket;
 
         mockSocket.simulateError();
-        await wait(10);
 
         const metrics = client.getConnectionMetrics();
         assert.strictEqual(metrics.connectionErrors, 1);
@@ -1750,7 +1723,6 @@ void test("WebSocket client falls back to a generic message for non-Error error 
         };
 
         mockSocket.simulateError({ source: "network" });
-        await wait(10);
 
         assert.strictEqual(capturedMessage, "Unknown WebSocket error");
     } finally {
@@ -1794,8 +1766,6 @@ void test("WebSocket client tracks patch errors for malformed payloads", async (
 
             mockSocket.simulateMessage({ id: "script:missing_kind" });
 
-            await wait(10);
-
             const metrics = client.getConnectionMetrics();
             assert.strictEqual(metrics.patchesReceived, 1);
             assert.strictEqual(metrics.patchErrors, 1);
@@ -1828,8 +1798,6 @@ void test("WebSocket client resets metrics to initial state", async () => {
             id: "script:test",
             js_body: "return 42;"
         });
-
-        await wait(10);
 
         const metricsBefore = client.getConnectionMetrics();
         assert.strictEqual(metricsBefore.totalConnections, 1);
@@ -2092,14 +2060,14 @@ void test("WebSocket client integrates with logger for lifecycle events", async 
     });
 
     client.connect();
-    await wait(50);
+    await flush();
 
     assert.strictEqual(logEvents.length, 1);
     assert.strictEqual(logEvents[0].level, "info");
     assert.ok(logEvents[0].message.includes("Connected to"));
 
     client.disconnect();
-    await wait(50);
+    await flush();
 
     assert.ok(logEvents.some((e) => e.message.includes("Disconnected")));
 
@@ -2155,7 +2123,7 @@ void test("WebSocket client integrates with logger for patch queue events", asyn
     });
 
     client.connect();
-    await wait(50);
+    await flush();
 
     const ws = client.getWebSocket();
     assert.ok(ws instanceof MockWebSocket);
@@ -2187,13 +2155,12 @@ void test("WebSocket client works without logger (backward compatibility)", asyn
     });
 
     client.connect();
-    await wait(50);
+    await flush();
 
     const ws = client.getWebSocket();
     assert.ok(ws instanceof MockWebSocket);
 
     ws.simulateMessage(JSON.stringify({ kind: "script", id: "script:test", js_body: "return 42;" }));
-    await wait(50);
 
     assert.ok(wrapper.hasScript("script:test"));
 
